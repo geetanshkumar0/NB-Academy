@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire safety</title>
+<style>
+body{margin:0;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f1ea;color:#1d2a31}
+.wrap{max-width:720px;margin:0 auto;padding:24px 18px}
+.slide{display:none;background:#fff;border-radius:10px;padding:26px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.slide.on{display:block}
+h1{font-size:1.5rem;margin:0 0 12px;color:#b3372e}
+.bar{display:flex;gap:4px;margin-bottom:14px}.bar i{flex:1;height:6px;border-radius:3px;background:#e2ddd2}.bar i.d{background:#b3372e}
+.nav{display:flex;justify-content:space-between;margin-top:20px}
+button{font:inherit;padding:9px 16px;border-radius:6px;border:1px solid #b3372e;background:#b3372e;color:#fff;cursor:pointer}
+button.alt{background:#fff;color:#b3372e}
+label{display:block;padding:8px;border-radius:6px;cursor:pointer}label:hover{background:#f6efe6}
+.res{margin-top:14px;padding:12px;border-radius:6px;background:#eef6ee;display:none}
+.pass{background:#e3f2e8;color:#1f6b40}.fail{background:#f8e0dc;color:#9e2b22}
+</style></head><body><div class="wrap">
+<div class="bar" id="bar"></div>
+<section class="slide"><h1>1 · How fires start</h1><p>Fire needs three things: <b>heat</b>, <b>fuel</b> and <b>oxygen</b>. Remove any one and the fire goes out.</p><p>At work, the usual causes are overloaded sockets, damaged cables and rubbish stored near heat sources.</p></section>
+<section class="slide"><h1>2 · Raise the alarm</h1><p>If you discover a fire, break the nearest alarm point and call the emergency number. Only tackle a small fire if you are trained and have a clear exit behind you.</p></section>
+<section class="slide"><h1>3 · Choose the right extinguisher</h1><ul><li><b>Water</b>: paper, wood, fabric. Never on electrics.</li><li><b>CO₂</b>: electrical equipment.</li><li><b>Foam</b>: flammable liquids.</li><li><b>Wet chemical</b>: cooking oil fires.</li></ul></section>
+<section class="slide"><h1>4 · Evacuate safely</h1><p>Leave by the nearest safe exit. Never use a lift. Close doors behind you and go to the assembly point. Do not go back in until a fire marshal says it is safe.</p></section>
+<section class="slide"><h1>Quick check</h1>
+<p><b>1.</b> Which extinguisher is safe on a burning computer?</p>
+<label><input type="radio" name="q1" value="a"> Water</label><label><input type="radio" name="q1" value="b"> CO₂</label><label><input type="radio" name="q1" value="c"> Foam</label>
+<p><b>2.</b> During an evacuation you should…</p>
+<label><input type="radio" name="q2" value="a"> Use the lift if it is working</label><label><input type="radio" name="q2" value="b"> Go back for your laptop</label><label><input type="radio" name="q2" value="c"> Use the stairs and go to the assembly point</label>
+<div class="res" id="res"></div></section>
+<div class="nav"><button class="alt" id="prev">Back</button><button id="next">Next</button></div>
+</div>
+<script>
+// SCORM 1.2 runtime: find the API provided by the LMS
+function findAPI(w){for(var i=0;i<10&&w;i++){if(w.API)return w.API;if(w===w.parent)break;w=w.parent;}return (window.opener&&window.opener.API)||null;}
+var API=findAPI(window), slides=[].slice.call(document.querySelectorAll('.slide')), cur=0;
+function get(k){try{return API?API.LMSGetValue(k):''}catch(e){return ''}}
+function set(k,v){try{if(API)API.LMSSetValue(k,String(v))}catch(e){}}
+function commit(){try{if(API)API.LMSCommit('')}catch(e){}}
+if(API)API.LMSInitialize('');
+var loc=parseInt(get('cmi.core.lesson_location'),10); if(!isNaN(loc)&&loc>=0&&loc<slides.length)cur=loc;
+var saved={}; (get('cmi.suspend_data')||'').split('&').forEach(function(p){var kv=p.split('=');if(kv[0])saved[kv[0]]=kv[1];});
+['q1','q2'].forEach(function(q){if(saved[q]){var el=document.querySelector('input[name='+q+'][value='+saved[q]+']');if(el)el.checked=true;}});
+if(get('cmi.core.lesson_status')==='not attempted')set('cmi.core.lesson_status','incomplete');
+var bar=document.getElementById('bar'); slides.forEach(function(){bar.appendChild(document.createElement('i'))});
+function show(){slides.forEach(function(s,i){s.classList.toggle('on',i===cur)});[].forEach.call(bar.children,function(b,i){b.classList.toggle('d',i<=cur)});
+ document.getElementById('prev').style.visibility=cur?'visible':'hidden';document.getElementById('next').textContent=cur===slides.length-1?'Submit answers':'Next';
+ set('cmi.core.lesson_location',cur);commit();}
+document.getElementById('prev').onclick=function(){if(cur>0){cur--;show();}};
+document.getElementById('next').onclick=function(){
+ if(cur<slides.length-1){cur++;show();return;}
+ var a1=document.querySelector('input[name=q1]:checked'),a2=document.querySelector('input[name=q2]:checked');
+ var res=document.getElementById('res'); if(!a1||!a2){res.style.display='block';res.className='res fail';res.textContent='Answer both questions first.';return;}
+ var score=(a1.value==='b'?50:0)+(a2.value==='c'?50:0);
+ set('cmi.suspend_data','q1='+a1.value+'&q2='+a2.value); set('cmi.core.score.raw',score); set('cmi.core.score.min',0); set('cmi.core.score.max',100);
+ set('cmi.core.lesson_status',score>=50?'passed':'failed'); commit();
+ res.style.display='block'; res.className='res '+(score>=50?'pass':'fail'); res.textContent='Your score: '+score+'%. '+(score>=50?'Module complete. You can close this window.':'Review the slides and try again.');
+};
+document.addEventListener('change',function(){var a1=document.querySelector('input[name=q1]:checked'),a2=document.querySelector('input[name=q2]:checked');set('cmi.suspend_data','q1='+(a1?a1.value:'')+'&q2='+(a2?a2.value:''));commit();});
+window.addEventListener('beforeunload',function(){try{if(API)API.LMSFinish('')}catch(e){}});
+show();
+</script></body></html>

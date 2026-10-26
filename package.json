@@ -1,0 +1,17 @@
+{
+  "name": "nb-academy",
+  "version": "1.0.0",
+  "description": "NB Academy: a learning management system modelled on Moodle, with no external dependencies.",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server/server.js",
+    "start:empty": "node server/server.js --empty",
+    "reset": "node server/server.js --reset",
+    "test": "node --test test/api.test.js",
+    "build:preview": "node tools/build-preview.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

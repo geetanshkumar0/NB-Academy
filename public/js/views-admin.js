@@ -1,0 +1,211 @@
+/* NB Academy front end · site administration */
+'use strict';
+
+const ADMIN_GROUPS = [
+  ['Site', [['general', 'General', 'site:config'], ['branding', 'Branding and certificates', 'site:config'], ['security', 'Security', 'site:config'], ['integrations', 'Email, SSO and LDAP', 'site:config'], ['notifications', 'Notifications and terms', 'site:config'], ['outbox', 'Email log', 'site:config']]],
+  ['People', [['users', 'Users', 'user:manage'], ['upload', 'Upload users', 'user:upload'], ['cohorts', 'Cohorts and mapping', 'cohort:manage'], ['roles', 'Roles and permissions', 'role:manage']]],
+  ['Learning', [['courses', 'Courses and categories', 'course:create'], ['paths', 'Learning paths and rules', 'path:manage'], ['qbank', 'Question bank', 'qbank:manage'], ['restore', 'Restore course', 'backup:restore']]],
+  ['Compliance', [['audit', 'Audit log', 'audit:view'], ['logs', 'Activity logs', 'site:viewlogs']]]];
+VIEWS.admin = (p) => {
+  const all = ADMIN_GROUPS.flatMap(g => g[1]).filter(t => h.has(t[2])); if (!all.length) return notFound();
+  const tab = all.some(t => t[0] === p.t) ? p.t : all[0][0];
+  const nav = `<nav class="adminnav" aria-label="Administration">${ADMIN_GROUPS.map(([g, ts]) => { const vis = ts.filter(t => h.has(t[2])); return vis.length ? `<div class="eyebrow">${g}</div>${vis.map(([k, l]) => `<button class="${k === tab ? 'on' : ''}" data-go="admin" data-t="${k}">${l}</button>`).join('')}` : ''; }).join('')}</nav>`;
+  return `${phead([['Site administration']], all.find(t => t[0] === tab)[1])}<div class="admingrid">${nav}<div style="min-width:0">${ADMIN[tab](p)}</div></div>`;
+};
+const ADMIN = {};
+ADMIN.general = () => `<div class="stats" style="margin-bottom:22px">
+    <div class="stat"><b>${S.users.length}</b><span class="muted small">Users</span></div><div class="stat"><b>${S.courses.length}</b><span class="muted small">Courses</span></div>
+    <div class="stat"><b>${S.enrol.length}</b><span class="muted small">Enrolments</span></div><div class="stat"><b>${S.cohorts.length}</b><span class="muted small">Cohorts</span></div></div>
+  <form data-form="siteSettings" class="card stack" style="max-width:680px"><h2>Site settings</h2>
+    <div class="field"><label for="sf1">Full site name</label><input id="sf1" name="name" type="text" value="${esc(S.site.name)}" required></div>
+    <div class="field"><label for="sf2">Front page summary</label><textarea id="sf2" name="tagline" rows="3">${esc(S.site.tagline)}</textarea></div>
+    <div class="field"><label for="sf3">Site address (custom domain)</label><input id="sf3" name="url" type="url" placeholder="https://learn.yourcompany.com" value="${esc(S.site.url || '')}"><span class="hint">Used in emails, certificate verification links and single sign-on. Point your domain's DNS at the server and put it behind HTTPS (see the README).</span></div>
+    <label class="check"><input type="checkbox" name="demo" ${S.site.demo ? 'checked' : ''}> Show demo accounts on the login page</label>
+    <div><button class="btn primary" type="submit">Save changes</button></div></form>
+  <div class="card stack" style="max-width:680px;margin-top:20px"><h2>About this installation</h2><table class="kv"><tbody>
+    <tr><th>Edition</th><td>${B.server ? 'Server (Node.js + SQLite)' : 'Preview (data stored in this browser)'}</td></tr><tr><th>Data version</th><td>${S.version}</td></tr><tr><th>External dependencies</th><td>None</td></tr></tbody></table></div>`;
+
+ADMIN.branding = () => { const b = S.site.branding, cs = S.site.cert || {}; const logo = b.logo && fileOf(b.logo);
+  return `<form data-form="branding" class="stack" style="max-width:820px"><section class="card stack"><h2>Logo and colours</h2>
+    <div class="row">${logoHTML(56)}<div class="field" style="flex:1"><label for="blogo">Company logo (PNG, SVG, JPG, WebP; square works best)</label><input type="hidden" name="logo" id="blogoid" value="${esc(b.logo || '')}"><input id="blogo" type="file" accept="image/*" data-upload="logo"><span class="hint" id="blogoname">${logo ? `Current: ${esc(logo.name)}` : 'Using the default NB mark'}</span>${logo ? '<button class="link small" type="button" data-act="clearLogo">Use the default mark instead</button>' : ''}</div></div>
+    <div class="fgrid"><div class="field"><label for="bp">Primary colour</label><div class="row"><input id="bp" name="primary" type="color" value="${esc(b.primary)}" style="width:56px;height:40px;padding:2px"><span class="mono small">${esc(b.primary)}</span></div><span class="hint">Navigation bar, buttons and links.</span></div>
+      <div class="field"><label for="ba">Accent colour</label><div class="row"><input id="ba" name="accent" type="color" value="${esc(b.accent)}" style="width:56px;height:40px;padding:2px"><span class="mono small">${esc(b.accent)}</span></div><span class="hint">Highlights and the active menu item.</span></div></div></section>
+    <section class="card stack"><h2>Certificate template</h2>
+      <div class="row">${[['classic', 'Classic'], ['modern', 'Modern'], ['minimal', 'Minimal']].map(([k, l]) => `<label class="tplpick"><input type="radio" name="template" value="${k}" ${(cs.template || 'classic') === k ? 'checked' : ''}><span class="cert mini tpl-${k}"><b>${l}</b></span></label>`).join('')}</div>
+      <div class="fgrid"><div class="field"><label for="csn">Signatory name</label><input id="csn" name="signatureName" type="text" value="${esc(cs.signatureName || '')}" placeholder="e.g. Neha Bansal"></div><div class="field"><label for="cst">Signatory title</label><input id="cst" name="signatureTitle" type="text" value="${esc(cs.signatureTitle || '')}" placeholder="e.g. Head of Learning"></div>
+        <div class="field full"><label for="cbody">Wording before the course name</label><input id="cbody" name="body" type="text" value="${esc(cs.body || 'has successfully completed')}"></div></div>
+      <p class="muted small">Certificates are verifiable by code at /cert/CODE and download as PDF on the server edition.</p></section>
+    <div><button class="btn primary" type="submit">Save branding</button></div></form>`; };
+
+ADMIN.security = () => { const x = S.site.security;
+  return `<form data-form="security" class="stack" style="max-width:760px"><section class="card stack"><h2>Password rules</h2>
+    <div class="fgrid"><div class="field"><label for="smin">Minimum length</label><input id="smin" name="minLength" type="number" min="6" max="64" value="${x.minLength}"></div><div></div>
+      ${[['upper', 'At least one uppercase letter'], ['lower', 'At least one lowercase letter'], ['digit', 'At least one number'], ['special', 'At least one symbol']].map(([k, l]) => `<label class="check"><input type="checkbox" name="${k}" ${x[k] ? 'checked' : ''}> ${l}</label>`).join('')}</div></section>
+    <section class="card stack"><h2>Account lockout</h2><div class="fgrid"><div class="field"><label for="sla">Lock after failed attempts (0 = never)</label><input id="sla" name="lockoutAttempts" type="number" min="0" value="${x.lockoutAttempts}"></div><div class="field"><label for="slm">Lock for (minutes)</label><input id="slm" name="lockoutMinutes" type="number" min="1" value="${x.lockoutMinutes}"></div></div><p class="muted small">Administrators can unlock an account at any time from Users.</p></section>
+    <section class="card stack"><h2>Sessions and two-step sign-in</h2><div class="fgrid"><div class="field"><label for="sst">Sign out after inactivity (minutes)</label><input id="sst" name="sessionTimeout" type="number" min="5" value="${x.sessionTimeout}"></div>
+      <div class="field"><label for="smfa">Two-step sign-in (authenticator app)</label><select id="smfa" name="mfa">${[['off', 'Optional for everyone'], ['admins', 'Required for administrators and managers'], ['all', 'Required for everyone']].map(([k, l]) => `<option value="${k}" ${x.mfa === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <p class="muted small">When required, people set it up at their next sign-in. Single sign-on users get two-step sign-in from your identity provider.</p></section>
+    <div><button class="btn primary" type="submit">Save security settings</button></div></form>`; };
+
+ADMIN.integrations = () => { const e = S.site.email || {}, s = S.site.sso || {}, l = S.site.ldap || {};
+  const sw = (on) => `<span class="chip ${on ? 'ok' : ''}">${on ? 'On' : 'Off'}</span>`;
+  return `<div class="stack" style="max-width:820px;gap:22px">
+  <form data-form="integration" class="card stack"><input type="hidden" name="kind" value="email"><div class="spread"><h2>Email (SMTP)</h2>${sw(e.enabled)}</div>
+    <p class="muted small">Welcome emails, deadline warnings, overdue notices, access decisions, certificates and password resets are sent through your mail server. Until this is on, emails are kept in the Email log.</p>
+    <div class="fgrid"><div class="field"><label for="eh">SMTP server</label><input id="eh" name="host" type="text" value="${esc(e.host || '')}" placeholder="smtp.yourcompany.com"></div><div class="field"><label for="ep">Port</label><input id="ep" name="port" type="number" value="${e.port || 587}"></div>
+      <div class="field"><label for="eu2">Username</label><input id="eu2" name="user" type="text" value="${esc(e.user || '')}" autocomplete="off"></div><div class="field"><label for="epw">Password</label><input id="epw" name="pass" type="password" placeholder="${e.passSet ? 'Saved. Leave blank to keep' : ''}" autocomplete="new-password"></div>
+      <div class="field full"><label for="ef">From address</label><input id="ef" name="from" type="text" value="${esc(e.from || '')}" placeholder="Learning team <learning@yourcompany.com>"></div>
+      <label class="check"><input type="checkbox" name="secure" ${e.secure ? 'checked' : ''}> Use TLS from the start (port 465). Otherwise STARTTLS is used when offered.</label><label class="check"><input type="checkbox" name="enabled" ${e.enabled ? 'checked' : ''}> Send emails</label></div>
+    <div class="row"><button class="btn primary" type="submit">Save email settings</button><button class="btn" type="button" data-act="testEmail">Send a test email</button></div></form>
+  <form data-form="integration" class="card stack"><input type="hidden" name="kind" value="sso"><div class="spread"><h2>Single sign-on (OpenID Connect)</h2>${sw(s.enabled)}</div>
+    <p class="muted small">Works with Microsoft Entra ID, Google Workspace, Okta, Auth0, Keycloak and other OpenID Connect providers. Register this redirect address with your provider: <code class="mono">${esc((S.site.url || (B.server ? location.origin : 'https://your-site')) + '/auth/sso/callback')}</code>. Users are matched by email address.</p>
+    <div class="fgrid"><div class="field full"><label for="si">Issuer URL</label><input id="si" name="issuer" type="url" value="${esc(s.issuer || '')}" placeholder="https://login.microsoftonline.com/TENANT-ID/v2.0"></div>
+      <div class="field"><label for="sc">Client ID</label><input id="sc" name="clientId" type="text" value="${esc(s.clientId || '')}"></div><div class="field"><label for="ss2">Client secret</label><input id="ss2" name="clientSecret" type="password" placeholder="${s.secretSet ? 'Saved. Leave blank to keep' : ''}" autocomplete="new-password"></div>
+      <div class="field"><label for="sl">Button label</label><input id="sl" name="label" type="text" value="${esc(s.label || 'Company single sign-on')}"></div><div></div>
+      <label class="check"><input type="checkbox" name="autoCreate" ${s.autoCreate ? 'checked' : ''}> Create an account on first sign-in (assignment rules then apply)</label><label class="check"><input type="checkbox" name="enabled" ${s.enabled ? 'checked' : ''}> Show the single sign-on button</label></div>
+    <div><button class="btn primary" type="submit">Save single sign-on</button></div></form>
+  <form data-form="integration" class="card stack"><input type="hidden" name="kind" value="ldap"><div class="spread"><h2>LDAP / Active Directory</h2>${sw(l.enabled)}</div>
+    <p class="muted small">Checks the user's password against your directory with a simple bind. Accounts created with the sign-in method "LDAP" use it; new users can be created on first sign-in.</p>
+    <div class="fgrid"><div class="field full"><label for="lurl">Server URL</label><input id="lurl" name="url" type="text" value="${esc(l.url || '')}" placeholder="ldaps://dc1.yourcompany.local:636"></div>
+      <div class="field full"><label for="ldn">Bind DN pattern</label><input id="ldn" name="bindDn" type="text" value="${esc(l.bindDn || '')}"><span class="hint">Use {username} where the login name goes, e.g. <code>uid={username},ou=people,dc=example,dc=com</code> or <code>{username}@corp.example.com</code> for Active Directory.</span></div>
+      <div class="field"><label for="led">Email domain for new users</label><input id="led" name="emailDomain" type="text" value="${esc(l.emailDomain || '')}" placeholder="yourcompany.com"></div><div></div>
+      <label class="check"><input type="checkbox" name="autoCreate" ${l.autoCreate ? 'checked' : ''}> Create an account on first sign-in</label><label class="check"><input type="checkbox" name="enabled" ${l.enabled ? 'checked' : ''}> Use LDAP for sign-in</label></div>
+    <div class="row"><button class="btn primary" type="submit">Save LDAP settings</button><button class="btn" type="button" data-act="testLdap">Test a sign-in</button></div></form></div>`; };
+
+ADMIN.notifications = () => { const tpl = S.site.templates || {};
+  return `<div class="stack" style="max-width:900px;gap:22px">
+  <form data-form="notifySettings" class="card stack"><h2>Deadline reminders and recertification</h2>
+    <div class="fgrid"><div class="field"><label for="nrd">Send deadline warnings this many days before the due date</label><input id="nrd" name="reminders" type="text" value="${esc((S.site.reminders || []).join(', '))}"><span class="hint">Comma-separated. 1 means the last 24 hours.</span></div>
+      <div class="field"><label for="nrc">Re-enrol learners this many days before a certificate expires</label><input id="nrc" name="recertDays" type="number" min="1" value="${S.site.recertDays || 30}"></div></div>
+    <p class="muted small">After a deadline passes, the course locks automatically and the learner gets the overdue notice. Checks run every 5 minutes on the server.</p><div><button class="btn primary" type="submit">Save</button></div></form>
+  <section class="stack"><h2>Message templates</h2><p class="muted small">Placeholders: <span class="mono">${esc(C.TEMPLATE_VARS)}</span></p>
+    ${Object.entries(tpl).map(([k, t]) => `<details class="card"><summary class="spread"><b>${esc(t.label)}</b><span class="row" style="gap:6px">${t.email ? '<span class="chip">Email</span>' : ''}${t.inapp ? '<span class="chip">In-app</span>' : ''}</span></summary>
+      <form data-form="template" class="stack" style="margin-top:12px"><input type="hidden" name="key" value="${k}"><div class="field"><label for="ts${k}">Subject</label><input id="ts${k}" name="subject" type="text" value="${esc(t.subject)}" required></div>
+      <div class="field"><label for="tb${k}">Email message</label><textarea id="tb${k}" name="body" rows="7" required>${esc(t.body)}</textarea></div>
+      <div class="row"><label class="check"><input type="checkbox" name="email" ${t.email ? 'checked' : ''}> Send by email</label><label class="check"><input type="checkbox" name="inapp" ${t.inapp ? 'checked' : ''}> Show in the app</label></div>
+      <div class="row"><button class="btn primary sm" type="submit">Save template</button><button class="btn sm" type="button" data-act="resetTemplate" data-k="${k}">Restore default</button></div></form></details>`).join('')}</section>
+  <form data-form="terms" class="card stack"><h2>Platform terms</h2><p class="muted small">Shown at first sign-in. Current version: ${S.site.terms?.version || 1}.</p><textarea name="text" rows="10" required>${esc(S.site.terms?.text || '')}</textarea>
+    <label class="check"><input type="checkbox" name="bump"> This is a material change: ask everyone to accept the new version at their next sign-in</label><div><button class="btn primary" type="submit">Save terms</button></div></form></div>`; };
+
+ADMIN.outbox = () => `<div class="spread" style="margin-bottom:12px"><p class="muted small">${S.site.email?.enabled ? 'Email delivery is on. Queued emails are sent every 30 seconds.' : 'Email delivery is off, so emails are kept here and not sent. Turn it on under Email, SSO and LDAP.'}</p><input type="search" data-filter="#obox" placeholder="Search" aria-label="Search emails" style="max-width:220px"></div>
+  <div class="tw"><table><thead><tr><th>Time</th><th>To</th><th>Subject</th><th>Status</th><th></th></tr></thead><tbody id="obox">
+  ${S.outbox.slice().sort((a, b) => b.time - a.time).map(m => `<tr data-s="${esc((m.to + ' ' + m.subject).toLowerCase())}"><td class="small num" style="white-space:nowrap">${fmtDate(m.time)}</td><td class="small">${esc(m.toName)}<br><span class="muted">${esc(m.to)}</span></td><td><details><summary>${esc(m.subject)}</summary><pre class="code" style="white-space:pre-wrap;margin-top:6px">${esc(m.body)}</pre></details></td>
+    <td><span class="chip ${m.status === 'sent' ? 'ok' : m.status === 'failed' ? 'bad' : m.status === 'queued' ? 'brand' : ''}">${esc(m.status)}</span>${m.error ? `<div class="small" style="color:var(--bad)">${esc(m.error)}</div>` : ''}</td><td>${m.status === 'failed' || (m.status === 'not sent' && S.site.email?.enabled) ? `<button class="btn sm" data-act="retryEmail" data-id="${m.id}">Send</button>` : ''}${!B.server && LocalBackend.outboxLink(m) ? `<button class="btn sm ghost" data-act="openToken" data-t="${LocalBackend.outboxLink(m)}">Open link</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">No emails yet.</td></tr>'}
+  </tbody></table></div>`;
+
+ADMIN.users = () => {
+  const loginas = h.has('user:loginas');
+  return `<div class="spread" style="margin-bottom:14px"><input type="search" id="usearch" data-filter="#ulist" placeholder="Search users" aria-label="Search users" style="max-width:260px"><button class="btn primary" data-act="newUser">Add a new user</button></div>
+    <div class="tw"><table><thead><tr><th>Name</th><th>Company · Department</th><th>Site roles</th><th>Last login</th><th class="n">Courses</th><th></th></tr></thead><tbody id="ulist">
+    ${S.users.map(u => { const sys = S.sysroles.filter(r => r.userId === u.id).map(r => roleName(r.roleId));
+      return `<tr data-s="${esc((fullname(u) + ' ' + (u.username || '') + ' ' + u.email + ' ' + u.company + ' ' + u.department).toLowerCase())}"><td><div class="row" style="flex-wrap:nowrap">${avatar(u, 28)}<span><button class="link" data-go="profile" data-id="${u.id}">${esc(fullname(u))}</button><br><span class="muted small mono">${esc(u.username || '')}</span></span></div></td><td class="small">${esc(u.company || '–')}<br><span class="muted">${esc(u.department || '')}</span></td>
+        <td>${u.admin ? `<span class="chip brand">${u.builtinAdmin ? 'Administrator · built-in' : 'Administrator'}</span>` : ''}${sys.map(r => `<span class="chip">${esc(r)}</span>`).join(' ')}${u.suspended ? ' <span class="chip bad">Suspended</span>' : ''}${u.locked ? ' <span class="chip bad">Locked</span>' : ''}${u.mustChangePassword ? ' <span class="chip warn">Must set password</span>' : ''}${u.auth && u.auth !== 'manual' ? ` <span class="chip">${u.auth.toUpperCase()}</span>` : ''}</td>
+        <td class="small muted">${ago(u.lastLogin)}</td><td class="n">${S.enrol.filter(e => e.userId === u.id).length}</td>
+        <td><div class="tools">${u.id !== S.me && !u.admin ? `${u.locked ? `<button class="btn sm" data-act="unlockUser" data-u="${u.id}">Unlock</button>` : ''}<button class="btn sm ghost" data-act="resetPw" data-u="${u.id}">Reset password</button>${loginas ? `<button class="btn sm ghost" data-act="loginAs" data-u="${u.id}">Log in as</button>` : ''}<button class="btn sm ghost" data-act="suspend" data-u="${u.id}" data-on="${u.suspended ? '' : '1'}">${u.suspended ? 'Reactivate' : 'Suspend'}</button><button class="btn sm ghost danger" data-act="deleteUser" data-u="${u.id}">Delete</button>` : `<span class="muted small">${u.id === S.me ? 'You' : ''}</span>`}</div></td></tr>`; }).join('')}
+    </tbody></table></div>`;
+};
+
+ADMIN.cohorts = () => `<div class="spread" style="margin-bottom:14px"><p class="muted">Cohorts group learners. Map team leads and trainers to a cohort to define what they can see; map courses to tag them to the cohort's trainers.</p><button class="btn primary" data-act="cohortForm">New cohort</button></div>
+  <div class="stack">${S.cohorts.map(c => `<article class="card stack" style="gap:10px"><div class="spread"><div><b>${esc(c.name)}</b><div class="muted small">${esc([c.company, c.department].filter(Boolean).join(' · ') || 'No company or department set')}</div></div><div class="tools"><button class="btn sm" data-act="cohortForm" data-id="${c.id}">Edit</button><button class="btn sm ghost danger" data-act="deleteCohort" data-id="${c.id}">Delete</button></div></div>
+    <div class="fgrid"><div><span class="eyebrow">Members (${c.members.length})</span><div class="small">${c.members.map(id => esc(fullname(id))).join(', ') || '–'}</div></div><div><span class="eyebrow">Team leads</span><div class="small">${c.leads.map(id => esc(fullname(id))).join(', ') || '<span class="muted">None</span>'}</div></div>
+      <div><span class="eyebrow">Trainers</span><div class="small">${c.trainers.map(id => esc(fullname(id))).join(', ') || '<span class="muted">None</span>'}</div></div><div><span class="eyebrow">Courses</span><div class="small">${c.courses.map(id => esc(h.course(id)?.shortname || '')).join(', ') || '<span class="muted">None</span>'}</div></div></div></article>`).join('') || '<div class="card empty">No cohorts yet.</div>'}</div>`;
+
+ADMIN.paths = () => `<section class="stack" style="margin-bottom:28px"><div class="spread"><h2>Learning paths</h2><button class="btn primary" data-act="pathForm">New learning path</button></div>
+    ${S.paths.map(p => `<article class="card stack" style="gap:8px"><div class="spread"><div><b>${esc(p.name)}</b>${p.sequential ? ' <span class="chip">In order</span>' : ''}<div class="muted small">${esc(p.description)}</div></div><div class="tools"><button class="btn sm" data-act="assignModal" data-kind="path" data-id="${p.id}">Assign</button><button class="btn sm ghost" data-act="pathForm" data-id="${p.id}">Edit</button><button class="btn sm ghost danger" data-act="deletePath" data-id="${p.id}">Delete</button></div></div>
+      <div class="small">${p.courses.map((id, i) => `${i + 1}. ${esc(h.course(id)?.fullname || '?')}`).join(' → ')}</div><div class="muted small">${S.enrol.filter(e => e.pathId === p.id).length} assignments</div></article>`).join('') || '<div class="card empty">No learning paths yet.</div>'}</section>
+  <section class="stack"><div class="spread"><h2>Automatic assignment rules</h2><button class="btn primary" data-act="ruleForm">New rule</button></div><p class="muted small">Rules assign training to new users automatically: when they are created, uploaded, signed in for the first time by SSO or LDAP, or added to a cohort.</p>
+    <div class="tw"><table><thead><tr><th>Rule</th><th>Who</th><th>Assigns</th><th class="n">Deadline</th><th>Status</th><th></th></tr></thead><tbody>
+    ${S.rules.map(r => `<tr><td><b>${esc(r.name)}</b></td><td class="small">${r.match.type === 'all' ? 'Every new user' : `${{department:'Department', company:'Company', cohort:'Cohort'}[r.match.type]}: ${esc(r.match.type === 'cohort' ? S.cohorts.find(c => c.id === r.match.value)?.name || '?' : r.match.value)}`}</td><td class="small">${r.target.type === 'path' ? `Path: ${esc(S.paths.find(p => p.id === r.target.id)?.name || '?')}` : esc(h.course(r.target.id)?.fullname || '?')}</td><td class="n">${r.days ? `${r.days} days` : 'None'}</td><td>${r.active ? '<span class="chip ok">Active</span>' : '<span class="chip">Paused</span>'}</td>
+      <td><div class="tools"><button class="btn sm" data-act="runRule" data-id="${r.id}">Apply to existing users</button><button class="btn sm ghost" data-act="ruleForm" data-id="${r.id}">Edit</button><button class="btn sm ghost danger" data-act="deleteRule" data-id="${r.id}">Delete</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="empty">No rules yet.</td></tr>'}</tbody></table></div></section>`;
+
+ADMIN.qbank = (p) => { const cats = [...new Set(S.qbank.map(q => q.category))].sort(); const cat = p.cat || '';
+  return `<div class="spread" style="margin-bottom:14px"><div class="row"><button class="btn sm ${!cat ? 'primary' : ''}" data-go="admin" data-t="qbank">All (${S.qbank.length})</button>${cats.map(c => `<button class="btn sm ${cat === c ? 'primary' : ''}" data-go="admin" data-t="qbank" data-cat="${esc(c)}">${esc(c)} (${S.qbank.filter(q => q.category === c).length})</button>`).join('')}</div><button class="btn primary" data-act="bankForm">Add question</button></div>
+    <div class="tw"><table><thead><tr><th>Question</th><th>Category</th><th>Type</th><th>Answer</th><th class="n">Used in</th><th></th></tr></thead><tbody>
+    ${S.qbank.filter(q => !cat || q.category === cat).map(q => { const used = Object.values(S.mods).filter(m => m.type === 'quiz' && (m.questions || []).some(x => x.bankId === q.id)); return `<tr><td>${esc(q.text)}</td><td class="small">${esc(q.category)}</td><td class="small">${C.QTYPES[q.type]}</td><td class="small">${esc(C.correctText(q) || '')}</td><td class="n" title="${esc(used.map(m => m.name).join(', '))}">${used.length} quiz${used.length === 1 ? '' : 'zes'}</td><td><div class="tools"><button class="btn sm ghost" data-act="bankForm" data-id="${q.id}">Edit</button><button class="btn sm ghost danger" data-act="deleteBank" data-id="${q.id}">Delete</button></div></td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">No questions in the bank yet.</td></tr>'}
+    </tbody></table></div><p class="muted small" style="margin-top:8px">Editing a bank question updates every quiz that uses it. Existing attempts keep the score they were given.</p>`; };
+
+ADMIN.audit = () => `<div class="spread" style="margin-bottom:12px"><p class="muted small">Every course edit, grade change, approval, role change and user change is recorded. Each entry includes a hash of the previous one, so any change to history is detectable. ${B.server ? 'The database also refuses edits and deletions of audit entries.' : ''}<br>Showing the latest ${S.audit.length} of ${S.auditCount} entries.</p><div class="row"><button class="btn" data-act="verifyAudit">Verify integrity</button><button class="btn" data-act="exportAudit">Export CSV</button></div></div>
+  <div id="auditres"></div><input type="search" data-filter="#alog" placeholder="Filter" aria-label="Filter audit log" style="max-width:260px;margin-bottom:10px">
+  <div class="tw"><table><thead><tr><th class="n">#</th><th>Time</th><th>By</th><th>Action</th><th>Target</th><th>Detail</th><th>Hash</th></tr></thead><tbody id="alog">
+  ${S.audit.slice().reverse().map(e => `<tr data-s="${esc((fullname(e.uid) + ' ' + e.action + ' ' + e.target + ' ' + e.detail).toLowerCase())}"><td class="n">${e.seq}</td><td class="small num" style="white-space:nowrap">${fmtDate(e.t)}</td><td class="small">${e.uid ? esc(fullname(e.uid)) : '<span class="muted">System</span>'}</td><td><b class="small">${esc(e.action)}</b></td><td class="small">${esc(e.target)}</td><td class="small">${esc(e.detail)}</td><td class="mono small muted" title="${esc(e.hash)}">${esc(e.hash.slice(0, 10))}…</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No entries.</td></tr>'}
+  </tbody></table></div>`;
+
+ADMIN.roles = (p) => {
+  const sel = p.role && h.role(p.role);
+  const levels = [['course', 'Course-level permissions'], ['site', 'Site-level permissions']];
+  const holders = r => S.enrol.filter(e => e.role === r.id).length + S.sysroles.filter(x => x.roleId === r.id).length;
+  if (sel || p.role === 'new') {
+    const r = sel || {id:'', name:'', desc:'', caps:{}, builtin:false};
+    return `<form data-form="saveRole" class="stack"><input type="hidden" name="id" value="${esc(r.id)}">
+      <div class="spread"><h2>${sel ? `Edit role: ${esc(r.name)}` : 'Add a new role'}</h2><button class="btn" type="button" data-go="admin" data-t="roles">Back to roles</button></div>
+      <div class="card fgrid">${sel ? '' : `<div class="field"><label for="rs">Short name</label><input id="rs" name="shortname" type="text" pattern="[a-z0-9_]+" placeholder="e.g. assessor" required><span class="hint">Lowercase letters, numbers and underscore. Cannot be changed later.</span></div>`}
+        <div class="field"><label for="rn">Role name</label><input id="rn" name="name" type="text" value="${esc(r.name)}" required></div>
+        <div class="field full"><label for="rd">Description</label><textarea id="rd" name="desc" rows="2">${esc(r.desc)}</textarea></div>
+        ${sel ? '' : `<div class="field"><label for="rcopy">Start from the permissions of</label><select id="rcopy" data-change="copyRole"><option value="">No permissions</option>${S.roles.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>`}</div>
+      <div class="tw"><table class="capgrid"><thead><tr><th>Permission</th><th>Capability</th><th style="text-align:center">Allow</th></tr></thead><tbody>
+      ${levels.map(([lv, label]) => `<tr><td colspan="3" class="lvl">${label}</td></tr>` + C.CAPS.filter(x => x[2] === lv).map(([cap, desc]) => `<tr><td>${esc(desc)}</td><td class="mono small muted">${cap}</td><td class="c"><input type="checkbox" name="cap:${cap}" ${r.caps[cap] ? 'checked' : ''} aria-label="${esc(desc)}"></td></tr>`).join('')).join('')}
+      </tbody></table></div><p class="err" id="roleerr" hidden></p>
+      <div class="row"><button class="btn primary" type="submit">Save role</button>${sel && !sel.builtin ? `<button class="btn danger" type="button" data-act="deleteRole" data-id="${sel.id}">Delete role</button>` : ''}</div></form>`;
+  }
+  return `<div class="spread" style="margin-bottom:14px"><p class="muted">Roles bundle permissions. Course roles are given through enrolment; site roles apply in every course.</p><button class="btn primary" data-go="admin" data-t="roles" data-role="new">Add a new role</button></div>
+    <div class="tw" style="margin-bottom:24px"><table><thead><tr><th>Role</th><th>Description</th><th class="n">Permissions</th><th class="n">Assigned</th><th></th></tr></thead><tbody>
+    ${S.roles.map(r => `<tr><td><b>${esc(r.name)}</b><br><span class="mono muted small">${esc(r.id)}</span>${r.builtin ? ' <span class="chip">Built-in</span>' : ''}</td><td class="small">${esc(r.desc)}</td><td class="n">${Object.keys(r.caps).length} / ${C.CAPS.length}</td><td class="n">${holders(r)}</td><td><button class="btn sm" data-go="admin" data-t="roles" data-role="${r.id}">Edit permissions</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <h2 style="margin-bottom:6px">Compare permissions</h2><p class="muted small" style="margin-bottom:10px">Site administrators always have every permission.</p>
+    <div class="tw" style="margin-bottom:24px"><table class="capgrid"><thead><tr><th>Capability</th>${S.roles.map(r => `<th style="text-align:center">${esc(r.name)}</th>`).join('')}</tr></thead><tbody>
+    ${levels.map(([lv, label]) => `<tr><td colspan="${S.roles.length + 1}" class="lvl">${label}</td></tr>` + C.CAPS.filter(x => x[2] === lv).map(([cap, desc]) => `<tr><td title="${esc(desc)}" class="small">${esc(desc)}</td>${S.roles.map(r => `<td class="c">${r.caps[cap] ? '<span class="okc" aria-label="Allowed">✓</span>' : '<span class="muted" aria-label="Not allowed">–</span>'}</td>`).join('')}</tr>`).join('')).join('')}
+    </tbody></table></div>
+    <h2 style="margin-bottom:10px">Site role assignments</h2>
+    <div class="dash"><div class="tw"><table><thead><tr><th>User</th><th>Site role</th><th></th></tr></thead><tbody>${S.sysroles.map(x => `<tr><td>${esc(fullname(x.userId))}</td><td>${esc(roleName(x.roleId))}</td><td><button class="btn sm ghost danger" data-act="sysRole" data-u="${x.userId}" data-r="${x.roleId}" data-on="">Remove</button></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No site role assignments.</td></tr>'}</tbody></table></div>
+    <form data-form="assignSysRole" class="block"><header><h3>Assign a site role</h3></header><div class="bb stack" style="gap:10px">
+      <label class="lbl" for="sru">User</label><select id="sru" name="userId">${S.users.filter(u => !u.admin).map(u => `<option value="${u.id}">${esc(fullname(u))}</option>`).join('')}</select>
+      <label class="lbl" for="srr">Role</label><select id="srr" name="roleId">${S.roles.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+      <button class="btn primary" type="submit">Assign role</button></div></form></div>`;
+};
+
+const SAMPLE_CSV = 'username,firstname,lastname,email,company,department,password,course1,role1,group1\nravi.k,Ravi,Kumar,ravi.kumar@example.com,NB Retail,Analytics,Welcome@2026,DA101,student,Batch A · Mumbai\nanita.s,Anita,Shah,anita.shah@example.com,NB Retail,Sales,,BS201,student,\nfarah.a,Farah,Ali,farah.ali@example.com,NB Academy,Learning & Development,,TE110,trainer,';
+ADMIN.upload = () => {
+  const v = ui.csv;
+  let preview = '';
+  if (v) {
+    if (v.errors.length) preview = `<div class="err">${v.errors.map(esc).join('<br>')}</div>`;
+    else { const ok = v.rows.filter(r => !r.errors.length).length;
+      preview = `<h2 style="margin:8px 0 10px">Preview</h2><p class="muted small" style="margin-bottom:10px">${v.rows.length} rows · ${ok} ready · ${v.rows.length - ok} with problems (rows with problems are skipped)</p>
+      <div class="tw" style="margin-bottom:14px"><table><thead><tr><th>Line</th><th>Username</th><th>Name</th><th>Email</th><th>Action</th><th>Enrolments</th><th>Status</th></tr></thead><tbody>
+      ${v.rows.map(r => `<tr><td class="num">${r.line}</td><td class="mono">${esc(r.username)}</td><td>${esc(r.firstname)} ${esc(r.lastname)}</td><td class="small">${esc(r.email)}</td><td><span class="chip ${r.action === 'create' ? 'brand' : ''}">${r.action === 'create' ? 'Create' : 'Update'}</span></td><td class="small">${r.enrols.map(e => `${esc(e.shortname)} (${esc(roleName(e.role))}${e.group ? ', ' + esc(e.group) : ''})`).join('<br>') || '–'}</td><td class="small">${r.errors.length ? `<span style="color:var(--bad)">${r.errors.map(esc).join('; ')}</span>` : '<span class="okc">OK</span>'}</td></tr>`).join('')}
+      </tbody></table></div>
+      <form data-form="uploadUsers" class="card stack" style="max-width:640px"><div class="field"><label for="updef">Temporary password for new users with an empty password</label><input id="updef" name="defaultPassword" type="text" value="Welcome@2026" required><span class="hint">New users must change it at first sign-in. They also get a welcome email with a link to set their own.</span></div>
+        <div class="field"><label for="updd">Due date for learner enrolments (days from today, 0 = none)</label><input id="updd" name="dueDays" type="number" min="0" value="0"></div>
+        <label class="check"><input type="checkbox" name="welcome" checked> Send welcome emails to new users</label>
+        <label class="check"><input type="checkbox" name="updateExisting"> Update existing users (name, email and password)</label><div class="row"><button class="btn primary" type="submit" ${ok ? '' : 'disabled'}>Upload ${ok} user${ok === 1 ? '' : 's'}</button><button class="btn" type="button" data-act="csvClear">Start again</button></div></form>`; }
+  }
+  return `<div class="dash"><form data-form="csvPreview" class="card stack"><h2>Upload users from CSV</h2>
+      <div class="field"><label for="csvfile">CSV file</label><input id="csvfile" type="file" accept=".csv,text/csv" data-csv="1"></div>
+      <div class="field"><label for="csvtext">Or paste CSV</label><textarea id="csvtext" name="csv" rows="8" class="mono" style="font-size:.84rem">${esc(v?.text || '')}</textarea></div>
+      <div class="row"><button class="btn primary" type="submit">Preview</button><button class="btn" type="button" data-act="csvSample">Use sample data</button></div></form>
+    <aside class="block"><header><h3>File format</h3></header><div class="bb stack small" style="gap:8px"><p>First row is the header. Required: <code>username</code>, <code>firstname</code>, <code>lastname</code>, <code>email</code>.</p>
+      <p>Optional: <code>company</code>, <code>department</code>, <code>password</code>, and up to five enrolments as <code>course1</code> (short name), <code>role1</code> (role short name, default <code>student</code>) and <code>group1</code> (created if missing).</p>
+      <pre class="code">${esc(SAMPLE_CSV.split('\n').slice(0, 2).join('\n'))}</pre></div></aside></div>${preview}`;
+};
+
+ADMIN.courses = () => `<div class="dash"><section class="stack"><div class="spread"><h2>Courses</h2><button class="btn primary" data-act="newCourse">Create new course</button></div>
+    <div class="tw"><table><thead><tr><th>Course</th><th>Category</th><th>Teachers</th><th class="n">Learners</th><th></th></tr></thead><tbody>
+    ${S.courses.map(c => `<tr><td><button class="link" data-go="course" data-id="${c.id}">${esc(c.fullname)}</button><br><span class="mono muted">${esc(c.shortname)}</span>${!c.visible ? ' <span class="chip">Hidden</span>' : ''}</td><td class="small">${esc(h.cat(c.catId)?.name || '–')}</td><td class="small">${h.teachers(c.id).map(t => esc(fullname(t))).join(', ') || '–'}</td><td class="n">${h.students(c.id).length}</td>
+      <td><div class="tools"><button class="btn sm ghost" data-go="csettings" data-id="${c.id}">Settings</button>${h.has('course:delete') ? `<button class="btn sm ghost danger" data-act="deleteCourse" data-id="${c.id}">Delete</button>` : ''}</div></td></tr>`).join('')}
+    </tbody></table></div></section>
+    <section class="block"><header><h3>Categories</h3></header><div class="bb stack">${S.categories.map(k => `<div class="spread"><span>${esc(k.name)}</span><span class="muted small num">${S.courses.filter(c => c.catId === k.id).length} courses</span></div>`).join('')}
+      <form data-form="newCategory" class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:12px"><label class="lbl" for="kn">New category</label><input id="kn" name="name" type="text" required placeholder="e.g. Leadership"><button class="btn sm" type="submit">Add category</button></form></div></section></div>`;
+
+ADMIN.restore = () => `<form data-form="restore" class="card stack" style="max-width:720px"><h2>Restore a course from backup</h2>
+    <p class="muted">Choose a backup file made with Course › Settings › Backup. The course is restored as a new course.</p>
+    <div class="field"><label for="rfile">Backup file (.nbz.json)</label><input id="rfile" type="file" accept=".json,application/json" data-restore="1"></div>
+    <div class="field"><label for="rtext">Or paste the backup contents</label><textarea id="rtext" name="backup" rows="6" class="mono" style="font-size:.8rem" placeholder='{"format":"nb-academy-course-backup", …}'></textarea></div>
+    <div class="fgrid"><div class="field"><label for="rcat">Restore into category</label><select id="rcat" name="catId">${S.categories.map(k => `<option value="${k.id}">${esc(k.name)}</option>`).join('')}</select></div>
+      <div class="field"><label for="rshort">New short name (optional)</label><input id="rshort" name="shortname" type="text" placeholder="Keeps the original if free"></div></div>
+    <label class="check"><input type="checkbox" name="includeUsers" checked> Restore users and their data if the backup includes them</label>
+    <p class="err" id="restoreerr" hidden></p><div><button class="btn primary" type="submit">Restore course</button></div></form>`;
+
+ADMIN.logs = () => `<div class="spread" style="margin-bottom:14px"><p class="muted small">Latest ${Math.min(S.logs.length, 400)} events</p><input type="search" id="lsearch" data-filter="#llist" placeholder="Filter logs" aria-label="Filter logs" style="max-width:260px"></div>
+  <div class="tw"><table><thead><tr><th>Time</th><th>User</th><th>Event</th><th>Course</th></tr></thead><tbody id="llist">
+  ${S.logs.slice().sort((a, b) => b.t - a.t).map(l => `<tr data-s="${esc((fullname(l.uid) + ' ' + l.ev + ' ' + (h.course(l.cid)?.shortname || '')).toLowerCase())}"><td class="small num" style="white-space:nowrap">${fmtDate(l.t)}</td><td>${esc(fullname(l.uid))}</td><td>${esc(l.ev)}</td><td class="mono">${esc(h.course(l.cid)?.shortname || '–')}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No events logged yet.</td></tr>'}
+  </tbody></table></div>`;
