@@ -231,6 +231,12 @@ test('email is delivered over SMTP', async () => {
   S.outbox.forEach(m => { if (m.status === 'not sent') m.status = 'queued'; });
   await deliverMail();
   assert.ok(got.length > 0); assert.match(got[0], /Subject: /); assert.ok(S.outbox.some(m => m.status === 'sent'));
+  // Links in emails are full web addresses even when no site address is set
+  assert.ok(!S.site.url);
+  const sentWithLinks = S.outbox.filter(m => m.status === 'sent' && m.body.includes('?go='));
+  assert.ok(sentWithLinks.length > 0 && sentWithLinks.every(m => m.body.includes(base + '/?go=')), 'links are absolute');
+  const decoded = got.map(g => Buffer.from(g.split('\n\n').slice(1).join('').replace(/\s/g, ''), 'base64').toString('utf8')).join('\n');
+  assert.ok(decoded.includes(base + '/?go='), 'the delivered message carries the absolute link');
   S.site.email.enabled = false;
 });
 test('LDAP sign-in creates the account on first use', async () => {
@@ -389,6 +395,17 @@ test('new accounts, including built-in administrators, start with the default pa
     assert.equal(res.json.state.users.find(u => u.id === res.json.state.me).mustChangePassword, true, un);
     assert.equal((await op(res.cookie, 'sendMessage', {to:'u1', text:'hi'})).status, 428, `${un} must change the password before doing anything`);
   }
+});
+
+test('usernames may use capital letters, keep them, and are matched without regard to case', async () => {
+  const a = await login('admin');
+  let r = await op(a, 'newUser', {firstname:'Rahul', lastname:'Sharma', username:'Rahul.Sharma', email:'rahul.sharma@example.com', welcome:false, personas:['learner']});
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.state.users.find(u => u.id === r.json.result.id).username, 'Rahul.Sharma');
+  r = await op(a, 'newUser', {firstname:'R', lastname:'S', username:'rahul.SHARMA', email:'r2@example.com', welcome:false, personas:['learner']});
+  assert.equal(r.status, 400); assert.match(r.json.error, /already exists/);
+  assert.equal((await op(a, 'newUser', {firstname:'R', lastname:'S', username:'rahul sharma', email:'r3@example.com', welcome:false, personas:['learner']})).status, 400);
+  for (const typed of ['Rahul.Sharma', 'rahul.sharma', 'RAHUL.SHARMA']) assert.equal((await call('POST', '/api/login', {username:typed, password:'Welcome@1'})).status, 200, typed);
 });
 
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {

@@ -161,7 +161,7 @@ const LocalBackend = (() => {
       if (!set(FKEY, JSON.stringify(FILES))) toast('Browser storage is full, so this file is only kept until you reload.');
       return out;
     },
-    async forgot(login) { const q = String(login || '').trim().toLowerCase(); const u = DB.users.find(x => x.username === q || x.email.toLowerCase() === q); if (u) { const tok = C._.makeToken(DB, env, u.id, 'reset', 2 * 3600e3); C._.notifyT(DB, env, 'passwordReset', u.id, {link:C.linkTo(DB, 'setpassword', tok)}); persist(); } return {ok:true}; },
+    async forgot(login) { const q = String(login || '').trim().toLowerCase(); const u = DB.users.find(x => C.sameName(x.username, q) || C.sameName(x.email, q)); if (u) { const tok = C._.makeToken(DB, env, u.id, 'reset', 2 * 3600e3); C._.notifyT(DB, env, 'passwordReset', u.id, {link:C.linkTo(DB, 'setpassword', tok)}); persist(); } return {ok:true}; },
     async tokenInfo(t) { const x = C._.useToken(DB, env, t, false); const u = x && DB.users.find(y => y.id === x.userId); return u ? {valid:true, name:u.firstname, username:u.username} : {valid:false}; },
     async tokenPassword(token, password) { const x = C._.useToken(DB, env, token, false); if (!x) throw new ApiError('This link has expired or was already used.', 400); try { C._.checkPassword(DB, password); } catch (e) { throw new ApiError(e.message, 400); } const u = DB.users.find(y => y.id === x.userId); u.password = password; u.mustChangePassword = false; C._.useToken(DB, env, token, true); persist(); return {ok:true, username:u.username}; },
     async testEmail() { throw new ApiError('The preview cannot send email. Use the server edition to test SMTP.', 400); },

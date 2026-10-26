@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (42 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (43 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -182,6 +182,10 @@ location / {
 
 Every new account starts with the password **`Welcome@1`** and must choose its own password at first sign-in. This covers accounts added in Site administration › Users without a password, CSV uploads with an empty password, and the built-in administrators. Accounts created through single sign-on or LDAP are the exception: they use the company sign-in instead. To use a different starting password, set `NB_DEFAULT_PASSWORD` on the server. Anyone who knows someone's username can sign in with the starting password until that person has signed in once, so ask new users to sign in soon after their account is created.
 
+## Usernames
+
+Usernames may use letters (capital or small), numbers, dots, dashes and underscores. They keep the capitalisation they were created with, but sign-in ignores case. `Rahul.Sharma` can sign in as `rahul.sharma`, and no two accounts can differ only in capital letters.
+
 ## Built-in site administrators and removed accounts
 
 `server/site-admins.js` controls administrator accounts from the server side.
@@ -197,14 +201,14 @@ Every new account starts with the password **`Welcome@1`** and must choose its o
 - Today it lists the `admin` account (Admin User) from the demo data, rohit.chakrabarti@nobroker.in and gaurav.garg@nobroker.in.
 - Their enrolments, roles, cohort mappings and sessions are removed, and each deletion is recorded in the audit log.
 - Content they created stays, such as courses and posts. Their posts and grades show as "Former user".
-- An account listed in `admins` is never removed, and neither is the last remaining administrator.
+- An account listed in `admins` is never removed, and neither is the last remaining administrator. The list is not applied when the server runs with `--demo`.
 - `NB_REMOVE_ACCOUNTS` overrides this list. Set it to an empty value to remove nothing.
 
 A new site has no `admin` account; the accounts in `admins` are its administrators.
 
 ## Connecting your company systems
 
-- **Email:** Site administration › Email, SSO and LDAP › Email (SMTP). Enter your mail server, then "Send a test email". Until it is on, every email is kept in the Email log.
+- **Email:** Site administration › Email, SSO and LDAP › Email (SMTP). Enter your mail server, then "Send a test email". Until email is on, emails are kept in the Email log and **not sent**; turning it on sends those from the last 3 days. Google Workspace: `smtp.gmail.com`, port 587, an app password. Microsoft 365: `smtp.office365.com`, port 587. Links in emails use the site address (General › Site address, or `NB_PUBLIC_URL`). Until that is set, they use the address the site is being reached at.
 - **Single sign-on:** register `https://YOUR-SITE/auth/sso/callback` as a redirect URI with your OpenID Connect provider, then enter the issuer URL, client ID and secret. Users are matched by email address.
 - **LDAP / Active Directory:** enter the server URL (`ldaps://…` recommended) and a bind DN pattern containing `{username}`, then "Test a sign-in".
 - **Custom domain:** set General › Site address, point DNS at the server and terminate HTTPS at the reverse proxy.

@@ -489,6 +489,10 @@ function verifyAudit(list) {
 
 /* ---------------- Templates, in-app notifications and the email outbox ---------------- */
 function fill(tpl, vars) { return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? String(vars[k]) : ''); }
+/* Usernames keep the capitalisation they were given, but are matched without regard to case */
+const USERNAME_RE = /^[A-Za-z0-9._-]+$/, USERNAME_RULE = 'Username may only use letters, numbers, dot, dash and underscore';
+const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+const findUser = (S, name) => S.users.find(u => sameName(u.username, name));
 function linkTo(S, go, id) { return `${S.site.url || ''}/?go=${encodeURIComponent(go || 'dashboard')}${id ? `&id=${encodeURIComponent(id)}` : ''}`; }
 function fmtD(t) { return t ? new Date(t).toLocaleString('en-IN', {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—'; }
 function queueEmail(S, env, u, subject, body, key) {
@@ -642,12 +646,12 @@ function validateUserRows(S, csvText) {
   if (errorsGlobal.length) return {headers, rows:[], errors:errorsGlobal};
   const seen = new Set();
   const out = rows.map((r, i) => {
-    const errors = [], un = (r.username || '').toLowerCase();
-    if (!/^[a-z0-9._-]+$/.test(un)) errors.push('Username may only use lowercase letters, numbers, dot, dash and underscore');
-    if (seen.has(un)) errors.push('Duplicate username in this file'); seen.add(un);
+    const errors = [], un = String(r.username || '').trim();
+    if (!USERNAME_RE.test(un)) errors.push(USERNAME_RULE);
+    if (seen.has(un.toLowerCase())) errors.push('Duplicate username in this file'); seen.add(un.toLowerCase());
     if (!r.firstname) errors.push('First name is empty'); if (!r.lastname) errors.push('Last name is empty');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email || '')) errors.push('Email address is not valid');
-    const existing = S.users.find(u => u.username === un);
+    const existing = findUser(S, un);
     const enrols = [];
     for (let k = 1; k <= 5; k++) {
       const cs = r['course' + k]; if (!cs) continue;
@@ -754,8 +758,8 @@ op('courseSettings', (S, h, p, env) => {
 });
 op('newUser', (S, h, p, env) => {
   need(h.has('user:manage'), 'You cannot create users.');
-  const un = req(p.username, 'Username', 60).toLowerCase(); need(/^[a-z0-9._-]+$/.test(un), 'Username may only use lowercase letters, numbers, dot, dash and underscore.', 400);
-  need(!S.users.some(u => u.username === un), 'This username already exists. Choose another.', 400);
+  const un = req(p.username, 'Username', 60).trim(); need(USERNAME_RE.test(un), USERNAME_RULE + '.', 400);
+  need(!findUser(S, un), 'This username already exists. Choose another.', 400);
   need(!p.admin || h.isAdmin(), 'Only site administrators can create administrators.');
   const pw = p.password ? String(p.password) : (env.defaultPassword || DEFAULT_PASSWORD);
   if (p.password) checkPassword(S, pw);
@@ -806,7 +810,7 @@ op('uploadUsers', (S, h, p, env) => {
   const res = {created:0, updated:0, enrolled:0, skipped:0, errors:[]};
   for (const r of v.rows) {
     if (r.errors.length) { res.skipped++; res.errors.push(`Line ${r.line}: ${r.errors.join('; ')}`); continue; }
-    let u = S.users.find(x => x.username === r.username);
+    let u = findUser(S, r.username);
     let isNew = false;
     if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:r.firstname, lastname:r.lastname, email:u.builtinAdmin ? u.email : r.email, company:r.company || u.company, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
     else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, company:r.company, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
@@ -839,7 +843,7 @@ op('restoreCourse', (S, h, p, env) => {
   if (b.includeUsers && p.includeUsers) {
     const umap = new Map();
     for (const u of b.users || []) {
-      let ex = S.users.find(x => x.username === u.username);
+      let ex = findUser(S, u.username);
       if (!ex) { ex = {id:env.uid('u'), username:u.username, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:false, created:env.now(), ...env.hash('changeme')}; S.users.push(ex); res.users++; }
       umap.set(u.id, ex.id);
     }
@@ -1209,7 +1213,7 @@ function run(S, meId, name, payload, env) {
 }
 /* Returns {user} or {error}. opts.trusted skips the password check (used after LDAP or SSO). */
 function login(S, username, password, env, opts = {}) {
-  const u = S.users.find(x => x.username === String(username || '').trim().toLowerCase() || (opts.byEmail && x.email.toLowerCase() === String(username).toLowerCase()));
+  const u = S.users.find(x => sameName(x.username, username) || (opts.byEmail && sameName(x.email, username)));
   const sec = S.site.security || {};
   if (!u) return {error:'Invalid login, please try again.'};
   if (u.lockedUntil && u.lockedUntil > env.now()) return {error:`This account is locked after too many failed attempts. Try again after ${fmtD(u.lockedUntil)} or ask an administrator to unlock it.`, locked:true};
@@ -1314,5 +1318,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
   gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD,
-  DEFAULT_PASSWORD, _:{OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, _:{OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

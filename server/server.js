@@ -70,6 +70,11 @@ if (store.isEmpty()) {
   store.save(S);
 } else S = store.load();
 const siteUrl = () => (process.env.NB_PUBLIC_URL || S.site.url || '').replace(/\/+$/, '');
+/* Links in emails must be full web addresses. Use the site address setting (or NB_PUBLIC_URL);
+   until one is set, use the address people reach this server at. */
+let seenOrigin = '';
+const publicBase = () => siteUrl() || seenOrigin;
+const absolutize = (text, base) => base ? String(text).replace(/(^|[\s(<"'])\/(\?go=|cert\/)/g, `$1${base}/$2`) : text;
 
 /* ---------- Built-in site administrators (server/site-admins.js and NB_SITE_ADMINS) ---------- */
 function ensureSiteAdmins() {
@@ -85,7 +90,7 @@ function ensureSiteAdmins() {
       continue;
     }
     const local = email.split('@')[0], base = local.toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'admin';
-    let un = base, i = 2; while (S.users.some(x => x.username === un)) un = base + i++;
+    let un = base, i = 2; while (Core.findUser(S, un)) un = base + i++;
     const parts = local.split(/[._-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1));
     u = {id:env.uid('u'), username:un, email, firstname:parts[0] || un, lastname:parts.slice(1).join(' '), admin:true, builtinAdmin:true, created:Date.now(), mustChangePassword:true,
       company:'', department:'', defaultPwSet:true, ...hashPassword(env.defaultPassword)};
@@ -93,7 +98,7 @@ function ensureSiteAdmins() {
     const tok = Core._.makeToken(S, env, u.id, 'setpw', 7 * 24 * 3600e3);
     Core._.notifyT(S, env, 'welcome', u.id, {link:Core.linkTo(S, 'setpassword', tok)});
     Core._.audit(S, env, null, 'Built-in administrator created', un, email);
-    console.log(`Site administrator ${email} created. Sign in as "${un}" with the starting password (it must be changed at first sign-in), or use this set-password link, valid 7 days: ${siteUrl() || `http://localhost:${PORT}`}/?go=setpassword&id=${tok}`);
+    console.log(`Site administrator ${email} created. Sign in as "${un}" with the starting password (it must be changed at first sign-in), or use this set-password link, valid 7 days: ${publicBase() || `http://localhost:${PORT}`}/?go=setpassword&id=${tok}`);
     changed = true;
   }
   if (changed) store.save(S);
@@ -103,7 +108,7 @@ function removeAccounts(list) {
   const keep = new Set(siteConfig.admins.map(x => String(x).toLowerCase()));
   let changed = false;
   for (const entry of list.map(x => String(x).trim().toLowerCase()).filter(Boolean)) {
-    const u = S.users.find(x => x.username === entry || String(x.email).toLowerCase() === entry);
+    const u = S.users.find(x => Core.sameName(x.username, entry) || Core.sameName(x.email, entry));
     if (!u || u.builtinAdmin || keep.has(String(u.email).toLowerCase())) continue;
     if (u.admin && !S.users.some(x => x.admin && x.id !== u.id && !x.suspended)) { console.log(`Not removing ${u.username}: it is the only administrator.`); continue; }
     S.users = S.users.filter(x => x.id !== u.id); S.enrol = S.enrol.filter(e => e.userId !== u.id); S.sysroles = S.sysroles.filter(r => r.userId !== u.id);
@@ -146,7 +151,8 @@ function removeDemoData() {
 const siteConfig = require('./site-admins');
 ensureSiteAdmins();
 removeDemoData();
-removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : siteConfig.remove);
+// Demo mode keeps the demo accounts (including 'admin'); the remove list applies to the real site
+removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : DEMO ? [] : siteConfig.remove);
 
 /* Run an operation. If it fails part-way, reload the last saved state so nothing half-done remains. */
 function runOp(uid, name, payload) {
@@ -162,7 +168,7 @@ async function deliverMail() {
   const cfg = S.site.email; if (mailing || !cfg?.enabled || !cfg.host) return; mailing = true;
   try {
     for (const m of S.outbox.filter(x => x.status === 'queued').slice(0, 20)) {
-      try { await sendMail(cfg, m); m.status = 'sent'; m.sentAt = Date.now(); m.error = ''; }
+      try { m.body = absolutize(m.body, publicBase()); await sendMail(cfg, m); m.status = 'sent'; m.sentAt = Date.now(); m.error = ''; }
       catch (e) { m.tries = (m.tries || 0) + 1; m.error = e.message; m.status = m.tries >= 3 ? 'failed' : 'queued'; }
     }
     store.save(S);
@@ -252,8 +258,9 @@ function certPdfFor(code) {
 
 /* ---------- Login helpers ---------- */
 async function passwordLogin(username, password) {
-  const name = String(username || '').trim().toLowerCase();
-  let u = S.users.find(x => x.username === name);
+  const typed = String(username || '').trim();
+  let u = Core.findUser(S, typed);
+  const name = u ? u.username : typed.toLowerCase();
   const L = S.site.ldap || {};
   if (L.enabled && (u?.auth === 'ldap' || (!u && L.autoCreate))) {
     const r = await ldap.bind(L.url, L.bindDn.replace('{username}', ldap.escapeDn(name)), String(password || ''));
@@ -266,7 +273,7 @@ async function passwordLogin(username, password) {
 }
 function createExternalUser(x) {
   let un = String(x.username || x.email.split('@')[0]).toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'user'; const base = un; let i = 1;
-  while (S.users.some(u => u.username === un)) un = `${base}${++i}`;
+  while (Core.findUser(S, un)) un = `${base}${++i}`;
   const u = {id:env.uid('u'), username:un, email:x.email, firstname:x.firstname || un, lastname:x.lastname || '', admin:false, created:Date.now(), auth:x.auth, ...hashPassword(crypto.randomBytes(24).toString('hex'))};
   S.users.push(u); Core._.audit(S, env, null, 'User created automatically', un, `First sign-in via ${x.auth.toUpperCase()}`); Core._.applyRules(S, env, u.id);
   return u;
@@ -283,6 +290,7 @@ function afterPassword(req, res, u) {
 /* ---------- Router ---------- */
 async function handle(req, res) {
   const url = new URL(req.url, 'http://x');
+  if (req.headers.host && !siteUrl()) seenOrigin = `${req.headers['x-forwarded-proto'] === 'https' || req.socket.encrypted ? 'https' : 'http'}://${req.headers.host}`;
   const p = url.pathname;
   try {
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) { if (process.env.NODE_ENV !== 'production') SHELL = shell(); return send(res, 200, SHELL, {'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-cache'}); }
@@ -365,7 +373,7 @@ async function handle(req, res) {
     if (p === '/api/forgot') {
       if (throttled(ip)) return sendErr(res, 429, 'Too many requests. Try again later.'); failed(ip);
       const b = await readJSON(req); const q = String(b.login || '').trim().toLowerCase();
-      const u = S.users.find(x => x.username === q || x.email.toLowerCase() === q);
+      const u = S.users.find(x => Core.sameName(x.username, q) || Core.sameName(x.email, q));
       if (u && !u.suspended && u.auth !== 'sso' && u.auth !== 'ldap') mutate(() => { const tok = Core._.makeToken(S, env, u.id, 'reset', 2 * 3600e3); Core._.notifyT(S, env, 'passwordReset', u.id, {link:Core.linkTo(S, 'setpassword', tok)}); });
       deliverMail();
       return send(res, 200, {ok:true});
