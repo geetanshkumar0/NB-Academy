@@ -97,10 +97,10 @@ Object.assign(A, {
       <div class="field"><label for="nu1">First name</label><input id="nu1" name="firstname" type="text" required></div><div class="field"><label for="nu2">Last name</label><input id="nu2" name="lastname" type="text" required></div>
       <div class="field"><label for="nu3">Username</label><input id="nu3" name="username" type="text" required pattern="[a-z0-9._\\-]+" title="Lowercase letters, numbers, dot, dash or underscore" autocapitalize="none"></div><div class="field"><label for="nu4">Email address</label><input id="nu4" name="email" type="email" required></div>
       <div class="field"><label for="nu7">Company</label><input id="nu7" name="company" type="text"></div><div class="field"><label for="nu8">Department</label><input id="nu8" name="department" type="text"></div>
-      <div class="field"><label for="nu5">Temporary password (optional)</label><input id="nu5" name="password" type="text" placeholder="Leave blank to send a set-password link"><span class="hint">${esc(pwRuleText())}</span></div>
+      <div class="field"><label for="nu5">Starting password (optional)</label><input id="nu5" name="password" type="text" placeholder="Leave blank to use ${esc(C.DEFAULT_PASSWORD)}"><span class="hint">${esc(pwRuleText())}</span></div>
       <div class="stack" style="gap:6px;align-self:end"><label class="check"><input type="checkbox" name="welcome" checked> Send the welcome email</label></div></div>
       <div class="stack" style="gap:10px"><h3>Personas</h3>${personaFields(null)}</div>
-      <p class="muted small">The user sets their own password, accepts the platform terms and chooses accessibility preferences at first sign-in. Matching assignment rules run automatically.</p>
+      <p class="muted small">The user signs in with the starting password (${esc(C.DEFAULT_PASSWORD)} unless you set one) or the link in the welcome email, then chooses their own password, accepts the platform terms and chooses accessibility preferences at first sign-in. Matching assignment rules run automatically.</p>
       <p class="err" id="nuerr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Create user</button></div></form>`, true)
 });
 

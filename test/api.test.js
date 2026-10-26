@@ -375,3 +375,15 @@ test('built-in site administrators are created at start-up and cannot be removed
   assert.equal((await op(a, 'suspendUser', {id:g.id, on:true})).status, 400);
   assert.equal((await op(a, 'setPersonas', {userId:g.id, personas:['admin', 'learner']})).status, 200);
 });
+
+test('new accounts, including built-in administrators, start with the default password and must change it', async () => {
+  const a = await login('admin');
+  const r = await op(a, 'newUser', {firstname:'Default', lastname:'Pw', username:'default.pw', email:'default.pw@example.com', welcome:false, personas:['learner']});
+  assert.equal(r.status, 200, r.text);
+  for (const un of ['default.pw', 'geetansh.kumar', 'rohit.chakrabarti', 'gaurav.garg']) {
+    const res = await call('POST', '/api/login', {username:un, password:'Welcome@1'});
+    assert.equal(res.status, 200, `${un}: ${res.text}`);
+    assert.equal(res.json.state.users.find(u => u.id === res.json.state.me).mustChangePassword, true, un);
+    assert.equal((await op(res.cookie, 'sendMessage', {to:'u1', text:'hi'})).status, 428, `${un} must change the password before doing anything`);
+  }
+});

@@ -30,14 +30,14 @@ Demo accounts all use the password `demo`:
 To start a real site without demo data:
 
 ```bash
-NB_ADMIN_PASSWORD='choose-a-strong-one' node server/server.js --empty
+node server/server.js --empty     # admin / Welcome@1, changed at first sign-in
 ```
 
 Other commands:
 
 ```bash
 node server/server.js --reset     # wipe the database and reload demo data
-node --test test/api.test.js      # run the API test suite (39 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js      # run the API test suite (40 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js       # build dist/preview.html (browser-only edition)
 ```
 
@@ -48,7 +48,8 @@ node tools/build-preview.js       # build dist/preview.html (browser-only editio
 | `PORT` | `8080` | HTTP port |
 | `HOST` | `0.0.0.0` | Interface to listen on |
 | `NB_DATA_DIR` | `./data` | Database (`nbacademy.db`) and uploaded files (`files/`) |
-| `NB_ADMIN_PASSWORD` | random | Admin password used with `--empty` |
+| `NB_ADMIN_PASSWORD` | `Welcome@1` | Password for the install `admin` account with `--empty` (the default must be changed at first sign-in) |
+| `NB_DEFAULT_PASSWORD` | `Welcome@1` | Starting password for new accounts (always changed at first sign-in) |
 | `NB_SECURE_COOKIES` | off | Set to `1` when served over HTTPS (also detected from `X-Forwarded-Proto`) |
 | `NODE_ENV` | | Set to `production` to cache the page shell |
 | `NB_PUBLIC_URL` | site setting | Public address used in emails, certificates and SSO redirects |
@@ -176,6 +177,10 @@ location / {
 - **Background jobs** (deadline reminders, overdue locks, recertification, email delivery) run inside the server process every 5 minutes and every 30 seconds. Run one server process per data folder.
 - **Not included from Moodle:** SCORM 2004 / xAPI, LTI, H5P, plagiarism plugins, mobile app web services, multi-language packs, and the plugin system. See COVERAGE.md for the remaining limits.
 
+## Starting password for new accounts
+
+Every new account starts with the password **`Welcome@1`** and must choose its own password at first sign-in. This covers accounts added in Site administration › Users without a password, CSV uploads with an empty password, the install `admin` account and the built-in administrators. Accounts created through single sign-on or LDAP are the exception: they use the company sign-in instead. To use a different starting password, set `NB_DEFAULT_PASSWORD` on the server. Anyone who knows someone's username can sign in with the starting password until that person has signed in once, so ask new users to sign in soon after their account is created.
+
 ## Built-in site administrators
 
 `server/site-admins.js` lists email addresses that are always site administrators:
@@ -184,7 +189,7 @@ location / {
 - rohit.chakrabarti@nobroker.in
 - gaurav.garg@nobroker.in
 
-Every time the server starts, it makes sure each address has an administrator account. A missing account is created with a username taken from the email (for example `geetansh.kumar`) and sent a welcome email with a set-password link. The link is also printed in the server console, in case email is not set up yet. An existing account with that email is given administrator access and reactivated. With single sign-on turned on, they can also sign in through it, because accounts are matched by email.
+Every time the server starts, it makes sure each address has an administrator account. A missing account is created with a username taken from the email (for example `geetansh.kumar`) and the starting password `Welcome@1`. It is also sent a welcome email with a set-password link, which is printed in the server console too, in case email is not set up yet. An existing built-in account that has never been signed in to is given the starting password once. An existing account with that email is given administrator access and reactivated. With single sign-on turned on, they can also sign in through it, because accounts are matched by email.
 
 These accounts cannot be deleted or suspended in the app. Their administrator access and email address cannot be changed there either. To add more without editing the file, set `NB_SITE_ADMINS="a@company.com,b@company.com"`. To remove someone, delete their line and restart. They then become an ordinary administrator, managed in Site administration › Users.
 

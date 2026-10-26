@@ -46,7 +46,7 @@ function verifyPassword(u, pw) {
 }
 let store;
 const env = {now:() => Date.now(), uid:p => (p || 'x') + crypto.randomBytes(6).toString('hex'), token:() => crypto.randomBytes(24).toString('base64url'),
-  hash:hashPassword, verify:verifyPassword, scormExtract:(fileId, cmid) => extractScorm(fileId, cmid)};
+  hash:hashPassword, verify:verifyPassword, defaultPassword:process.env.NB_DEFAULT_PASSWORD || Core.DEFAULT_PASSWORD, scormExtract:(fileId, cmid) => extractScorm(fileId, cmid)};
 
 /* ---------- State ---------- */
 if (args.has('--reset')) { for (const f of ['nbacademy.db', 'nbacademy.db-wal', 'nbacademy.db-shm']) fs.rmSync(path.join(DATA, f), {force:true}); for (const d of ['files', 'scorm']) fs.rmSync(path.join(DATA, d), {recursive:true, force:true}); console.log('Database and files deleted.'); }
@@ -55,11 +55,11 @@ let S;
 if (store.isEmpty()) {
   if (args.has('--empty')) {
     S = Core.emptyState();
-    const pw = process.env.NB_ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url') + 'A1!';
-    S.users.push({id:env.uid('u'), username:'admin', firstname:'Admin', lastname:'User', email:'admin@example.com', admin:true, created:Date.now(), termsAccepted:1, prefsSet:true, ...hashPassword(pw)});
+    const pw = process.env.NB_ADMIN_PASSWORD || env.defaultPassword;
+    S.users.push({id:env.uid('u'), username:'admin', firstname:'Admin', lastname:'User', email:'admin@example.com', admin:true, created:Date.now(), termsAccepted:1, prefsSet:true, mustChangePassword:!process.env.NB_ADMIN_PASSWORD, ...hashPassword(pw)});
     S.categories.push({id:env.uid('k'), name:'Miscellaneous'});
     Core._.audit(S, env, null, 'Site installed', S.site.name, 'Empty site');
-    console.log(`Created empty site. Log in as "admin" with password: ${pw}`);
+    console.log(`Created empty site. Log in as "admin" with password: ${pw}${process.env.NB_ADMIN_PASSWORD ? '' : ' (it must be changed at first sign-in)'}`);
   } else {
     const seeded = Core.seed(env); S = seeded.state;
     for (const [id, content] of Object.entries(seeded.files)) fs.writeFileSync(store.filePath(id), typeof content === 'string' ? content : Buffer.from(content.base64, 'base64'));
@@ -77,6 +77,8 @@ function ensureSiteAdmins() {
   for (const email of emails) {
     let u = S.users.find(x => String(x.email).toLowerCase() === email);
     if (u) {
+      // Never signed in and never set a password: give it the starting password, so it can be used
+      if (!u.lastLogin && !u.pwChanged && u.mustChangePassword !== false && !u.defaultPwSet) { Object.assign(u, hashPassword(env.defaultPassword), {mustChangePassword:true, defaultPwSet:true}); changed = true; console.log(`Site administrator ${email}: sign in as "${u.username}" with the starting password; it must be changed at first sign-in.`); }
       if (!u.admin || !u.builtinAdmin || u.suspended) { const was = u.admin; Object.assign(u, {admin:true, builtinAdmin:true, suspended:false}); changed = true; if (!was) Core._.audit(S, env, null, 'Built-in administrator granted', u.username, email); }
       continue;
     }
@@ -84,12 +86,12 @@ function ensureSiteAdmins() {
     let un = base, i = 2; while (S.users.some(x => x.username === un)) un = base + i++;
     const parts = local.split(/[._-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1));
     u = {id:env.uid('u'), username:un, email, firstname:parts[0] || un, lastname:parts.slice(1).join(' '), admin:true, builtinAdmin:true, created:Date.now(), mustChangePassword:true,
-      company:'', department:'', ...hashPassword(crypto.randomBytes(24).toString('hex'))};
+      company:'', department:'', defaultPwSet:true, ...hashPassword(env.defaultPassword)};
     S.users.push(u);
     const tok = Core._.makeToken(S, env, u.id, 'setpw', 7 * 24 * 3600e3);
     Core._.notifyT(S, env, 'welcome', u.id, {link:Core.linkTo(S, 'setpassword', tok)});
     Core._.audit(S, env, null, 'Built-in administrator created', un, email);
-    console.log(`Site administrator ${email} created (username "${un}"). Set-password link, valid 7 days: ${siteUrl() || `http://localhost:${PORT}`}/?go=setpassword&id=${tok}`);
+    console.log(`Site administrator ${email} created. Sign in as "${un}" with the starting password (it must be changed at first sign-in), or use this set-password link, valid 7 days: ${siteUrl() || `http://localhost:${PORT}`}/?go=setpassword&id=${tok}`);
     changed = true;
   }
   if (changed) store.save(S);

@@ -407,6 +407,9 @@ function seed(env) {
   for (const f of SEED_HOOKS) f(S, env, seedFiles, H2);
   return {state:S, files:seedFiles};
 }
+/* Starting password for new accounts. Everyone must change it at first sign-in (mustChangePassword).
+   The server can override it with NB_DEFAULT_PASSWORD (passed in as env.defaultPassword). */
+const DEFAULT_PASSWORD = 'Welcome@1';
 const DEFAULT_TEMPLATES = {
   welcome:{label:'Welcome email', subject:'Welcome to {site}', body:'Hi {firstname},\n\nAn account has been created for you on {site}.\nUsername: {username}\n\nSet your password and sign in here:\n{link}\n\nThis link is valid for 7 days.', email:true, inapp:false},
   assigned:{label:'Course assigned', subject:'New training assigned: {course}', body:'Hi {firstname},\n\n{course} has been assigned to you by {sender}. Please complete it by {due}.\n\nStart here: {link}', email:true, inapp:true},
@@ -754,7 +757,7 @@ op('newUser', (S, h, p, env) => {
   const un = req(p.username, 'Username', 60).toLowerCase(); need(/^[a-z0-9._-]+$/.test(un), 'Username may only use lowercase letters, numbers, dot, dash and underscore.', 400);
   need(!S.users.some(u => u.username === un), 'This username already exists. Choose another.', 400);
   need(!p.admin || h.isAdmin(), 'Only site administrators can create administrators.');
-  const pw = p.password ? String(p.password) : (env.uid('') + env.uid('') + 'A1!');
+  const pw = p.password ? String(p.password) : (env.defaultPassword || DEFAULT_PASSWORD);
   if (p.password) checkPassword(S, pw);
   const u = {id:env.uid('u'), firstname:req(p.firstname, 'First name', 100), lastname:req(p.lastname, 'Last name', 100), username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, company:str(p.company, 120), department:str(p.department, 120), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
   S.users.push(u); log(S, env, h.meId, `User created: ${un}`); audit(S, env, h.meId, 'User created', un, `${u.firstname} ${u.lastname} <${u.email}>`);
@@ -806,7 +809,7 @@ op('uploadUsers', (S, h, p, env) => {
     let u = S.users.find(x => x.username === r.username);
     let isNew = false;
     if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:r.firstname, lastname:r.lastname, email:u.builtinAdmin ? u.email : r.email, company:r.company || u.company, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
-    else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, company:r.company, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
+    else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, company:r.company, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
     for (const e of r.enrols) {
       if (!S.enrol.some(x => x.courseId === e.courseId && x.userId === u.id)) { const dd = Number(p.dueDays) || 0; S.enrol.push({id:env.uid('e'), courseId:e.courseId, userId:u.id, role:e.role, time:env.now(), ...(dd && e.role === 'student' ? {due:env.now() + dd * D, mandatory:true, assignedBy:h.meId, source:'upload'} : {})}); res.enrolled++; }
       if (e.group) { let g = S.groups.find(x => x.courseId === e.courseId && x.name.toLowerCase() === e.group.toLowerCase()); if (!g) { g = {id:env.uid('g'), courseId:e.courseId, name:e.group, members:[]}; S.groups.push(g); } if (!g.members.includes(u.id)) g.members.push(u.id); }
@@ -1311,5 +1314,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
   gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD,
-  _:{OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, _:{OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });
