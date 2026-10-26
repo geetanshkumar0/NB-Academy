@@ -12,7 +12,8 @@ const crypto = require('node:crypto');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-test-'));
 process.env.NB_DATA_DIR = dir;
-const {server, getState, deliverMail, runTick, _store} = require('../server/server.js');
+process.env.NB_REMOVE_ACCOUNTS = ''; // the tests use the demo accounts; removal is tested directly below
+const {server, getState, deliverMail, runTick, removeAccounts, _store} = require('../server/server.js');
 const Core = require('../public/core.js');
 let base;
 const extras = [];
@@ -364,7 +365,8 @@ test('personas: users are created with several personas, and only administrators
 
 test('built-in site administrators are created at start-up and cannot be removed in the app', async () => {
   const a = await login('admin'); const st = (await call('GET', '/api/state', null, a)).json.state;
-  for (const email of ['geetansh.kumar@nobroker.in', 'rohit.chakrabarti@nobroker.in', 'gaurav.garg@nobroker.in']) {
+  assert.ok(!st.users.some(x => x.email === 'rohit.chakrabarti@nobroker.in' || x.email === 'gaurav.garg@nobroker.in'), 'only geetansh.kumar is built in');
+  for (const email of ['geetansh.kumar@nobroker.in']) {
     const u = st.users.find(x => x.email === email); assert.ok(u && u.admin && u.builtinAdmin, email);
     assert.ok(st.outbox.some(m => m.to === email), 'welcome email queued for ' + email);
   }
@@ -380,10 +382,24 @@ test('new accounts, including built-in administrators, start with the default pa
   const a = await login('admin');
   const r = await op(a, 'newUser', {firstname:'Default', lastname:'Pw', username:'default.pw', email:'default.pw@example.com', welcome:false, personas:['learner']});
   assert.equal(r.status, 200, r.text);
-  for (const un of ['default.pw', 'geetansh.kumar', 'rohit.chakrabarti', 'gaurav.garg']) {
+  for (const un of ['default.pw', 'geetansh.kumar']) {
     const res = await call('POST', '/api/login', {username:un, password:'Welcome@1'});
     assert.equal(res.status, 200, `${un}: ${res.text}`);
     assert.equal(res.json.state.users.find(u => u.id === res.json.state.me).mustChangePassword, true, un);
     assert.equal((await op(res.cookie, 'sendMessage', {to:'u1', text:'hi'})).status, 428, `${un} must change the password before doing anything`);
   }
+});
+
+test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
+  const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
+  const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);
+  const c = await login('admin');
+  removeAccounts(['admin', 'dev@nbacademy.example', 'geetansh.kumar', 'geetansh.kumar@nobroker.in', 'nobody']);
+  const S1 = getState();
+  assert.ok(!S1.users.some(u => u.id === admin.id || u.id === dev.id), 'admin and dev removed');
+  assert.equal(S1.enrol.filter(e => e.userId === dev.id).length, 0);
+  assert.ok(S1.users.some(u => u.username === 'geetansh.kumar' && u.admin), 'built-in admin kept');
+  assert.ok(S1.audit.some(a => a.action === 'User removed by server configuration' && a.target === 'admin'));
+  assert.equal((await call('GET', '/api/state', null, c)).json.state, null, 'the removed admin is signed out');
+  const site = (await call('GET', '/api/site')).json; assert.ok(!site.demoUsers.includes('admin'));
 });

@@ -4,11 +4,11 @@
  * NB Academy server. Uses only Node.js built-in modules (Node 22.13 or newer).
  *
  *   node server/server.js            start (creates demo data on first run)
- *   node server/server.js --empty    first run without demo data (prints an admin password)
+ *   node server/server.js --empty    first run without demo data (administrators come from server/site-admins.js)
  *   node server/server.js --reset    delete the database and files, then reload demo data
  *
  * Environment: PORT (default 8080), HOST (default 0.0.0.0), NB_DATA_DIR (default ./data),
- *              NB_ADMIN_PASSWORD (used with --empty), NB_SECURE_COOKIES=1 behind HTTPS,
+ *              NB_SECURE_COOKIES=1 behind HTTPS,
  *              NB_PUBLIC_URL (overrides the site URL used in emails and SSO redirects).
  */
 const http = require('node:http');
@@ -55,11 +55,9 @@ let S;
 if (store.isEmpty()) {
   if (args.has('--empty')) {
     S = Core.emptyState();
-    const pw = process.env.NB_ADMIN_PASSWORD || env.defaultPassword;
-    S.users.push({id:env.uid('u'), username:'admin', firstname:'Admin', lastname:'User', email:'admin@example.com', admin:true, created:Date.now(), termsAccepted:1, prefsSet:true, mustChangePassword:!process.env.NB_ADMIN_PASSWORD, ...hashPassword(pw)});
     S.categories.push({id:env.uid('k'), name:'Miscellaneous'});
     Core._.audit(S, env, null, 'Site installed', S.site.name, 'Empty site');
-    console.log(`Created empty site. Log in as "admin" with password: ${pw}${process.env.NB_ADMIN_PASSWORD ? '' : ' (it must be changed at first sign-in)'}`);
+    console.log('Created empty site. Sign in with one of the site administrator accounts listed in server/site-admins.js.');
   } else {
     const seeded = Core.seed(env); S = seeded.state;
     for (const [id, content] of Object.entries(seeded.files)) fs.writeFileSync(store.filePath(id), typeof content === 'string' ? content : Buffer.from(content.base64, 'base64'));
@@ -71,7 +69,7 @@ const siteUrl = () => (process.env.NB_PUBLIC_URL || S.site.url || '').replace(/\
 
 /* ---------- Built-in site administrators (server/site-admins.js and NB_SITE_ADMINS) ---------- */
 function ensureSiteAdmins() {
-  const emails = [...new Set([...require('./site-admins'), ...(process.env.NB_SITE_ADMINS || '').split(',')].map(x => String(x).trim().toLowerCase()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
+  const emails = [...new Set([...siteConfig.admins, ...(process.env.NB_SITE_ADMINS || '').split(',')].map(x => String(x).trim().toLowerCase()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
   const want = new Set(emails); let changed = false;
   for (const u of S.users) if (u.builtinAdmin && !want.has(String(u.email).toLowerCase())) { delete u.builtinAdmin; changed = true; }
   for (const email of emails) {
@@ -96,7 +94,28 @@ function ensureSiteAdmins() {
   }
   if (changed) store.save(S);
 }
+/* Delete the accounts listed under "remove" in server/site-admins.js (or NB_REMOVE_ACCOUNTS) */
+function removeAccounts(list) {
+  const keep = new Set(siteConfig.admins.map(x => String(x).toLowerCase()));
+  let changed = false;
+  for (const entry of list.map(x => String(x).trim().toLowerCase()).filter(Boolean)) {
+    const u = S.users.find(x => x.username === entry || String(x.email).toLowerCase() === entry);
+    if (!u || u.builtinAdmin || keep.has(String(u.email).toLowerCase())) continue;
+    if (u.admin && !S.users.some(x => x.admin && x.id !== u.id && !x.suspended)) { console.log(`Not removing ${u.username}: it is the only administrator.`); continue; }
+    S.users = S.users.filter(x => x.id !== u.id); S.enrol = S.enrol.filter(e => e.userId !== u.id); S.sysroles = S.sysroles.filter(r => r.userId !== u.id);
+    S.groups.forEach(g => g.members = g.members.filter(m => m !== u.id));
+    S.cohorts.forEach(c => { c.members = c.members.filter(m => m !== u.id); c.leads = c.leads.filter(m => m !== u.id); c.trainers = c.trainers.filter(m => m !== u.id); });
+    S.tokens = (S.tokens || []).filter(t => t.userId !== u.id);
+    Core._.audit(S, env, null, 'User removed by server configuration', u.username, u.email);
+    store.dropUserSessions(u.id);
+    console.log(`Removed account ${u.username} (${u.email}) as listed in server/site-admins.js.`);
+    changed = true;
+  }
+  if (changed) store.save(S);
+}
+const siteConfig = require('./site-admins');
 ensureSiteAdmins();
+removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : siteConfig.remove);
 
 /* Run an operation. If it fails part-way, reload the last saved state so nothing half-done remains. */
 function runOp(uid, name, payload) {
@@ -242,7 +261,7 @@ async function handle(req, res) {
     if (req.method === 'GET' && /^\/cert\/[A-Za-z0-9]+\.pdf$/.test(p)) { const pdf = certPdfFor(p.slice(6, -4)); return pdf ? send(res, 200, pdf, {'Content-Type':'application/pdf', 'Content-Disposition':`inline; filename="certificate-${p.slice(6, -4)}.pdf"`}) : sendErr(res, 404, 'Certificate not found.'); }
     if (req.method === 'GET' && p.startsWith('/cert/')) return send(res, 200, certPage(decodeURIComponent(p.slice(6))), {'Content-Type':'text/html; charset=utf-8'});
     if (req.method === 'GET' && p === '/api/logo') { const id = S.site.branding?.logo, f = id && S.files.find(x => x.id === id); if (!f || !fs.existsSync(store.filePath(id))) return sendErr(res, 404, 'No logo.'); return send(res, 200, fs.readFileSync(store.filePath(id)), {'Content-Type':f.type, 'Cache-Control':'public, max-age=300', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"}); }
-    if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, codes:S.courses.filter(c => c.visible && c.status !== 'draft').slice(0, 8).map(c => c.shortname),
+    if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [], codes:S.courses.filter(c => c.visible && c.status !== 'draft').slice(0, 8).map(c => c.shortname),
       sso:S.site.sso?.enabled ? {label:S.site.sso.label} : null, forgot:true});
 
     if (req.method === 'GET' && p.startsWith('/files/')) {
@@ -388,4 +407,4 @@ if (require.main === module) {
   const stop = () => { try { store.save(S); } catch (x) {} process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
-module.exports = {server, getState:() => S, runTick, deliverMail, _store:() => store};
+module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, _store:() => store};

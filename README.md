@@ -30,14 +30,14 @@ Demo accounts all use the password `demo`:
 To start a real site without demo data:
 
 ```bash
-node server/server.js --empty     # admin / Welcome@1, changed at first sign-in
+node server/server.js --empty     # no demo data; sign in as geetansh.kumar / Welcome@1
 ```
 
 Other commands:
 
 ```bash
 node server/server.js --reset     # wipe the database and reload demo data
-node --test test/api.test.js      # run the API test suite (40 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js      # run the API test suite (41 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js       # build dist/preview.html (browser-only edition)
 ```
 
@@ -48,7 +48,6 @@ node tools/build-preview.js       # build dist/preview.html (browser-only editio
 | `PORT` | `8080` | HTTP port |
 | `HOST` | `0.0.0.0` | Interface to listen on |
 | `NB_DATA_DIR` | `./data` | Database (`nbacademy.db`) and uploaded files (`files/`) |
-| `NB_ADMIN_PASSWORD` | `Welcome@1` | Password for the install `admin` account with `--empty` (the default must be changed at first sign-in) |
 | `NB_DEFAULT_PASSWORD` | `Welcome@1` | Starting password for new accounts (always changed at first sign-in) |
 | `NB_SECURE_COOKIES` | off | Set to `1` when served over HTTPS (also detected from `X-Forwarded-Proto`) |
 | `NODE_ENV` | | Set to `production` to cache the page shell |
@@ -157,7 +156,7 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 ## Deploying
 
 1. Install Node.js 22.13+ on the server and copy this folder.
-2. Run `NB_ADMIN_PASSWORD=… NODE_ENV=production node server/server.js --empty` once, then start it normally with a process manager (systemd, pm2 or similar).
+2. Run `NODE_ENV=production node server/server.js --empty` once (sign in as `geetansh.kumar` / `Welcome@1`), then start it normally with a process manager (systemd, pm2 or similar).
 3. Put it behind a reverse proxy (nginx, Caddy) with HTTPS, and set `NB_SECURE_COOKIES=1`. Allow upload bodies of 25 MB.
 4. Back up the `data/` folder (database and files). SQLite's WAL mode allows a hot copy using `sqlite3 data/nbacademy.db ".backup backup.db"`.
 
@@ -179,19 +178,27 @@ location / {
 
 ## Starting password for new accounts
 
-Every new account starts with the password **`Welcome@1`** and must choose its own password at first sign-in. This covers accounts added in Site administration › Users without a password, CSV uploads with an empty password, the install `admin` account and the built-in administrators. Accounts created through single sign-on or LDAP are the exception: they use the company sign-in instead. To use a different starting password, set `NB_DEFAULT_PASSWORD` on the server. Anyone who knows someone's username can sign in with the starting password until that person has signed in once, so ask new users to sign in soon after their account is created.
+Every new account starts with the password **`Welcome@1`** and must choose its own password at first sign-in. This covers accounts added in Site administration › Users without a password, CSV uploads with an empty password, and the built-in administrators. Accounts created through single sign-on or LDAP are the exception: they use the company sign-in instead. To use a different starting password, set `NB_DEFAULT_PASSWORD` on the server. Anyone who knows someone's username can sign in with the starting password until that person has signed in once, so ask new users to sign in soon after their account is created.
 
-## Built-in site administrators
+## Built-in site administrators and removed accounts
 
-`server/site-admins.js` lists email addresses that are always site administrators:
+`server/site-admins.js` controls administrator accounts from the server side.
 
-- geetansh.kumar@nobroker.in
-- rohit.chakrabarti@nobroker.in
-- gaurav.garg@nobroker.in
+**`admins`** lists email addresses that are always site administrators. Today there is one: **geetansh.kumar@nobroker.in** (username `geetansh.kumar`, starting password `Welcome@1`).
+- Every time the server starts, it makes sure each address has an administrator account.
+- A missing account is created with a username taken from the email and the starting password. It is also sent a welcome email with a set-password link, which is printed in the server console too.
+- An existing built-in account that has never been signed in to is given the starting password once.
+- These accounts cannot be deleted or suspended in the app. Their administrator access and email address cannot be changed there either.
+- To add more without editing the file, set `NB_SITE_ADMINS="a@company.com,b@company.com"`.
 
-Every time the server starts, it makes sure each address has an administrator account. A missing account is created with a username taken from the email (for example `geetansh.kumar`) and the starting password `Welcome@1`. It is also sent a welcome email with a set-password link, which is printed in the server console too, in case email is not set up yet. An existing built-in account that has never been signed in to is given the starting password once. An existing account with that email is given administrator access and reactivated. With single sign-on turned on, they can also sign in through it, because accounts are matched by email.
+**`remove`** lists accounts, by username or email, that are deleted when the server starts.
+- Today it lists the demo/install `admin` account (Admin User), rohit.chakrabarti@nobroker.in and gaurav.garg@nobroker.in.
+- Their enrolments, roles, cohort mappings and sessions are removed, and each deletion is recorded in the audit log.
+- Content they created stays, such as courses and posts. Their posts and grades show as "Former user".
+- An account listed in `admins` is never removed, and neither is the last remaining administrator.
+- `NB_REMOVE_ACCOUNTS` overrides this list. Set it to an empty value to remove nothing.
 
-These accounts cannot be deleted or suspended in the app. Their administrator access and email address cannot be changed there either. To add more without editing the file, set `NB_SITE_ADMINS="a@company.com,b@company.com"`. To remove someone, delete their line and restart. They then become an ordinary administrator, managed in Site administration › Users.
+A fresh install with `--empty` no longer creates an `admin` account; the accounts in `admins` are the administrators.
 
 ## Connecting your company systems
 

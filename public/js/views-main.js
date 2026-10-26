@@ -3,7 +3,8 @@
 
 /* ---------- Login, forgot password, two-step code, set password from a link ---------- */
 function viewLogin() {
-  const demo = [['admin', 'Administrator'], ['rohan', 'Trainer · DA101, TE110 · also a learner'], ['priya', 'Trainer · BS201, BS150, new hires'], ['vikram', 'Team Lead · Analytics Team'], ['asha', 'Learner · one course overdue'], ['kabir', 'Learner · access request pending'], ['nisha', 'New hire · first login'], ['sana', 'Custom role · Course reviewer']];
+  const demo = [['admin', 'Administrator'], ['rohan', 'Trainer · DA101, TE110 · also a learner'], ['priya', 'Trainer · BS201, BS150, new hires'], ['vikram', 'Team Lead · Analytics Team'], ['asha', 'Learner · one course overdue'], ['kabir', 'Learner · access request pending'], ['nisha', 'New hire · first login'], ['sana', 'Custom role · Course reviewer']]
+    .filter(([un]) => !window.__demoUsers || window.__demoUsers.includes(un));
   const site = window.__site || {name:S?.site?.name || 'NB Academy', tagline:'Courses, assessments and progress tracking for every learner.'};
   const lv = ui.loginView;
   let form;

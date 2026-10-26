@@ -7,7 +7,7 @@ NB Academy is a corporate learning management system modelled on Moodle. It has 
 - **No external dependencies.** Use Node.js built-ins only (`node:http`, `node:sqlite`, `node:crypto`, `node:net`, `node:tls`, `node:zlib`) and plain browser JavaScript. Never add npm packages, CDNs, web fonts or frameworks.
 - **Node 22.13 or newer** (built-in SQLite).
 - **Never commit `data/`.** It holds the live database and uploaded files.
-- **Never put passwords, tokens or secrets in code.** The one deliberate exception is the starting password for new accounts, `Welcome@1` (`DEFAULT_PASSWORD` in core.js, overridable with `NB_DEFAULT_PASSWORD`). It is always paired with `mustChangePassword: true`, so it works only until the first sign-in. Keep it that way. Built-in admins are listed by email only (`server/site-admins.js`).
+- **Never put passwords, tokens or secrets in code.** The one deliberate exception is the starting password for new accounts, `Welcome@1` (`DEFAULT_PASSWORD` in core.js, overridable with `NB_DEFAULT_PASSWORD`). It is always paired with `mustChangePassword: true`, so it works only until the first sign-in. Keep it that way. Built-in admins are listed by email only in `server/site-admins.js`, which also lists accounts to delete at start-up (`remove`).
 - **Every behaviour change needs a test** in `test/api.test.js`, and `npm test` must pass before committing.
 - **Permissions are enforced in `Core.run` operations, never only in the UI.** The browser must not decide what a user may do.
 

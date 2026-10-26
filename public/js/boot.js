@@ -21,7 +21,7 @@ function heartbeat() {
   if (q.get('go') === 'setpassword' && q.get('id')) { try { ui.token = await B.tokenInfo(q.get('id')); ui.token.raw = q.get('id'); } catch (e) { ui.token = {valid:false}; } ui.loginView = 'token'; }
   else if (q.get('go')) ui.deepLink = {go:q.get('go'), id:q.get('id')};
   if (q.toString()) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
-  if (B.server) { try { const d = await (await fetch('/api/site')).json(); window.__site = d.site; window.__demo = d.demo; window.__codes = d.codes; window.__sso = d.sso; applyBranding(); } catch (e) {} }
+  if (B.server) { try { const d = await (await fetch('/api/site')).json(); window.__site = d.site; window.__demo = d.demo; window.__demoUsers = d.demoUsers; window.__codes = d.codes; window.__sso = d.sso; applyBranding(); } catch (e) {} }
   try { setState(await B.init()); }
   catch (e) { app.innerHTML = `<div class="page"><div class="card stack" style="max-width:560px;margin:40px auto"><h2>NB Academy could not start</h2><p class="muted">${esc(e.message)}</p><div><button class="btn" data-act="reload">Try again</button></div></div></div>`; return; }
   if (S && ui.loginView === 'token') { await B.logout().catch(() => {}); setState(null); }
