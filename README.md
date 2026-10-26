@@ -9,10 +9,18 @@ A learning management system modelled on Moodle, extended for the full corporate
 Requires **Node.js 22.13 or newer** (for the built-in SQLite module).
 
 ```bash
-node server/server.js            # http://localhost:8080, loads demo data on first run
+node server/server.js             # http://localhost:8080, a clean site (sign in as geetansh.kumar / Welcome@1)
+node server/server.js --demo      # the same, with demo courses and people (password "demo")
 ```
 
-Demo accounts all use the password `demo`:
+A new site starts **empty**. The administrators listed in `server/site-admins.js` are its only accounts.
+
+**Demo data is only for trying the system out.** Start with `--demo` (or set `NB_DEMO=1`) to load demo courses and people, and keep using `--demo` on every start. A site holding demo data that is started without `--demo` is cleaned automatically:
+- a full backup of the database and files is written to `data/backups/before-demo-removal-…/`;
+- the demo courses, cohorts, paths and every `@nbacademy.example` account are removed;
+- your own accounts, site settings (branding, security, email, SSO) and the audit history are kept.
+
+The demo accounts all use the password `demo`:
 
 | Username | Role |
 |---|---|
@@ -27,18 +35,12 @@ Demo accounts all use the password `demo`:
 | `zoya`, `arjun`, `dev` | Learners |
 | `sana` | Custom site role *Course reviewer* (read-only access to every course) |
 
-To start a real site without demo data:
-
-```bash
-node server/server.js --empty     # no demo data; sign in as geetansh.kumar / Welcome@1
-```
-
 Other commands:
 
 ```bash
-node server/server.js --reset     # wipe the database and reload demo data
-node --test test/api.test.js      # run the API test suite (41 tests, including fake SMTP, LDAP and OIDC servers)
-node tools/build-preview.js       # build dist/preview.html (browser-only edition)
+node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
+node --test test/api.test.js           # run the API test suite (42 tests, including fake SMTP, LDAP and OIDC servers)
+node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
 ### Configuration (environment variables)
@@ -156,7 +158,7 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 ## Deploying
 
 1. Install Node.js 22.13+ on the server and copy this folder.
-2. Run `NODE_ENV=production node server/server.js --empty` once (sign in as `geetansh.kumar` / `Welcome@1`), then start it normally with a process manager (systemd, pm2 or similar).
+2. Start it with `NODE_ENV=production node server/server.js` (sign in as `geetansh.kumar` / `Welcome@1`), using a process manager with a process manager (systemd, pm2 or similar).
 3. Put it behind a reverse proxy (nginx, Caddy) with HTTPS, and set `NB_SECURE_COOKIES=1`. Allow upload bodies of 25 MB.
 4. Back up the `data/` folder (database and files). SQLite's WAL mode allows a hot copy using `sqlite3 data/nbacademy.db ".backup backup.db"`.
 
@@ -192,13 +194,13 @@ Every new account starts with the password **`Welcome@1`** and must choose its o
 - To add more without editing the file, set `NB_SITE_ADMINS="a@company.com,b@company.com"`.
 
 **`remove`** lists accounts, by username or email, that are deleted when the server starts.
-- Today it lists the demo/install `admin` account (Admin User), rohit.chakrabarti@nobroker.in and gaurav.garg@nobroker.in.
+- Today it lists the `admin` account (Admin User) from the demo data, rohit.chakrabarti@nobroker.in and gaurav.garg@nobroker.in.
 - Their enrolments, roles, cohort mappings and sessions are removed, and each deletion is recorded in the audit log.
 - Content they created stays, such as courses and posts. Their posts and grades show as "Former user".
 - An account listed in `admins` is never removed, and neither is the last remaining administrator.
 - `NB_REMOVE_ACCOUNTS` overrides this list. Set it to an empty value to remove nothing.
 
-A fresh install with `--empty` no longer creates an `admin` account; the accounts in `admins` are the administrators.
+A new site has no `admin` account; the accounts in `admins` are its administrators.
 
 ## Connecting your company systems
 

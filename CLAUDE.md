@@ -15,8 +15,9 @@ NB Academy is a corporate learning management system modelled on Moodle. It has 
 
 ```bash
 npm test                      # API tests (node --test), spins up its own server and fake SMTP/LDAP/OIDC
-npm start                     # http://localhost:8080 with demo data (password "demo")
-node server/server.js --reset # wipe local data and reload demo data
+npm start                     # http://localhost:8080, clean site (geetansh.kumar / Welcome@1)
+npm run demo                  # with demo data (password "demo"); keep --demo on every start
+npm run reset:demo            # wipe local data and reload demo data (local testing only)
 npm run build:preview         # dist/preview.html: browser-only edition, data in localStorage
 ```
 
@@ -59,6 +60,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 3. Run `npm test`. For UI changes, also rebuild the preview, click through the affected screens and check the browser console for errors.
 4. Keep `README.md` and `COVERAGE.md` accurate when features or limits change.
 5. Commit with a clear message. Deploying to the server is a separate step (`tools/update-server.sh` on the server).
+
+**Demo data:** a site started without `--demo` that holds demo data is cleaned automatically, after a backup (`removeDemoData` in server.js). The production server must never be started with `--demo`. The tests set `NB_DEMO=1` themselves.
 
 ## Deployment
 

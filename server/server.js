@@ -3,9 +3,12 @@
 /*
  * NB Academy server. Uses only Node.js built-in modules (Node 22.13 or newer).
  *
- *   node server/server.js            start (creates demo data on first run)
- *   node server/server.js --empty    first run without demo data (administrators come from server/site-admins.js)
- *   node server/server.js --reset    delete the database and files, then reload demo data
+ *   node server/server.js            start (a new site starts empty; administrators come from server/site-admins.js)
+ *   node server/server.js --demo     start with demo data (or set NB_DEMO=1); needed on every start to keep it
+ *   node server/server.js --reset    delete the database and files first (combine with --demo for fresh demo data)
+ *
+ * A site that holds demo data but is started without --demo has the demo content removed
+ * automatically (after a backup is written to data/backups/).
  *
  * Environment: PORT (default 8080), HOST (default 0.0.0.0), NB_DATA_DIR (default ./data),
  *              NB_SECURE_COOKIES=1 behind HTTPS,
@@ -51,9 +54,10 @@ const env = {now:() => Date.now(), uid:p => (p || 'x') + crypto.randomBytes(6).t
 /* ---------- State ---------- */
 if (args.has('--reset')) { for (const f of ['nbacademy.db', 'nbacademy.db-wal', 'nbacademy.db-shm']) fs.rmSync(path.join(DATA, f), {force:true}); for (const d of ['files', 'scorm']) fs.rmSync(path.join(DATA, d), {recursive:true, force:true}); console.log('Database and files deleted.'); }
 store = new Store(DATA);
+const DEMO = args.has('--demo') || process.env.NB_DEMO === '1';
 let S;
 if (store.isEmpty()) {
-  if (args.has('--empty')) {
+  if (!DEMO) {
     S = Core.emptyState();
     S.categories.push({id:env.uid('k'), name:'Miscellaneous'});
     Core._.audit(S, env, null, 'Site installed', S.site.name, 'Empty site');
@@ -113,8 +117,35 @@ function removeAccounts(list) {
   }
   if (changed) store.save(S);
 }
+/* Turn a demo site into a clean one: back up, then keep only real accounts, site settings and the audit history */
+function removeDemoData() {
+  if (!S.site.demo || DEMO) return false;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-'), dir = path.join(DATA, 'backups', 'before-demo-removal-' + stamp);
+  fs.mkdirSync(dir, {recursive:true});
+  store.db.exec(`VACUUM INTO '${path.join(dir, 'nbacademy.db').replace(/'/g, "''")}'`);
+  for (const d of ['files', 'scorm']) { const from = path.join(DATA, d); if (fs.existsSync(from)) { fs.cpSync(from, path.join(dir, d), {recursive:true}); fs.rmSync(from, {recursive:true, force:true}); } }
+  fs.mkdirSync(path.join(DATA, 'files'), {recursive:true});
+  const isDemoUser = u => /@nbacademy\.example$/i.test(String(u.email || ''));
+  const keep = S.users.filter(u => !isDemoUser(u)), ids = new Set(keep.map(u => u.id));
+  const E = Core.emptyState();
+  E.site = {...S.site, demo:false};
+  E.users = keep;
+  E.sysroles = S.sysroles.filter(r => ids.has(r.userId) && E.roles.some(x => x.id === r.roleId));
+  E.audit = S.audit;
+  E.tokens = (S.tokens || []).filter(t => ids.has(t.userId));
+  E.outbox = (S.outbox || []).filter(m => keep.some(u => u.email === m.to));
+  E.categories = [{id:env.uid('k'), name:'Miscellaneous'}];
+  const removedUsers = S.users.length - keep.length, removedCourses = S.courses.length;
+  for (const u of S.users) if (!ids.has(u.id)) store.dropUserSessions(u.id);
+  S = E;
+  Core._.audit(S, env, null, 'Demo data removed', S.site.name, `${removedCourses} courses and ${removedUsers} demo accounts removed; backup in ${path.relative(DATA, dir)}`);
+  store.save(S);
+  console.log(`Demo data removed: ${removedCourses} courses and ${removedUsers} demo accounts. A backup of the previous data is in ${dir}`);
+  return true;
+}
 const siteConfig = require('./site-admins');
 ensureSiteAdmins();
+removeDemoData();
 removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : siteConfig.remove);
 
 /* Run an operation. If it fails part-way, reload the last saved state so nothing half-done remains. */
@@ -407,4 +438,4 @@ if (require.main === module) {
   const stop = () => { try { store.save(S); } catch (x) {} process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
-module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, _store:() => store};
+module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, removeDemoData, _store:() => store};

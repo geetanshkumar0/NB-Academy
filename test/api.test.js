@@ -12,8 +12,9 @@ const crypto = require('node:crypto');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-test-'));
 process.env.NB_DATA_DIR = dir;
+process.env.NB_DEMO = '1'; // the tests run against the demo data
 process.env.NB_REMOVE_ACCOUNTS = ''; // the tests use the demo accounts; removal is tested directly below
-const {server, getState, deliverMail, runTick, removeAccounts, _store} = require('../server/server.js');
+const {server, getState, deliverMail, runTick, removeAccounts, removeDemoData, _store} = require('../server/server.js');
 const Core = require('../public/core.js');
 let base;
 const extras = [];
@@ -402,4 +403,29 @@ test('accounts listed for removal are deleted at start-up, but never a built-in 
   assert.ok(S1.audit.some(a => a.action === 'User removed by server configuration' && a.target === 'admin'));
   assert.equal((await call('GET', '/api/state', null, c)).json.state, null, 'the removed admin is signed out');
   const site = (await call('GET', '/api/site')).json; assert.ok(!site.demoUsers.includes('admin'));
+});
+
+test('a demo site started without --demo is cleaned: backup first, then only real accounts remain', async () => {
+  const {spawn} = require('node:child_process'); const {DatabaseSync} = require('node:sqlite');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-demo-'));
+  const run = (args) => new Promise(resolve => {
+    const env = {...process.env, NB_DATA_DIR:d, PORT:'0'}; delete env.NB_DEMO; delete env.NB_REMOVE_ACCOUNTS;
+    const p = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'server.js'), ...args], {env}); let out = '';
+    p.stdout.on('data', b => { out += b; if (out.includes('running at')) p.kill(); }); p.stderr.on('data', b => { out += b; });
+    p.on('exit', () => resolve(out));
+  });
+  assert.match(await run(['--demo']), /Loaded demo data/);
+  const out = await run([]);
+  assert.match(out, /Demo data removed: 6 courses/);
+  const db = new DatabaseSync(path.join(d, 'nbacademy.db'));
+  const rows = coll => db.prepare('SELECT data FROM records WHERE coll = ?').all(coll).map(r => JSON.parse(r.data));
+  const users = rows('users');
+  assert.deepEqual(users.map(u => u.username), ['geetansh.kumar']);
+  assert.equal(rows('courses').length, 0); assert.equal(rows('cohorts').length, 0);
+  assert.equal(JSON.parse(db.prepare("SELECT data FROM records WHERE coll = 'site'").get().data).demo, false);
+  assert.ok(rows('audit').some(a => a.action === 'Demo data removed'));
+  const backups = fs.readdirSync(path.join(d, 'backups')); assert.equal(backups.length, 1);
+  assert.ok(fs.existsSync(path.join(d, 'backups', backups[0], 'nbacademy.db')));
+  db.close();
+  assert.doesNotMatch(await run([]), /Demo data removed/, 'only once');
 });
