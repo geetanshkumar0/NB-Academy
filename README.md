@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (49 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (50 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -186,6 +186,14 @@ location / {
 ## Starting password for new accounts
 
 Every new account starts with the password **`Welcome@1`** and must choose its own password at first sign-in. This covers accounts added in Site administration › Users without a password, CSV uploads with an empty password, and the built-in administrators. Accounts created through single sign-on or LDAP are the exception: they use the company sign-in instead. To use a different starting password, set `NB_DEFAULT_PASSWORD` on the server. Anyone who knows someone's username can sign in with the starting password until that person has signed in once, so ask new users to sign in soon after their account is created.
+
+## Email design
+
+- Every email is sent as **HTML with a plain-text version**, in one shared design: a coloured header with the subject, the message, a button for the main link, and a footer.
+- The **welcome email** uses its own designed template ("Welcome Aboard!", login details, Set Your Password button, 7-day notice).
+- The colour (default `#FB3753`) is set once in Site administration › Notifications and terms › **Email design**, and every email follows it.
+- Each template's subject, plain text and optional designed HTML can be edited and **previewed** there. Its HTML can use `{brand}`, `{brandSoft}` and `{brandLine}`. "Restore default" brings back the original.
+- The Email log can show any sent email as it was sent.
 
 ## Super administrator
 

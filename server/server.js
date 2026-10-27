@@ -180,7 +180,7 @@ async function deliverMail() {
   const cfg = S.site.email; if (mailing || !cfg?.enabled || !cfg.host) return; mailing = true;
   try {
     for (const m of S.outbox.filter(x => x.status === 'queued').slice(0, 20)) {
-      try { m.body = absolutize(m.body, publicBase()); await sendMail(cfg, m); m.status = 'sent'; m.sentAt = Date.now(); m.error = ''; }
+      try { m.body = absolutize(m.body, publicBase()); if (m.html) m.html = absolutize(m.html, publicBase()); await sendMail(cfg, m); m.status = 'sent'; m.sentAt = Date.now(); m.error = ''; }
       catch (e) { m.tries = (m.tries || 0) + 1; m.error = e.message + smtpHint(cfg, e.message); m.status = m.tries >= 3 ? 'failed' : 'queued'; }
     }
     store.save(S);
@@ -453,7 +453,8 @@ async function handle(req, res) {
       const b = await readJSON(req); const u = S.users.find(x => x.id === me.uid);
       if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');
       const cfg = S.site.email; if (!cfg.host) return sendErr(res, 400, 'Save the SMTP settings first.');
-      try { await sendMail(cfg, {to:b.to || u.email, toName:'', subject:`Test email from ${S.site.name}`, body:`This is a test email from ${S.site.name}.\n\nIf you can read this, email delivery works.`}); return send(res, 200, {ok:true}); }
+      try { const body = `Hi ${u.firstname},\n\nThis is a test email from ${S.site.name}. If you can read this, email delivery works.`;
+        await sendMail(cfg, {to:b.to || u.email, toName:'', subject:`Test email from ${S.site.name}`, body, html:Core._.emailLayoutFor(S, `Test email from ${S.site.name}`, body)}); return send(res, 200, {ok:true}); }
       catch (er) { const tried = /\b535\b|BadCredentials|not accepted|authentication failed/i.test(er.message) ? ` (Tried username "${cfg.user || '(empty)'}" with a ${String(cfg.pass || '').length}-character password. A Google app password is 16 letters.)` : '';
         return sendErr(res, 400, `Sending failed: ${er.message}${smtpHint(cfg, er.message)}${tried}`); }
     }

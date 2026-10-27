@@ -282,6 +282,31 @@ test('the audit log is hash-chained and the database refuses to change it', asyn
 });
 
 /* ---------- Integrations with fake servers ---------- */
+test('emails: welcome uses the designed template, every email shares the theme colour, HTML and text are both sent', async () => {
+  const a = await login('admin');
+  let r = await op(a, 'newUser', {firstname:'Meena', lastname:'Rao', username:'meena.rao', email:'meena@example.com', welcome:true, personas:['learner']});
+  assert.equal(r.status, 200, r.text);
+  let mail = getState().outbox.filter(m => m.to === 'meena@example.com' && m.key === 'welcome').pop();
+  assert.ok(mail.html.includes('Welcome Aboard!') && mail.html.includes('#FB3753') && mail.html.includes('meena.rao') && mail.html.includes('Set Your Password'));
+  assert.ok(mail.html.includes('?go=setpassword&amp;id='), 'the set-password link is in the button');
+  assert.match(mail.body, /Username: meena\.rao/, 'plain-text version too');
+  // Another email uses the same design and colour, with a button for its link
+  const S = getState(), dl = require('../public/core.js').renderEmail(S, 'deadline', {firstname:'Meena', course:'Safety', days:'3 days', due:'Fri', progress:40, link:'https://x.test/?go=course&id=c1'});
+  assert.ok(dl.html.includes('background-color:#FB3753') && dl.html.includes('Continue the course') && dl.html.includes('Reminder: Safety is due in 3 days'));
+  // Changing the email colour changes every email
+  assert.equal((await op(a, 'saveEmailTheme', {color:'#0e6175'})).status, 200);
+  assert.equal((await op(a, 'saveEmailTheme', {color:'red'})).status, 400);
+  await op(a, 'newUser', {firstname:'Tara', lastname:'S', username:'tara.s', email:'tara.s@example.com', welcome:true, personas:['learner']});
+  mail = getState().outbox.filter(m => m.to === 'tara.s@example.com').pop();
+  assert.ok(mail.html.includes('#0E6175') && !mail.html.includes('#FB3753'));
+  // An administrator can replace a template's HTML, clear it to use the shared design, and restore the default
+  assert.equal((await op(a, 'saveTemplate', {key:'welcome', subject:'Welcome to {site}', body:'Hi {firstname}', email:true, inapp:false, html:''})).status, 200);
+  assert.ok(!require('../public/core.js').renderEmail(getState(), 'welcome', {firstname:'X', link:'https://x'}).html.includes('Welcome Aboard!'));
+  assert.equal((await op(a, 'saveTemplate', {key:'welcome', reset:true})).status, 200);
+  assert.ok(require('../public/core.js').renderEmail(getState(), 'welcome', {firstname:'X', link:'https://x'}).html.includes('Welcome Aboard!'));
+  await op(a, 'saveEmailTheme', {color:'#FB3753'});
+});
+
 test('email is delivered over SMTP', async () => {
   const got = [];
   const smtp = net.createServer(sock => {
@@ -300,8 +325,9 @@ test('email is delivered over SMTP', async () => {
   assert.ok(!S.site.url);
   const sentWithLinks = S.outbox.filter(m => m.status === 'sent' && m.body.includes('?go='));
   assert.ok(sentWithLinks.length > 0 && sentWithLinks.every(m => m.body.includes(base + '/?go=')), 'links are absolute');
-  const decoded = got.map(g => Buffer.from(g.split('\n\n').slice(1).join('').replace(/\s/g, ''), 'base64').toString('utf8')).join('\n');
+  const decoded = got.map(g => [...g.matchAll(/Content-Transfer-Encoding: base64\n\n([A-Za-z0-9+\/=\n]+)/g)].map(x => Buffer.from(x[1].replace(/\s/g, ''), 'base64').toString('utf8')).join('\n')).join('\n');
   assert.ok(decoded.includes(base + '/?go='), 'the delivered message carries the absolute link');
+  assert.ok(got.some(g => /multipart\/alternative/.test(g) && /text\/html/.test(g) && /text\/plain/.test(g)), 'HTML and plain text are both sent');
   S.site.email.enabled = false;
 });
 test('SMTP settings: spaces are trimmed, app-password groups joined, and Google refusals explained', async () => {

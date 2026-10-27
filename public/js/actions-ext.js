@@ -169,6 +169,27 @@ document.addEventListener('change', e => {
   if (t.id === 'ak') { const sel = document.getElementById('aid'); const opt = [...sel.options].find(o => o.dataset.k === t.value); if (opt) sel.value = opt.value; }
 });
 
+/* ---------- Email design: colour and previews ---------- */
+const SAMPLE_VARS = {firstname:'Asha', lastname:'Verma', username:'asha.verma', course:'Workplace Safety Essentials', item:'Final assessment', due:'Fri, 6 Nov 2026', days:'3 days', progress:'40', sender:'Rohan Mehta', learner:'Asha Verma', reason:'I was on leave', remarks:'Please complete it this week', grade:'8 / 10', code:'SAFE4K8P2X', expires:'31 Dec 2027', when:'Thu, 29 Oct 2026, 4:00 pm', where:'Online', duepart:' It is due on Fri, 6 Nov 2026.'};
+function showEmail(title, html) {
+  openModal(title, `<iframe class="emailprev" sandbox="" title="${esc(title)}" style="width:100%;height:min(72vh,760px);border:1px solid var(--line);border-radius:8px;background:#f5f5f7"></iframe>`, true);
+  const f = document.querySelector('#modal iframe.emailprev'); if (f) f.srcdoc = html;
+}
+Object.assign(A, {
+  previewEmail: (d, el) => {
+    const form = el?.closest('form[data-form="template"]'); const S2 = JSON.parse(JSON.stringify(S));
+    if (form) { const v = Object.fromEntries(new FormData(form)); Object.assign(S2.site.templates[d.k], {subject:v.subject, body:v.body, html:v.html ?? S2.site.templates[d.k].html}); }
+    const col = document.getElementById('etc')?.value; if (/^#[0-9a-f]{6}$/i.test(col || '')) S2.site.emailTheme = {color:col};
+    const r = C.renderEmail(S2, d.k, {...SAMPLE_VARS, link:`${location.origin}/?go=${d.k === 'welcome' ? 'setpassword' : 'dashboard'}&id=sample`});
+    showEmail(`Preview: ${r.subject}`, r.html);
+  },
+  previewSent: d => { const m = S.outbox.find(x => x.id === d.id); if (m) showEmail(m.subject, m.html); },
+});
+Object.assign(F, {
+  emailTheme: d => act('saveEmailTheme', {color:d.color}, 'Email colour saved'),
+});
+document.addEventListener('input', e => { const t = e.target; if (t.dataset?.sync) { const o = document.querySelector(t.dataset.sync); if (o) o.value = t.value.toUpperCase(); } else if (t.id === 'etc' && /^#[0-9a-f]{6}$/i.test(t.value)) { const c = document.getElementById('etcp'); if (c) c.value = t.value; } });
+
 /* ---------- Super administrator and group chats ---------- */
 Object.assign(A, {
   removeAdmin: d => { const u = h.user(d.u); confirmBox('Remove administrator access', `Remove administrator access from <b>${esc(fullname(u))}</b>? Their account stays, and they keep any learner, trainer or team lead personas.`, () => act('removeAdmin', {id:u.id}, 'Administrator access removed'), 'Remove access'); },

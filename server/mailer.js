@@ -20,7 +20,9 @@ function sendMail(cfg, msg, timeoutMs = 20000) {
     const data = [
       `From: ${fromName ? `${encodeHeader(fromName)} <${fromAddr}>` : fromAddr}`, `To: ${msg.toName ? `${encodeHeader(msg.toName)} <${toAddr}>` : toAddr}`,
       `Subject: ${encodeHeader(msg.subject)}`, `Date: ${new Date().toUTCString()}`, `Message-ID: <${crypto.randomBytes(12).toString('hex')}@${fromAddr.split('@')[1] || 'nbacademy'}>`,
-      'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: base64', '', wrap64(Buffer.from(msg.body, 'utf8'))].join('\r\n');
+      'MIME-Version: 1.0', ...(msg.html ? (b => [`Content-Type: multipart/alternative; boundary="${b}"`, '', `--${b}`, 'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: base64', '', wrap64(Buffer.from(msg.body || '', 'utf8')),
+        `--${b}`, 'Content-Type: text/html; charset=utf-8', 'Content-Transfer-Encoding: base64', '', wrap64(Buffer.from(msg.html, 'utf8')), `--${b}--`])('nb-' + crypto.randomBytes(12).toString('hex'))
+        : ['Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: base64', '', wrap64(Buffer.from(msg.body, 'utf8'))])].join('\r\n');
     const queue = [];
     const plan = () => {
       queue.length = 0;

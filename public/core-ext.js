@@ -95,8 +95,14 @@ op('saveIntegration', (S, h, p, env) => {
 });
 op('saveTemplate', (S, h, p, env) => {
   need(h.has('site:config'), 'You cannot change notification templates.'); const t = S.site.templates[p.key]; need(t, 'Unknown template.', 404);
-  if (p.reset) Object.assign(t, clone(Core.DEFAULT_TEMPLATES[p.key])); else Object.assign(t, {subject:req(p.subject, 'Subject', 200), body:req(p.body, 'Message', 5000), email:!!p.email, inapp:!!p.inapp});
+  if (p.reset) { for (const k of Object.keys(t)) delete t[k]; Object.assign(t, clone(Core.DEFAULT_TEMPLATES[p.key])); }
+  else { Object.assign(t, {subject:req(p.subject, 'Subject', 200), body:req(p.body, 'Message', 5000), email:!!p.email, inapp:!!p.inapp}); if (p.html !== undefined) t.html = str(p.html, 100000).trim(); }
   audit(S, env, h.meId, 'Notification template changed', t.label);
+});
+op('saveEmailTheme', (S, h, p, env) => {
+  need(h.has('site:config'), 'You cannot change these settings.');
+  const c = String(p.color || '').trim(); need(/^#[0-9a-f]{6}$/i.test(c), 'Choose a colour such as #FB3753.', 400);
+  S.site.emailTheme = {...(S.site.emailTheme || {}), color:c.toUpperCase()}; audit(S, env, h.meId, 'Email colour changed', 'Site', c.toUpperCase());
 });
 op('saveNotifySettings', (S, h, p, env) => {
   need(h.has('site:config'), 'You cannot change these settings.');

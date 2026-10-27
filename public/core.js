@@ -420,8 +420,168 @@ function seed(env) {
 /* Starting password for new accounts. Everyone must change it at first sign-in (mustChangePassword).
    The server can override it with NB_DEFAULT_PASSWORD (passed in as env.defaultPassword). */
 const DEFAULT_PASSWORD = 'Welcome@1';
+/* The welcome email's designed HTML. {brand}, {brandSoft} and {brandLine} come from the site's email colour. */
+const WELCOME_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Account Is Ready</title>
+</head>
+
+<body style="margin:0; padding:0; background-color:#f5f5f7; font-family:Arial, Helvetica, sans-serif;">
+
+  <!-- Email Wrapper -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+         border="0" style="background-color:#f5f5f7; padding:30px 12px;">
+    <tr>
+      <td align="center">
+
+        <!-- Main Email Card -->
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0"
+               border="0" style="width:100%; max-width:600px; background-color:#ffffff;
+               border-radius:12px; overflow:hidden;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="background-color:{brand}; padding:35px 25px;">
+              <h1 style="margin:0; color:#ffffff; font-size:28px;
+                         line-height:1.3; font-weight:700;">
+                Welcome Aboard!
+              </h1>
+              <p style="margin:10px 0 0; color:#ffffff; font-size:15px;
+                        line-height:1.6;">
+                Your account has been created successfully.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding:35px 32px 20px; color:#333333;">
+
+              <p style="margin:0 0 18px; font-size:16px; line-height:1.7;">
+                Hi <strong>{firstname}</strong>,
+              </p>
+
+              <p style="margin:0 0 22px; font-size:15px; line-height:1.8; color:#555555;">
+                An account has been created for you on
+                <strong style="color:{brand};">{site}</strong>.
+                You're just one step away from getting started.
+              </p>
+
+              <!-- Account Details -->
+              <table role="presentation" width="100%" cellspacing="0"
+                     cellpadding="0" border="0"
+                     style="background-color:{brandSoft}; border:1px solid {brandLine};
+                     border-radius:8px; margin-bottom:25px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <p style="margin:0 0 6px; font-size:12px;
+                              color:#777777; text-transform:uppercase;
+                              letter-spacing:1px;">
+                      Your Login Details
+                    </p>
+
+                    <p style="margin:12px 0 5px; font-size:13px; color:#666666;">
+                      Username
+                    </p>
+                    <p style="margin:0; font-size:16px; font-weight:700;
+                              color:#222222; word-break:break-word;">
+                      {username}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 22px; font-size:15px; line-height:1.7;
+                        color:#555555;">
+                To activate your account, set your password using the button below.
+              </p>
+
+              <!-- CTA Button -->
+              <table role="presentation" cellspacing="0" cellpadding="0"
+                     border="0" align="center" style="margin:0 auto 25px;">
+                <tr>
+                  <td align="center" bgcolor="{brand}" style="border-radius:6px;">
+                    <a href="{link}"
+                       target="_blank"
+                       style="display:inline-block; padding:15px 35px;
+                              font-size:15px; line-height:1.2;
+                              font-weight:700; color:#ffffff;
+                              text-decoration:none; border-radius:6px;">
+                      Set Your Password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Expiry Notice -->
+              <table role="presentation" width="100%" cellspacing="0"
+                     cellpadding="0" border="0"
+                     style="background-color:#fff8e8; border-left:4px solid {brand};
+                     margin-bottom:20px;">
+                <tr>
+                  <td style="padding:13px 16px;">
+                    <p style="margin:0; font-size:13px; line-height:1.7;
+                              color:#664d24;">
+                      <strong>Important:</strong> This password setup link
+                      is valid for <strong>7 days</strong>. Please complete
+                      the setup before it expires.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 12px; font-size:13px; line-height:1.7;
+                        color:#777777;">
+                If the button doesn't work, copy and paste the following link
+                into your browser:
+              </p>
+
+              <p style="margin:0 0 25px; font-size:13px; line-height:1.7;
+                        word-break:break-all;">
+                <a href="{link}" target="_blank"
+                   style="color:{brand}; text-decoration:underline;">
+                  {link}
+                </a>
+              </p>
+
+              <p style="margin:0 0 8px; font-size:15px; line-height:1.7;
+                        color:#555555;">
+                We look forward to having you on board!
+              </p>
+
+              <p style="margin:0; font-size:15px; line-height:1.7;
+                        color:#333333;">
+                Best regards,<br>
+                <strong>{site} Team</strong>
+              </p>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center"
+                style="background-color:{brand}; padding:18px 24px;">
+              <p style="margin:0; color:#ffffff; font-size:12px; line-height:1.7;">
+                This is an automated email. Please do not reply to this message.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+        <!-- End Main Email Card -->
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
 const DEFAULT_TEMPLATES = {
-  welcome:{label:'Welcome email', subject:'Welcome to {site}', body:'Hi {firstname},\n\nAn account has been created for you on {site}.\nUsername: {username}\n\nSet your password and sign in here:\n{link}\n\nThis link is valid for 7 days.', email:true, inapp:false},
+  welcome:{label:'Welcome email', subject:'Welcome to {site}', body:'Hi {firstname},\n\nAn account has been created for you on {site}. You\'re just one step away from getting started.\n\nUsername: {username}\n\nTo activate your account, set your password here:\n{link}\n\nThis password setup link is valid for 7 days. Please complete the setup before it expires.\n\nWe look forward to having you on board!\n\nBest regards,\n{site} Team', email:true, inapp:false, html:WELCOME_HTML},
   assigned:{label:'Course assigned', subject:'New training assigned: {course}', body:'Hi {firstname},\n\n{course} has been assigned to you by {sender}. Please complete it by {due}.\n\nStart here: {link}', email:true, inapp:true},
   deadline:{label:'Deadline warning', subject:'Reminder: {course} is due in {days}', body:'Hi {firstname},\n\n{course} is due on {due}. You have completed {progress}% so far.\n\nIf the deadline passes, the course is locked until an administrator approves a request for access.\n\nContinue here: {link}', email:true, inapp:true},
   overdue:{label:'Overdue lock notice', subject:'{course} is overdue and locked', body:'Hi {firstname},\n\nThe deadline for {course} ({due}) has passed, so access is now locked.\n\nTo continue, open the course and select "Request access" with a short justification. Your progress is kept.\n\n{link}', email:true, inapp:true},
@@ -439,6 +599,7 @@ const TEMPLATE_VARS = '{firstname} {lastname} {username} {site} {course} {item} 
 function defaultSite() {
   return {name:'NB Academy', tagline:'Courses, assessments and progress tracking for every learner.', demo:false, url:'',
     branding:{logo:null, primary:'#0e6175', accent:'#d2831a'},
+    emailTheme:{color:'#FB3753'},
     terms:{version:1, text:'## Acceptable use\n- Use this platform only for work-related learning.\n- Keep your password private and do not share your account.\n- Complete assigned training honestly and by its due date.\n\n## Your data\nWe record your course progress, scores, time spent and certificates to manage training and meet compliance requirements. Your team lead and trainers can see progress for the courses and cohorts mapped to them.'},
     security:{minLength:8, upper:true, lower:true, digit:true, special:false, lockoutAttempts:5, lockoutMinutes:30, sessionTimeout:60, mfa:'off'},
     email:{enabled:false, host:'', port:587, secure:false, user:'', pass:'', from:'NB Academy <no-reply@example.com>'},
@@ -505,10 +666,54 @@ const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? 
 const findUser = (S, name) => S.users.find(u => sameName(u.username, name));
 function linkTo(S, go, id) { return `${S.site.url || ''}/?go=${encodeURIComponent(go || 'dashboard')}${id ? `&id=${encodeURIComponent(id)}` : ''}`; }
 function fmtD(t) { return t ? new Date(t).toLocaleString('en-IN', {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—'; }
-function queueEmail(S, env, u, subject, body, key) {
+function queueEmail(S, env, u, subject, body, key, html) {
   if (!u?.email) return;
-  S.outbox.push({id:env.uid('em'), userId:u.id, to:u.email, toName:`${u.firstname} ${u.lastname}`, subject, body, key, time:env.now(), status:S.site.email?.enabled ? 'queued' : 'not sent', tries:0});
+  S.outbox.push({id:env.uid('em'), userId:u.id, to:u.email, toName:`${u.firstname} ${u.lastname}`, subject, body, html:html || '', key, time:env.now(), status:S.site.email?.enabled ? 'queued' : 'not sent', tries:0});
   if (S.outbox.length > 3000) S.outbox.splice(0, S.outbox.length - 3000);
+}
+/* ---------- Email rendering: every email shares one look (the site's email colour) ---------- */
+const escHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
+function emailPalette(S) {
+  const c = /^#[0-9a-f]{6}$/i.test(S.site.emailTheme?.color || '') ? S.site.emailTheme.color : '#FB3753';
+  const mix = (hex, w) => '#' + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - w) + 255 * w).toString(16).padStart(2, '0')).join('');
+  return {brand:c, brandSoft:mix(c, 0.94), brandLine:mix(c, 0.8)};
+}
+const CTA = {welcome:'Set Your Password', assigned:'Start the course', deadline:'Continue the course', overdue:'Request access', accessRequest:'Review the request', accessApproved:'Continue the course', accessRejected:'Open NB Academy', graded:'See the feedback', certificate:'View your certificate', recert:'Start the course', nudge:'Open the course', liveSession:'View the session', passwordReset:'Choose a new password'};
+const fillHtml = (tpl, vars) => String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? escHtml(vars[k]) : '');
+/* The same design as the welcome email, for any template: coloured header with the subject, the message, a button for the link, footer */
+function emailLayout(S, key, subject, text, v) {
+  const p = emailPalette(S), link = v.link || '';
+  const paras = String(text).split(/\n\s*\n/).map(x => x.trim()).filter(Boolean).map(x => {
+    if (link && x.includes(link)) { const rest = x.split(link).join('').trim().replace(/[:\s]+$/, ''); return rest.length < 45 && !/[.!?]$/.test(rest) ? '' : rest; }
+    return x;
+  }).filter(Boolean);
+  const [hello, ...body] = /^(hi|hello|dear|congratulations)\b/i.test(paras[0] || '') ? paras : ['', ...paras];
+  const P = (x, style) => `<p style="margin:0 0 18px; font-size:15px; line-height:1.8; color:#555555;${style || ''}">${escHtml(x).replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, `<a href="$1" style="color:${p.brand}; text-decoration:underline;">$1</a>`)}</p>`;
+  const button = link ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:6px auto 25px;"><tr><td align="center" bgcolor="${p.brand}" style="border-radius:6px;"><a href="${escHtml(link)}" target="_blank" style="display:inline-block; padding:15px 35px; font-size:15px; line-height:1.2; font-weight:700; color:#ffffff; text-decoration:none; border-radius:6px;">${escHtml(CTA[key] || 'Open ' + S.site.name)}</a></td></tr></table>
+    <p style="margin:0 0 12px; font-size:13px; line-height:1.7; color:#777777;">If the button doesn't work, copy and paste the following link into your browser:</p>
+    <p style="margin:0 0 25px; font-size:13px; line-height:1.7; word-break:break-all;"><a href="${escHtml(link)}" target="_blank" style="color:${p.brand}; text-decoration:underline;">${escHtml(link)}</a></p>` : '';
+  const signed = body.length && /^best regards/i.test(body[body.length - 1]);
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escHtml(subject)}</title></head>
+<body style="margin:0; padding:0; background-color:#f5f5f7; font-family:Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f5f5f7; padding:30px 12px;"><tr><td align="center">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden;">
+<tr><td align="center" style="background-color:${p.brand}; padding:35px 25px;"><h1 style="margin:0; color:#ffffff; font-size:26px; line-height:1.3; font-weight:700;">${escHtml(subject)}</h1></td></tr>
+<tr><td style="padding:35px 32px 20px; color:#333333;">
+${hello ? `<p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#333333;">${escHtml(hello).replace(/\n/g, '<br>')}</p>` : ''}
+${body.map(x => P(x)).join('\n')}
+${button}
+${signed ? '' : `<p style="margin:0; font-size:15px; line-height:1.7; color:#333333;">Best regards,<br><strong>${escHtml(S.site.name)} Team</strong></p>`}
+</td></tr>
+<tr><td align="center" style="background-color:${p.brand}; padding:18px 24px;"><p style="margin:0; color:#ffffff; font-size:12px; line-height:1.7;">This is an automated email. Please do not reply to this message.</p></td></tr>
+</table></td></tr></table></body></html>`;
+}
+/* Subject, plain text and HTML for one template. A template's own HTML (the welcome design, or one an administrator saved) is used when present; otherwise the shared layout. */
+function renderEmail(S, key, vars) {
+  const t = S.site.templates?.[key] || DEFAULT_TEMPLATES[key]; if (!t) return null;
+  const v = {site:S.site.name, ...vars}, subject = fill(t.subject, v), text = fill(t.body, v);
+  const own = t.html !== undefined ? t.html : DEFAULT_TEMPLATES[key]?.html;
+  const html = own ? fillHtml(own, {...v, ...emailPalette(S), year:new Date().getFullYear()}) : emailLayout(S, key, subject, text, v);
+  return {subject, text, html};
 }
 function notifyT(S, env, key, userId, vars, go, gid) {
   const u = S.users.find(x => x.id === userId); if (!u || u.suspended) return;
@@ -516,7 +721,7 @@ function notifyT(S, env, key, userId, vars, go, gid) {
   const v = {firstname:u.firstname, lastname:u.lastname, username:u.username, site:S.site.name, link:linkTo(S, go, gid), ...vars};
   const subject = fill(t.subject, v);
   if (t.inapp) notify(S, env, userId, subject, vars.short || '', go, gid);
-  if (t.email) queueEmail(S, env, u, subject, fill(t.body, v), key);
+  if (t.email) { const r = renderEmail(S, key, v); queueEmail(S, env, u, subject, r.text, key, r.html); }
 }
 
 
@@ -1331,6 +1536,6 @@ function canReadFile(S, meId, fileId) {
 }
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
-  gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, _:{OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });
