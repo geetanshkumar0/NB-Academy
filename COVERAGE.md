@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (52 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (53 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 

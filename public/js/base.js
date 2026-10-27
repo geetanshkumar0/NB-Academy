@@ -275,12 +275,37 @@ const homeFor = m => ({learner:'dashboard', teamlead:'team', trainer:'trainer', 
 const app = document.getElementById('app');
 const modalEl = document.getElementById('modal');
 const VIEWS = {};
-function go(name, p = {}) {
+function go(name, p = {}, fromHistory = false) {
   if (ui.timer) { clearInterval(ui.timer); ui.timer = null; }
+  // Leaving a quiz: save the latest answers now rather than after the usual short delay
+  if (name !== 'attempt' && ui.attempt) { if (ui.saveT) { clearTimeout(ui.saveT); ui.saveT = null; } const A0 = ui.attempt; B.op('saveQuizAnswers', {aid:A0.aid, answers:A0.answers}).catch(() => {}); }
   if (name !== 'attempt') ui.attempt = null;
   if (name !== 'lessonplay') ui.lesson = null;
   ui.view = {name, p}; ui.replyTo = null;
   closeModal(); render(); window.scrollTo(0, 0);
+  if (!fromHistory) pushNav();
+}
+/* Browser history: each page is a history entry, so the browser's Back button (and the back gesture on phones) moves through NB Academy */
+function navState() { return {nb:1, view:ui.view, cmid:ui.attempt?.cmid || ui.lesson?.cmid || null}; }
+function pushNav() { try { history.pushState(navState(), ''); } catch (e) {} }
+function replaceNav() { try { history.replaceState(navState(), ''); } catch (e) {} }
+window.addEventListener('popstate', e => {
+  const st = e.state; if (!st || !st.nb || !S) return;
+  let {name, p} = st.view || {name:'dashboard', p:{}};
+  // A quiz or lesson that is no longer open returns to its activity page
+  if ((name === 'attempt' && !ui.attempt) || (name === 'lessonplay' && !ui.lesson)) { if (st.cmid && S.mods[st.cmid]) { name = 'mod'; p = {id:st.cmid}; } else { name = homeFor(currentMode()); p = {}; } }
+  go(name, p || {}, true);
+});
+/* "Back to …" link at the top of activity pages: where it goes, and what it says */
+function backLink() {
+  const v = ui.view.name, p = ui.view.p || {}, mod = id => S.mods[id], typeName = m => (C.TYPES[m.type]?.label || 'activity').toLowerCase();
+  let to = null, label = '';
+  if (v === 'mod') { const m = mod(p.id); if (m && h.course(m.courseId)) { to = ['course', m.courseId]; label = `Back to ${h.course(m.courseId).fullname}`; } }
+  else if (v === 'attempt' || v === 'lessonplay') { const m = mod((v === 'attempt' ? ui.attempt : ui.lesson)?.cmid); if (m) { to = ['mod', m.id]; label = v === 'attempt' ? `Back to ${m.name} (your answers are saved)` : `Back to ${m.name}`; } }
+  else if (v === 'review') { const a = S.attempts.find(x => x.id === p.id), m = a && mod(a.cmid); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
+  else if (v === 'submit' || v === 'grader') { const m = mod(p.id); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
+  else if (v === 'discussion') { const d = S.posts.find(x => x.id === p.id), m = d && mod(d.cmid); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
+  return to ? `<div class="backbar"><button class="btn ghost sm" data-go="${to[0]}" data-id="${esc(to[1])}"><span aria-hidden="true">←</span> ${esc(label)}</button></div>` : '';
 }
 function onboardingStep() {
   const u = me(); if (!u) return null;
@@ -297,7 +322,7 @@ function render() {
   const V = VIEWS[ui.view.name] || VIEWS.dashboard;
   let body;
   try { body = V(ui.view.p || {}); } catch (e) { console.error(e); body = `<div class="card stack" style="max-width:560px"><h2>Something went wrong showing this page</h2><p class="muted small mono">${esc(e.message)}</p><div><button class="btn" data-go="dashboard">Back to dashboard</button></div></div>`; }
-  app.innerHTML = navbar() + `<main class="page" id="main">${body}</main><footer class="foot">${esc(S.site.name)} · ${B.server ? 'Server edition' : 'Preview edition · data is stored in this browser'}</footer>`;
+  app.innerHTML = navbar() + `<main class="page" id="main">${backLink()}${body}</main><footer class="foot">${esc(S.site.name)} · ${B.server ? 'Server edition' : 'Preview edition · data is stored in this browser'}</footer>`;
   afterRender();
 }
 function afterRender() {

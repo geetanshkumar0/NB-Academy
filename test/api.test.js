@@ -639,6 +639,15 @@ test('standard teams added later join a saved list, but not ones an administrato
   assert.ok(!L.site.teams.includes('Hood'), 'a removed team stays removed');
 });
 
+test('every page the interface links to exists (catches a screen going missing, like the quiz attempt did)', () => {
+  const dir = path.join(__dirname, '..', 'public', 'js'), src = fs.readdirSync(dir).map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+  const defined = new Set([...src.matchAll(/VIEWS\.(\w+)\s*=/g)].map(m => m[1]));
+  const linked = new Set([...src.matchAll(/\bgo\('(\w+)'/g), ...src.matchAll(/data-go="(\w+)"/g)].map(m => m[1]));
+  const missing = [...linked].filter(v => !defined.has(v));
+  assert.deepEqual(missing, [], `pages linked but not defined: ${missing.join(', ')}`);
+  for (const fn of ['submitAttempt', 'tick', 'qnavButtons', 'backLink', 'pushNav']) assert.match(src, new RegExp(`function ${fn}\\(`), `${fn} is defined`);
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

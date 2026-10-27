@@ -265,6 +265,30 @@ function qInput(q, a) {
   return `<div class="field" style="max-width:340px"><label for="${name}">Answer</label><input id="${name}" type="${q.type === 'num' ? 'number' : 'text'}" step="any" data-q="${q.id}" value="${esc(a ?? '')}" autocomplete="off"></div>`;
 }
 const answered = (A, q) => A.answers[q.id] != null && A.answers[q.id] !== '';
+/* Quiz attempt (answers are saved automatically as they change) */
+function qnavButtons() { const A = ui.attempt, m = S.mods[A.cmid]; return m.questions.map((q, i) => `<button class="${answered(A, q) ? 'ans' : ''}" data-act="scrollTo" data-t="q-${q.id}" aria-label="Question ${i + 1}">${i + 1}</button>`).join(''); }
+function tick() {
+  const A = ui.attempt; if (!A) return; const m = S.mods[A.cmid];
+  const left = A.start + m.timelimit * 6e4 - now(), el = document.getElementById('timer');
+  if (left <= 0) { clearInterval(ui.timer); ui.timer = null; submitAttempt(true); return; }
+  if (el) { const s = Math.ceil(left / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; el.classList.toggle('low', s < 60); }
+}
+async function submitAttempt(auto) {
+  const A = ui.attempt; if (!A) return; clearTimeout(ui.saveT);
+  const r = await act('submitQuiz', {aid:A.aid, answers:A.answers}, null, {silent:true});
+  if (r === FAIL) return;
+  ui.attempt = null; go('review', {id:r.id}); toast(auto ? 'Time is up. Your attempt was submitted.' : 'Attempt submitted');
+}
+VIEWS.attempt = () => {
+  const A = ui.attempt; if (!A) return notFound(); const m = S.mods[A.cmid]; if (!m) return notFound(); const c = h.course(m.courseId);
+  return modShell(m, c, `<div class="qgrid"><div>${m.questions.map((q, i) => `<div class="q" id="q-${q.id}"><div class="qinfo"><b>Question ${i + 1}</b><span id="qs-${q.id}">${answered(A, q) ? 'Answer saved' : 'Not yet answered'}</span><span>Marked out of ${q.mark.toFixed(2)}</span></div>
+      <div class="qbody"><div class="qtext">${esc(q.text)}</div>${qInput(q, A.answers[q.id])}</div></div>`).join('')}
+      <div><button class="btn primary" data-act="finishAttempt">Finish attempt…</button></div></div>
+    <aside class="block qnav"><header><h3>Quiz navigation</h3></header><div class="bb stack">
+      ${m.timelimit ? `<div><div class="muted small">Time left</div><div class="timer" id="timer">--:--</div></div>` : ''}
+      <div class="qnav-grid" id="qnavgrid">${qnavButtons()}</div><button class="link small" data-act="finishAttempt">Finish attempt…</button></div></aside></div>`, 'Attempt');
+};
+
 VIEWS.review = (p) => {
   const a = S.attempts.find(x => x.id === p.id); if (!a || !a.review) return notFound();
   const m = S.mods[a.cmid], c = h.course(m.courseId), who = h.user(a.userId), grader = h.has('grade:edit', c.id);

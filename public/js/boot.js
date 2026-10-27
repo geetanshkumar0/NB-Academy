@@ -27,7 +27,7 @@ function heartbeat() {
   if (S && ui.loginView === 'token') { await B.logout().catch(() => {}); setState(null); }
   if (S && ui.deepLink) { const dl = ui.deepLink; ui.deepLink = null; ui.view = {name:dl.go, p:{id:dl.id}}; }
   else if (S) ui.view = {name:homeFor(currentMode()), p:{}};
-  render();
+  render(); replaceNav();
   setInterval(heartbeat, 60e3);
   if (B.server) setInterval(refresh, 45e3);
   else setInterval(async () => { if (!S) return; const st = await B.init(); if (st && JSON.stringify(st.notifications.length) !== JSON.stringify(S.notifications.length)) { setState(st); if (!document.activeElement || !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) render(); } }, 60e3);

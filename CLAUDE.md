@@ -33,6 +33,7 @@ npm run build:preview         # dist/preview.html: browser-only edition, data in
   - Views go in the `VIEWS.name = p => html` registry.
   - Click actions go in the `A` registry (`data-act="x"`). Navigation uses `data-go="view"`.
   - Form handlers go in the `F` registry (`<form data-form="x">`).
+  - **Navigation:** `go(name, p)` renders a page and adds a browser-history entry (`pushNav`); the browser's Back/Forward replays them (`popstate` in base.js). Activity pages get a "← Back to …" link from `backLink()`. A test checks that every page linked with `go('x')` or `data-go="x"` has a `VIEWS.x`.
   - **Forms are submitted by app code, not by the browser** (see `submitForm` in actions.js). The preview runs in a sandboxed frame where native form submission is blocked. Keep `type="submit"` buttons inside `data-form` forms and don't rely on the browser's submit event.
 - `public/app.html` holds the page shell and all CSS. Colours come from CSS variables, and dark mode is supported.
 - `server/server.js` holds the HTTP server:
