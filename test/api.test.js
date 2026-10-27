@@ -304,6 +304,32 @@ test('email is delivered over SMTP', async () => {
   assert.ok(decoded.includes(base + '/?go='), 'the delivered message carries the absolute link');
   S.site.email.enabled = false;
 });
+test('SMTP settings: spaces are trimmed, app-password groups joined, and Google refusals explained', async () => {
+  const seen = [];
+  const smtp = net.createServer(sock => {
+    let buf = ''; sock.write('220 smtp.gmail.com ESMTP gsmtp\r\n');
+    sock.on('data', d => { buf += d.toString(); let i; while ((i = buf.indexOf('\r\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (/^EHLO/i.test(line)) sock.write('250-smtp.gmail.com\r\n250 AUTH LOGIN PLAIN\r\n');
+      else if (/^AUTH PLAIN /i.test(line)) { const [, u, pw] = Buffer.from(line.slice(11), 'base64').toString().split('\0'); seen.push([u, pw]);
+        sock.write(pw === 'abcdefghijklmnop' && u === 'learning@nobroker.in' ? '235 ok\r\n' : '535 5.7.8 https://support.google.com/mail/?p=BadCredentials 2adb3069b0e04-5bfb7a86383sm1950569e87.44 - gsmtp\r\n'); }
+      else if (/^(MAIL|RCPT)/i.test(line)) sock.write('250 ok\r\n'); else if (/^DATA/i.test(line)) sock.write('354 go\r\n'); else if (line === '.') sock.write('250 queued\r\n'); else if (/^QUIT/i.test(line)) { sock.write('221 bye\r\n'); sock.end(); } } });
+  });
+  await new Promise(r => smtp.listen(0, '127.0.0.1', r)); extras.push(smtp);
+  const a = await login('admin'), port = smtp.address().port;
+  // Wrong password: the error explains what Google wants
+  assert.equal((await op(a, 'saveIntegration', {kind:'email', enabled:false, host:'127.0.0.1', port, secure:false, user:'learning@nobroker.in', pass:'NormalPassword1', from:'NB Academy <learning@nobroker.in>'})).status, 200);
+  let t = await call('POST', '/api/admin/test-email', {to:'x@example.com'}, a);
+  assert.equal(t.status, 400); assert.match(t.json.error, /app password/);
+  // App password pasted with spaces and a username with a stray space: cleaned up and accepted
+  assert.equal((await op(a, 'saveIntegration', {kind:'email', enabled:false, host:'127.0.0.1', port, secure:false, user:' learning@nobroker.in ', pass:' abcd efgh ijkl mnop ', from:'NB Academy <learning@nobroker.in>'})).status, 200);
+  assert.equal(getState().site.email.user, 'learning@nobroker.in'); assert.equal(getState().site.email.pass, 'abcdefghijklmnop');
+  t = await call('POST', '/api/admin/test-email', {to:'x@example.com'}, a);
+  assert.equal(t.status, 200, t.text); assert.deepEqual(seen[seen.length - 1], ['learning@nobroker.in', 'abcdefghijklmnop']);
+  // An ordinary password that happens to contain spaces is kept as typed
+  await op(a, 'saveIntegration', {kind:'email', enabled:false, host:'127.0.0.1', port, secure:false, user:'u', pass:'my long pass phrase', from:''});
+  assert.equal(getState().site.email.pass, 'my long pass phrase');
+});
+
 test('LDAP sign-in creates the account on first use', async () => {
   const ldap = net.createServer(sock => sock.on('data', d => { const ok = d.includes(Buffer.from('dirpass')); sock.write(Buffer.from([0x30, 0x0c, 0x02, 0x01, 0x01, 0x61, 0x07, 0x0a, 0x01, ok ? 0 : 49, 0x04, 0x00, 0x04, 0x00])); }));
   await new Promise(r => ldap.listen(0, '127.0.0.1', r)); extras.push(ldap);

@@ -87,7 +87,12 @@ Object.assign(A, {
   exportAudit: () => download(`audit-log-${new Date().toISOString().slice(0, 10)}.csv`, csv([['Seq', 'Time', 'User', 'Action', 'Target', 'Detail', 'Hash', 'Previous hash'], ...S.audit.map(e => [e.seq, new Date(e.t).toISOString(), e.uid ? fullname(e.uid) : 'System', e.action, e.target, e.detail, e.hash, e.prev])])),
   exportAnalytics: () => { const a = ui.ana; const rows = C.learnerRows(S, h, {company:a.company || null, department:a.department || null, courses:a.course ? new Set([a.course]) : null});
     download(`training-report-${new Date().toISOString().slice(0, 10)}.csv`, csv([['Learner', 'Email', 'Company', 'Department', 'Course', 'Status', 'Progress %', 'Grade %', 'Due', 'Completed', 'Hours spent', 'Hours credited', 'Trainers'], ...rows.map(r => [fullname(r.u), r.u.email, r.u.company, r.u.department, r.c.fullname, STATUS[r.status][0], r.progress, r.total == null ? '' : r.total.toFixed(1), r.due ? new Date(r.due).toISOString().slice(0, 10) : '', r.completedAt ? new Date(r.completedAt).toISOString().slice(0, 10) : '', r.hours.toFixed(2), r.credit, h.teachers(r.c.id).map(t => fullname(t)).join('; ')])])); },
-  testEmail: async () => { try { await B.testEmail(me().email); toast(`Test email sent to ${me().email}`); } catch (e) { toast(e.message, true); } },
+  testEmail: async (d, el) => {
+    // Test what is on screen: save the form first, so a password typed but not yet saved is used
+    const f = el?.closest('form');
+    if (f) { if (!f.reportValidity()) return; const v = Object.fromEntries(new FormData(f)); const r = await act('saveIntegration', {...v, enabled:checked(f, 'enabled'), secure:checked(f, 'secure')}, null, {silent:true}); if (r === FAIL) return; }
+    toast('Sending a test email…');
+    try { await B.testEmail(me().email); toast(`Test email sent to ${me().email}. Settings saved.`); } catch (e) { toast(e.message, true); } },
   testLdap: () => openModal('Test LDAP sign-in', `<form data-form="testLdap" class="stack"><div class="field"><label for="tlu">Directory username</label><input id="tlu" name="username" type="text" required autocapitalize="none"></div><div class="field"><label for="tlp">Password</label><input id="tlp" name="password" type="password" required></div><p class="muted small">Save the settings first. The password is only used for this test.</p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Test</button></div></form>`),
   resetTemplate: d => act('saveTemplate', {key:d.k, reset:true}, 'Default restored'),
   retryEmail: d => act('retryEmail', {id:d.id}, 'Queued for sending'),

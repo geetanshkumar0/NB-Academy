@@ -164,12 +164,24 @@ function mutate(fn) { try { const r = fn(); store.save(S); return r; } catch (e)
 /* ---------- Scheduler and email delivery ---------- */
 function runTick() { try { const n = Core.tick(S, env); if (n) store.save(S); } catch (e) { console.error('Scheduler error:', e.message); S = store.load(); } }
 let mailing = false;
+/* Plain-language advice for the most common mail server refusals */
+function smtpHint(cfg, msg) {
+  const google = /gmail|google/i.test(cfg.host || '') || /gsmtp|google\.com/i.test(msg), ms = /office365|outlook|microsoft/i.test(cfg.host || '');
+  if (/\b535\b|BadCredentials|Username and Password not accepted|authentication failed/i.test(msg)) {
+    if (google) return ' — Google did not accept the username or password. Use the full email address as the username and an app password (16 letters from myaccount.google.com/apppasswords, for that same account) as the password, not the normal password. Save, then test again. If you cannot create app passwords, your Google Workspace admin has turned them off: ask them to allow app passwords for this mailbox, or to set up the SMTP relay (smtp-relay.gmail.com).';
+    if (ms) return ' — Microsoft did not accept the sign-in. SMTP sign-in (SMTP AUTH) must be allowed for this mailbox in the Microsoft 365 admin centre, and accounts with multi-factor sign-in need an app password.';
+    return ' — The mail server did not accept the username or password.';
+  }
+  if (/ETIMEDOUT|ECONNREFUSED|timed out/i.test(msg)) return ' — The mail server could not be reached. Check the server name and port; your hosting may block outgoing mail ports (try 587, or 465 with "Use TLS from the start").';
+  if (/ENOTFOUND/i.test(msg)) return ' — There is no server with that name. Check the SMTP server address.';
+  return '';
+}
 async function deliverMail() {
   const cfg = S.site.email; if (mailing || !cfg?.enabled || !cfg.host) return; mailing = true;
   try {
     for (const m of S.outbox.filter(x => x.status === 'queued').slice(0, 20)) {
       try { m.body = absolutize(m.body, publicBase()); await sendMail(cfg, m); m.status = 'sent'; m.sentAt = Date.now(); m.error = ''; }
-      catch (e) { m.tries = (m.tries || 0) + 1; m.error = e.message; m.status = m.tries >= 3 ? 'failed' : 'queued'; }
+      catch (e) { m.tries = (m.tries || 0) + 1; m.error = e.message + smtpHint(cfg, e.message); m.status = m.tries >= 3 ? 'failed' : 'queued'; }
     }
     store.save(S);
   } finally { mailing = false; }
@@ -442,7 +454,7 @@ async function handle(req, res) {
       if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');
       const cfg = S.site.email; if (!cfg.host) return sendErr(res, 400, 'Save the SMTP settings first.');
       try { await sendMail(cfg, {to:b.to || u.email, toName:'', subject:`Test email from ${S.site.name}`, body:`This is a test email from ${S.site.name}.\n\nIf you can read this, email delivery works.`}); return send(res, 200, {ok:true}); }
-      catch (er) { return sendErr(res, 400, `Sending failed: ${er.message}`); }
+      catch (er) { return sendErr(res, 400, `Sending failed: ${er.message}${smtpHint(cfg, er.message)}`); }
     }
     if (p === '/api/admin/test-ldap') {
       const b = await readJSON(req); if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');

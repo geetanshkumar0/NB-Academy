@@ -83,9 +83,11 @@ op('saveSecurity', (S, h, p, env) => {
   x.sessionTimeout = Math.max(5, Number(p.sessionTimeout) || 60); x.mfa = ['off', 'admins', 'all'].includes(p.mfa) ? p.mfa : 'off';
   audit(S, env, h.meId, 'Security policy changed', 'Site', JSON.stringify(x));
 });
+/* Google and Microsoft show app passwords in groups ("abcd efgh ijkl mnop"); the spaces are not part of the password */
+const cleanSmtpPass = v => { const x = str(v, 300).trim(); return /^[a-z0-9]{4}( [a-z0-9]{4}){3}$/i.test(x) ? x.replace(/ /g, '') : x; };
 op('saveIntegration', (S, h, p, env) => {
   need(h.has('site:config'), 'You cannot change integrations.');
-  if (p.kind === 'email') { const e = S.site.email; Object.assign(e, {enabled:!!p.enabled, host:str(p.host, 200).trim(), port:Number(p.port) || 587, secure:!!p.secure, user:str(p.user, 200), from:str(p.from, 200) || e.from}); if (p.pass) e.pass = str(p.pass, 300); need(!e.enabled || e.host, 'Enter the SMTP server address.', 400); if (e.enabled) S.outbox.forEach(m => { if (m.status === 'not sent' && env.now() - m.time < 3 * D) m.status = 'queued'; }); }
+  if (p.kind === 'email') { const e = S.site.email; Object.assign(e, {enabled:!!p.enabled, host:str(p.host, 200).trim(), port:Number(p.port) || 587, secure:!!p.secure, user:str(p.user, 200).trim(), from:str(p.from, 200).trim() || e.from}); if (p.pass) e.pass = cleanSmtpPass(p.pass); need(!e.enabled || e.host, 'Enter the SMTP server address.', 400); if (e.enabled) S.outbox.forEach(m => { if (m.status === 'not sent' && env.now() - m.time < 3 * D) m.status = 'queued'; }); }
   else if (p.kind === 'sso') { const x = S.site.sso; Object.assign(x, {enabled:!!p.enabled, label:str(p.label, 80) || 'Company single sign-on', issuer:str(p.issuer, 300).trim().replace(/\/+$/, ''), clientId:str(p.clientId, 300).trim(), autoCreate:!!p.autoCreate}); if (p.clientSecret) x.clientSecret = str(p.clientSecret, 500); need(!x.enabled || (/^https:\/\//.test(x.issuer) && x.clientId), 'Enter an https issuer URL and a client ID.', 400); }
   else if (p.kind === 'ldap') { const x = S.site.ldap; Object.assign(x, {enabled:!!p.enabled, url:str(p.url, 300).trim(), bindDn:str(p.bindDn, 300).trim() || x.bindDn, autoCreate:!!p.autoCreate, emailDomain:str(p.emailDomain, 120).trim()}); need(!x.enabled || (/^ldaps?:\/\//.test(x.url) && x.bindDn.includes('{username}')), 'Enter an ldap:// or ldaps:// URL and a bind DN that contains {username}.', 400); }
   else throw new OpError('Unknown integration.', 400);

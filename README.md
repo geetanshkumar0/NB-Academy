@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (48 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (49 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -241,7 +241,7 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 
 ## Connecting your company systems
 
-- **Email:** Site administration › Email, SSO and LDAP › Email (SMTP). Enter your mail server, then "Send a test email". Until email is on, emails are kept in the Email log and **not sent**; turning it on sends those from the last 3 days. Google Workspace: `smtp.gmail.com`, port 587, an app password. Microsoft 365: `smtp.office365.com`, port 587. Links in emails use the site address (General › Site address, or `NB_PUBLIC_URL`). Until that is set, they use the address the site is being reached at.
+- **Email:** Site administration › Email, SSO and LDAP › Email (SMTP). Enter your mail server, then "Send a test email" (it saves what is on screen first). App passwords can be pasted with their spaces. If the mail server refuses, the message says why and what to change. Until email is on, emails are kept in the Email log and **not sent**; turning it on sends those from the last 3 days. Google Workspace: `smtp.gmail.com`, port 587, an app password. Microsoft 365: `smtp.office365.com`, port 587. Links in emails use the site address (General › Site address, or `NB_PUBLIC_URL`). Until that is set, they use the address the site is being reached at.
 - **Single sign-on:** register `https://YOUR-SITE/auth/sso/callback` as a redirect URI with your OpenID Connect provider, then enter the issuer URL, client ID and secret. Users are matched by email address.
 - **LDAP / Active Directory:** enter the server URL (`ldaps://…` recommended) and a bind DN pattern containing `{username}`, then "Test a sign-in".
 - **Custom domain:** set General › Site address, point DNS at the server and terminate HTTPS at the reverse proxy.
