@@ -164,6 +164,23 @@ document.addEventListener('change', e => {
   if (t.id === 'ak') { const sel = document.getElementById('aid'); const opt = [...sel.options].find(o => o.dataset.k === t.value); if (opt) sel.value = opt.value; }
 });
 
+/* ---------- Super administrator and group chats ---------- */
+Object.assign(A, {
+  removeAdmin: d => { const u = h.user(d.u); confirmBox('Remove administrator access', `Remove administrator access from <b>${esc(fullname(u))}</b>? Their account stays, and they keep any learner, trainer or team lead personas.`, () => act('removeAdmin', {id:u.id}, 'Administrator access removed'), 'Remove access'); },
+  newChat: d => chatForm(d.cid),
+  editChat: d => { const c = (S.chats || []).find(x => x.id === d.id); if (c) chatForm(c.courseId, c); },
+  deleteChat: d => { const c = (S.chats || []).find(x => x.id === d.id); confirmBox('Delete group chat', `Delete <b>${esc(c.name)}</b> and all its messages? This cannot be undone.`, async () => { if (await act('deleteChat', {id:c.id}, 'Group chat deleted', {silent:true}) !== FAIL) { if (ui.msgWith === 'chat:' + c.id) ui.msgWith = null; closeModal(); render(); } }, 'Delete'); },
+});
+const _openConv = A.openConv;
+A.openConv = async d => { if (!String(d.u).startsWith('chat:')) return _openConv(d); ui.msgWith = d.u; const c = (S.chats || []).find(x => 'chat:' + x.id === d.u); if (c && h.inChat(c) && h.chatUnread(c)) await act('readChat', {id:c.id}, null, {silent:true}); render(); document.getElementById('msgtext')?.focus(); };
+Object.assign(F, {
+  chat: async (d, f) => { const payload = {name:d.name, mode:d.mode, members:picked(f, 'members')};
+    const r = d.id ? await act('updateChat', {id:d.id, ...payload}, 'Group chat saved', {silent:true, errEl:'cherr'}) : await act('createChat', {cid:d.cid, ...payload}, 'Group chat created', {silent:true, errEl:'cherr'});
+    if (r === FAIL) return; closeModal(); if (!d.id && r?.id) { ui.msgWith = 'chat:' + r.id; go('messages', {}); } else render(); },
+  sendChatMessage: async d => { if (await act('sendChatMessage', d, null, {silent:true}) !== FAIL) { render(); const el = document.querySelector('.thread .tbody'); if (el) el.scrollTop = el.scrollHeight; document.getElementById('msgtext')?.focus(); } },
+});
+document.addEventListener('change', e => { if (e.target.name !== 'mode' || !e.target.form || e.target.form.dataset.form !== 'chat') return; const el = e.target.form.querySelector('[data-chatpick]'); if (el) el.hidden = e.target.value !== 'custom'; });
+
 /* ---------- Personas: shared by "Add a new user" and the user profile ---------- */
 const PERSONAS = [['learner', 'Learner', 'Takes assigned training and courses'], ['trainer', 'Trainer', 'Delivers and grades courses and cohorts tagged to them'], ['teamlead', 'Team Lead', 'Monitors and reminds the cohorts mapped to them'], ['admin', 'Administrator', 'Manages the whole site']];
 function personaFields(u) {
@@ -171,7 +188,7 @@ function personaFields(u) {
   const inC = key => u ? S.cohorts.filter(c => c[key].includes(u.id)).map(c => c.id) : [];
   const coItems = S.cohorts.map(c => [c.id, c.name, [c.company, c.department, `${c.members.length} members`].filter(Boolean).join(' · ')]);
   const tCourses = u ? S.enrol.filter(e => e.userId === u.id && e.role === 'trainer').map(e => e.courseId) : [];
-  const box = ([k, l, sub]) => (k === 'admin' && !h.isAdmin()) ? '' : (k === 'admin' && u?.builtinAdmin ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="admin"> <span><b>${l}</b><br><span class="muted small">Built-in: set in the server configuration</span></span></label>` : `<label class="check persona"><input type="checkbox" name="personas" value="${k}" ${on.has(k) ? 'checked' : ''}> <span><b>${l}</b><br><span class="muted small">${sub}</span></span></label>`);
+  const box = ([k, l, sub]) => (k === 'admin' && !h.isAdmin()) ? '' : (k === 'admin' && (u?.builtinAdmin || (u?.admin && !h.isSuperAdmin())) ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="admin"> <span><b>${l}</b><br><span class="muted small">${u.builtinAdmin ? 'Super administrator: set in the server configuration' : 'Only the super administrator can remove this'}</span></span></label>` : `<label class="check persona"><input type="checkbox" name="personas" value="${k}" ${on.has(k) ? 'checked' : ''}> <span><b>${l}</b><br><span class="muted small">${sub}</span></span></label>`);
   const sec = (k, html) => `<div class="field full" data-pfor="${k}" ${on.has(k) ? '' : 'hidden'}>${html}</div>`;
   return `<div class="personagrid">${PERSONAS.map(box).join('')}</div>
     <p class="muted small" style="margin:0">People with more than one persona switch between them with the view switcher in the top bar.</p>

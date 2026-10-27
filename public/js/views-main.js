@@ -309,21 +309,39 @@ function contacts() {
 }
 VIEWS.messages = (p) => {
   if (p.with && ui.msgWith !== p.with) ui.msgWith = p.with;
+  if (String(p.id || '').startsWith('chat:') && ui.msgChatFrom !== p.id) { ui.msgChatFrom = p.id; ui.msgWith = p.id; }
   const convs = {};
   for (const m of S.messages) { const other = m.from === S.me ? m.to : m.from; (convs[other] ||= []).push(m); }
-  const list = Object.entries(convs).map(([uid, ms]) => ({u:h.user(uid), last:ms.reduce((a, b) => a.time > b.time ? a : b), unread:ms.filter(m => m.to === S.me && !m.read).length})).filter(x => x.u).sort((a, b) => b.last.time - a.last.time);
-  const w = ui.msgWith && h.user(ui.msgWith);
-  const thread = w ? (convs[w.id] || []).sort((a, b) => a.time - b.time) : [];
+  const people = Object.entries(convs).map(([uid, ms]) => ({key:uid, u:h.user(uid), last:ms.reduce((a, b) => a.time > b.time ? a : b), unread:ms.filter(m => m.to === S.me && !m.read).length})).filter(x => x.u);
+  const chatMsgs = id => (S.chatMessages || []).filter(m => m.chatId === id).sort((a, b) => a.time - b.time);
+  const groups = (S.chats || []).map(c => { const ms = chatMsgs(c.id); return {key:'chat:' + c.id, chat:c, last:ms[ms.length - 1] || {time:c.created, text:'Group chat created', from:c.createdBy}, unread:h.inChat(c) ? h.chatUnread(c) : 0}; });
+  const list = [...people, ...groups].sort((a, b) => b.last.time - a.last.time);
+  const sel = ui.msgWith || '', chat = sel.startsWith('chat:') ? (S.chats || []).find(c => c.id === sel.slice(5)) : null;
+  const w = !chat && sel && h.user(sel);
   const others = contacts().filter(u => !convs[u.id]);
+  if (chat && h.chatUnread(chat)) setTimeout(() => act('readChat', {id:chat.id}, null, {silent:true}), 0);
+  const item = x => x.chat
+    ? `<button class="ci ${chat && chat.id === x.chat.id ? 'on' : ''}" data-act="openConv" data-u="${x.key}"><span class="gav" aria-hidden="true">${icon('forum', 'sm')}</span><span class="t"><b>${esc(x.chat.name)}</b><span class="muted small">${x.last.from === S.me ? 'You: ' : x.last.from && h.user(x.last.from) ? esc(h.user(x.last.from).firstname) + ': ' : ''}${esc(x.last.text)}</span></span>${x.unread ? `<span class="chip brand">${x.unread}</span>` : `<span class="muted small">${ago(x.last.time)}</span>`}</button>`
+    : `<button class="ci ${w && w.id === x.u.id ? 'on' : ''}" data-act="openConv" data-u="${x.u.id}">${avatar(x.u, 36)}<span class="t"><b>${esc(fullname(x.u))}</b><span class="muted small">${x.last.from === S.me ? 'You: ' : ''}${esc(x.last.text)}</span></span>${x.unread ? `<span class="chip brand">${x.unread}</span>` : `<span class="muted small">${ago(x.last.time)}</span>`}</button>`;
+  let thread = '<div class="empty" style="margin:auto">Choose a conversation or start a new one.</div>';
+  if (chat) {
+    const course = h.course(chat.courseId), members = chat.memberIds || h.chatMembers(chat), member = members.includes(S.me), ms = chatMsgs(chat.id);
+    const readOnly = course?.status === 'archived';
+    thread = `<header><button class="btn sm ghost" data-act="closeConv" aria-label="Back to conversations">←</button><span class="gav" aria-hidden="true">${icon('forum', 'sm')}</span><div style="flex:1;min-width:0"><b>${esc(chat.name)}</b><div class="muted small">${esc(course?.shortname || '')} · ${members.length} member${members.length === 1 ? '' : 's'}${chat.mode === 'course' ? ' · everyone in the course' : ''}</div></div>${h.canManageChats(chat.courseId) ? `<button class="btn sm" data-act="editChat" data-id="${chat.id}">Manage</button>` : ''}</header>
+      <div class="tbody">${ms.map(m => { const mine = m.from === S.me, u = h.user(m.from); return `<div class="bubble ${mine ? 'mine' : ''}">${mine ? '' : `<span class="who">${esc(u ? fullname(u) : 'Former user')}</span>`}${esc(m.text)}<small>${fmtDate(m.time)}</small></div>`; }).join('') || '<p class="muted small" style="text-align:center">No messages yet. Start the conversation.</p>'}</div>
+      ${readOnly ? '<p class="muted small" style="padding:12px 16px;border-top:1px solid var(--line)">This course is archived, so its chats are read-only.</p>' : member ? `<form data-form="sendChatMessage" class="tform"><input type="hidden" name="id" value="${chat.id}"><textarea name="text" id="msgtext" placeholder="Write to the group…" aria-label="Message" required></textarea><button class="btn primary" type="submit">Send</button></form>` : '<p class="muted small" style="padding:12px 16px;border-top:1px solid var(--line)">You can read this chat because you manage the course. Add yourself as a member to post.</p>'}`;
+  } else if (w) {
+    const t = (convs[w.id] || []).sort((a, b) => a.time - b.time);
+    thread = `<header><button class="btn sm ghost" data-act="closeConv" aria-label="Back to conversations">←</button>${avatar(w, 34)}<div><b>${esc(fullname(w))}</b><div class="muted small">${esc(w.email)}</div></div></header>
+      <div class="tbody">${t.map(m => `<div class="bubble ${m.from === S.me ? 'mine' : ''}">${esc(m.text)}<small>${fmtDate(m.time)}</small></div>`).join('') || '<p class="muted small" style="text-align:center">No messages yet. Say hello.</p>'}</div>
+      <form data-form="sendMessage" class="tform"><input type="hidden" name="to" value="${w.id}"><textarea name="text" id="msgtext" placeholder="Write a message…" aria-label="Message" required></textarea><button class="btn primary" type="submit">Send</button></form>`;
+  }
   return `${phead([['Dashboard', 'dashboard'], ['Messages']], 'Messages')}
-    <div class="msgs ${w ? 'open' : ''}"><div class="clist">
+    <div class="msgs ${chat || w ? 'open' : ''}"><div class="clist">
       <div style="padding:12px 14px;border-bottom:1px solid var(--line)"><label class="lbl small" for="newmsg">Start a conversation</label><select id="newmsg" style="margin-top:6px"><option value="">Choose a person…</option>${others.map(u => `<option value="${u.id}">${esc(fullname(u))}</option>`).join('')}</select></div>
-      ${list.map(x => `<button class="ci ${w && w.id === x.u.id ? 'on' : ''}" data-act="openConv" data-u="${x.u.id}">${avatar(x.u, 36)}<span class="t"><b>${esc(fullname(x.u))}</b><span class="muted small">${x.last.from === S.me ? 'You: ' : ''}${esc(x.last.text)}</span></span>${x.unread ? `<span class="chip brand">${x.unread}</span>` : `<span class="muted small">${ago(x.last.time)}</span>`}</button>`).join('') || '<div class="empty small">No conversations yet.</div>'}
+      ${list.map(item).join('') || '<div class="empty small">No conversations yet.</div>'}
     </div>
-    <div class="thread">${w ? `<header><button class="btn sm ghost" data-act="closeConv" aria-label="Back to conversations">←</button>${avatar(w, 34)}<div><b>${esc(fullname(w))}</b><div class="muted small">${esc(w.email)}</div></div></header>
-      <div class="tbody">${thread.map(m => `<div class="bubble ${m.from === S.me ? 'mine' : ''}">${esc(m.text)}<small>${fmtDate(m.time)}</small></div>`).join('') || '<p class="muted small" style="text-align:center">No messages yet. Say hello.</p>'}</div>
-      <form data-form="sendMessage" class="tform"><input type="hidden" name="to" value="${w.id}"><textarea name="text" id="msgtext" placeholder="Write a message…" aria-label="Message" required></textarea><button class="btn primary" type="submit">Send</button></form>`
-      : '<div class="empty" style="margin:auto">Choose a conversation or start a new one.</div>'}</div></div>`;
+    <div class="thread">${thread}</div></div>`;
 };
 
 VIEWS.gradesoverview = () => {

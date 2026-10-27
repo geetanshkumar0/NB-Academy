@@ -142,3 +142,28 @@ VIEWS.analytics = () => {
     </tbody></table></div>
     <h2 style="margin-bottom:10px">Individual detail</h2>${rowTable(rows.sort((x, y) => (y.atRisk - x.atRisk) || x.u.firstname.localeCompare(y.u.firstname)), {id:'anarows'})}`;
 };
+
+/* ---------- Course group chats ---------- */
+VIEWS.chats = (p) => {
+  const c = h.course(p.id); if (!c || !h.canView(c.id)) return notFound();
+  const manage = h.canManageChats(c.id), chats = (S.chats || []).filter(x => x.courseId === c.id);
+  const last = id => (S.chatMessages || []).filter(m => m.chatId === id).reduce((a, b) => !a || b.time > a.time ? b : a, null);
+  return courseShell(c, 'chats', `<div class="spread" style="margin-bottom:14px"><p class="muted small" style="max-width:640px">Group chats for this course. ${manage ? 'As a trainer or administrator you can create chats for everyone in the course or for chosen people, and read every chat here.' : 'You see the chats you are a member of.'}</p>${manage && c.status !== 'archived' ? `<button class="btn primary" data-act="newChat" data-cid="${c.id}">New group chat</button>` : ''}</div>
+    ${chats.length ? `<div class="tw"><table><thead><tr><th>Chat</th><th>Members</th><th>Last message</th><th></th></tr></thead><tbody>${chats.map(x => { const m = last(x.id), n = (x.memberIds || h.chatMembers(x)).length, un = h.inChat(x) ? h.chatUnread(x) : 0;
+      return `<tr><td><b>${esc(x.name)}</b>${un ? ` <span class="chip brand">${un} new</span>` : ''}<br><span class="muted small">Created by ${esc(h.fullname(x.createdBy))} · ${fmtDate(x.created)}</span></td><td class="small">${n} ${x.mode === 'course' ? '<span class="muted">· everyone in the course</span>' : ''}</td><td class="small">${m ? `${esc(h.user(m.from)?.firstname || 'Former user')}: ${esc(m.text.length > 60 ? m.text.slice(0, 60) + '…' : m.text)}<br><span class="muted">${ago(m.time)}</span>` : '<span class="muted">No messages yet</span>'}</td>
+        <td><div class="tools"><button class="btn sm primary" data-go="messages" data-id="chat:${x.id}">Open</button>${manage ? `<button class="btn sm" data-act="editChat" data-id="${x.id}">Manage</button>` : ''}</div></td></tr>`; }).join('')}</tbody></table></div>`
+      : `<div class="card empty">${manage ? 'No group chats yet. Create one for everyone in the course, or for a smaller group.' : 'You are not in any group chat for this course yet.'}</div>`}`);
+};
+function chatForm(cid, chat) {
+  const c = h.course(cid), v = chat || {name:`${c.fullname} · group chat`, mode:'course', members:[]};
+  const people = h.enrolled(cid).map(x => x.u).filter(u => u && u.id !== S.me && !u.suspended);
+  openModal(chat ? 'Manage group chat' : 'New group chat', `<form data-form="chat" class="stack"><input type="hidden" name="cid" value="${cid}"><input type="hidden" name="id" value="${chat ? chat.id : ''}">
+    <div class="field"><label for="chn">Chat name</label><input id="chn" name="name" type="text" value="${esc(v.name)}" required maxlength="120"></div>
+    <div class="field"><span class="lbl">Who is in it</span>
+      <label class="check"><input type="radio" name="mode" value="course" ${v.mode !== 'custom' ? 'checked' : ''}> <span>Everyone in the course <span class="muted small">(${people.length + 1} people; people enrolled later join automatically)</span></span></label>
+      <label class="check"><input type="radio" name="mode" value="custom" ${v.mode === 'custom' ? 'checked' : ''}> <span>Only the people I choose</span></label></div>
+    <div class="field" data-chatpick ${v.mode === 'custom' ? '' : 'hidden'}><span class="lbl">Members</span>${picker('members', people.map(u => [u.id, fullname(u), roleName(h.enrolOf(cid, u.id)?.role)]), v.members || [], {placeholder:'Search people in this course'})}<span class="hint">You are always included.</span></div>
+    <p class="muted small">Trainers of this course and administrators can read every group chat in it.</p>
+    <p class="err" id="cherr" hidden></p>
+    <div class="mfoot">${chat ? `<button class="btn ghost danger" type="button" data-act="deleteChat" data-id="${chat.id}" style="margin-right:auto">Delete chat</button>` : ''}<button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">${chat ? 'Save changes' : 'Create chat'}</button></div></form>`, true);
+}

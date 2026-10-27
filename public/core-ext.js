@@ -111,7 +111,7 @@ const uids = (S, a) => [...new Set((Array.isArray(a) ? a : []).filter(id => S.us
 function applyPersonas(S, h, env, u, p) {
   const want = new Set((Array.isArray(p.personas) ? p.personas : []).filter(x => ['learner', 'trainer', 'teamlead', 'admin'].includes(x)));
   need(want.size, 'Choose at least one persona.', 400);
-  if (want.has('admin') !== !!u.admin) { need(h.isAdmin(), 'Only site administrators can grant or remove administrator access.'); need(!(u.id === h.meId && !want.has('admin')), 'You cannot remove your own administrator access.', 400); need(!(u.builtinAdmin && !want.has('admin')), 'This is a built-in site administrator set in the server configuration, so administrator access cannot be removed here.', 400); u.admin = want.has('admin'); }
+  if (want.has('admin') !== !!u.admin) { need(h.isAdmin(), 'Only site administrators can grant or remove administrator access.'); need(!(u.id === h.meId && !want.has('admin')), 'You cannot remove your own administrator access.', 400); need(!(u.builtinAdmin && !want.has('admin')), 'This is a built-in site administrator set in the server configuration, so administrator access cannot be removed here.', 400); need(!(u.admin && !want.has('admin')) || h.isSuperAdmin(), 'Only the super administrator can remove administrator access.'); u.admin = want.has('admin'); }
   u.personas = ['learner', 'trainer'].filter(x => want.has(x));
   const tl = S.sysroles.find(r => r.userId === u.id && r.roleId === 'teamlead');
   if (want.has('teamlead') && !tl) S.sysroles.push({id:env.uid('sr'), userId:u.id, roleId:'teamlead'});
@@ -144,6 +144,74 @@ op('setPersonas', (S, h, p, env) => {
   need(!u.admin || h.isAdmin(), 'Only administrators can change an administrator.');
   applyPersonas(S, h, env, u, p);
 });
+/* ---------------- Super administrator: remove administrator access ---------------- */
+op('removeAdmin', (S, h, p, env) => {
+  need(h.isSuperAdmin(), 'Only the super administrator can remove administrators.');
+  const u = S.users.find(x => x.id === p.id); need(u, 'User not found.', 404);
+  need(u.id !== h.meId, 'You cannot remove your own administrator access.', 400);
+  need(!u.builtinAdmin, 'This is a built-in site administrator set in the server configuration.', 400);
+  need(u.admin || S.sysroles.some(r => r.userId === u.id && r.roleId === 'manager'), 'This person is not an administrator.', 400);
+  u.admin = false; S.sysroles = S.sysroles.filter(r => !(r.userId === u.id && r.roleId === 'manager'));
+  if (!(u.personas || []).length && !S.sysroles.some(r => r.userId === u.id && r.roleId === 'teamlead')) u.personas = ['learner'];
+  notify(S, env, u.id, 'Your administrator access was removed', `By ${h.fullname(h.meId)}`, 'dashboard');
+  audit(S, env, h.meId, 'Administrator access removed', u.username, `${u.firstname} ${u.lastname}`);
+});
+
+/* ---------------- Course group chats ---------------- */
+const chatOf = (S, id) => { const c = (S.chats || []).find(x => x.id === id); need(c, 'Chat not found.', 404); return c; };
+function saveChatFields(S, h, c, p) {
+  c.name = req(p.name, 'Chat name', 120);
+  c.mode = p.mode === 'custom' ? 'custom' : 'course';
+  const inCourse = new Set(S.enrol.filter(e => e.courseId === c.courseId).map(e => e.userId));
+  c.members = [...new Set((Array.isArray(p.members) ? p.members : []).filter(id => inCourse.has(id) || id === h.meId))];
+  if (c.mode === 'custom') { if (!c.members.includes(h.meId)) c.members.push(h.meId); need(c.members.length >= 2, 'Choose at least one other person for the chat.', 400); }
+  else c.members = [];
+}
+function createChat(S, h, env, cid, p) {
+  need(h.canManageChats(cid), 'Only trainers of this course and administrators can create group chats.');
+  const course = S.courses.find(x => x.id === cid); need(course.status !== 'archived', 'Archived courses cannot have new chats.', 400);
+  S.chats ||= []; S.chatMessages ||= [];
+  const c = {id:env.uid('ch'), courseId:cid, createdBy:h.meId, created:env.now(), reads:{[h.meId]:env.now()}};
+  saveChatFields(S, h, c, {name:p.name || `${course.fullname} · group chat`, mode:p.mode, members:p.members});
+  S.chats.push(c);
+  for (const uid of H(S, h.meId).chatMembers(c)) if (uid !== h.meId) notify(S, env, uid, `You were added to the group chat ${c.name}`, course.fullname, 'messages', 'chat:' + c.id);
+  log(S, env, h.meId, `Group chat created: ${c.name}`, cid);
+  return c;
+}
+op('createChat', (S, h, p, env) => { const c = createChat(S, h, env, p.cid, p); return {id:c.id}; });
+op('updateChat', (S, h, p, env) => {
+  const c = chatOf(S, p.id); need(h.canManageChats(c.courseId), 'Only trainers of this course and administrators can change group chats.');
+  const before = new Set(h.chatMembers(c)); saveChatFields(S, h, c, p);
+  const course = S.courses.find(x => x.id === c.courseId);
+  for (const uid of H(S, h.meId).chatMembers(c)) if (!before.has(uid)) notify(S, env, uid, `You were added to the group chat ${c.name}`, course?.fullname || '', 'messages', 'chat:' + c.id);
+});
+op('deleteChat', (S, h, p, env) => {
+  const c = chatOf(S, p.id); need(h.canManageChats(c.courseId), 'Only trainers of this course and administrators can delete group chats.');
+  S.chats = S.chats.filter(x => x !== c); S.chatMessages = S.chatMessages.filter(m => m.chatId !== c.id);
+  log(S, env, h.meId, `Group chat deleted: ${c.name}`, c.courseId); audit(S, env, h.meId, 'Group chat deleted', c.name);
+});
+op('sendChatMessage', (S, h, p, env) => {
+  const c = chatOf(S, p.id); need(h.inChat(c), 'You are not a member of this chat.');
+  need(S.courses.find(x => x.id === c.courseId)?.status !== 'archived', 'This course is archived, so its chats are read-only.', 400);
+  S.chatMessages.push({id:env.uid('cm'), chatId:c.id, from:h.meId, text:req(p.text, 'Message', 4000), time:env.now()});
+  (c.reads ||= {})[h.meId] = env.now();
+});
+op('readChat', (S, h, p, env) => { const c = chatOf(S, p.id); need(h.inChat(c) || h.canManageChats(c.courseId), 'You cannot open this chat.'); (c.reads ||= {})[h.meId] = env.now(); });
+// "Create a group chat" option when a course is created; chats go when their course is deleted
+const _newCourse = OPS.newCourse;
+op('newCourse', (S, h, p, env) => {
+  const r = _newCourse(S, h, p, env);
+  if (p.groupChat) createChat(S, H(S, h.meId), env, r.id, {mode:'course'});
+  return r;
+});
+const _deleteCourse = OPS.deleteCourse;
+op('deleteCourse', (S, h, p, env) => {
+  const r = _deleteCourse(S, h, p, env);
+  const gone = new Set((S.chats || []).filter(c => c.courseId === p.id).map(c => c.id));
+  if (gone.size) { S.chats = S.chats.filter(c => !gone.has(c.id)); S.chatMessages = S.chatMessages.filter(m => !gone.has(m.chatId)); }
+  return r;
+});
+
 op('saveCohort', (S, h, p, env) => {
   need(h.has('cohort:manage'), 'You cannot manage cohorts.');
   let c = p.id ? S.cohorts.find(x => x.id === p.id) : null; const before = c ? new Set(c.members) : new Set();

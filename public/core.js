@@ -236,7 +236,16 @@ function H(S, meId) {
     if (h.learnerPersona(uid) || (!u.admin && !h.sysrole('manager', uid) && !h.isTrainer(uid) && !h.isTeamLead(uid))) out.push('learner');
     if (h.isTrainer(uid)) out.push('trainer'); if (h.isTeamLead(uid)) out.push('teamlead');
     if (u.admin || h.sysrole('manager', uid)) out.push('admin'); return out; };
-  h.unreadMessages = () => S.messages.filter(x => x.to === meId && !x.read).length;
+  h.unreadMessages = () => S.messages.filter(x => x.to === meId && !x.read).length + (S.chats || []).filter(c => h.inChat(c)).reduce((n, c) => n + h.chatUnread(c), 0);
+  /* Super administrator: the built-in administrators from server/site-admins.js */
+  h.isSuperAdmin = (uid = meId) => !!h.user(uid)?.builtinAdmin;
+  /* Course group chats: created and managed by the course's trainers and by administrators */
+  h.canManageChats = (cid, uid = meId) => !!h.course(cid) && (h.isAdmin(uid) || h.sysrole('manager', uid) || S.enrol.some(e => e.courseId === cid && e.userId === uid && ['trainer', 'editingteacher', 'teacher'].includes(e.role)));
+  h.chatMembers = c => { if (c.mode !== 'course') return c.members || [];
+    const ids = new Set(S.enrol.filter(e => e.courseId === c.courseId).map(e => e.userId)); if (c.createdBy) ids.add(c.createdBy); (c.members || []).forEach(id => ids.add(id));
+    return [...ids].filter(id => { const u = h.user(id); return u && !u.suspended; }); };
+  h.inChat = (c, uid = meId) => h.chatMembers(c).includes(uid);
+  h.chatUnread = (c, uid = meId) => { const seen = c.reads?.[uid] || 0; return (S.chatMessages || []).filter(m => m.chatId === c.id && m.from !== uid && m.time > seen).length; };
   h.unreadNotifications = () => S.notifications.filter(n => n.userId === meId && !n.read).length;
   h.hours = (cid, uid) => { const e = h.enrolOf(cid, uid); return (e?.timeSpent || 0) / 3600; };
   return h;
@@ -442,12 +451,12 @@ function emptyState() {
     users:[], roles:clone(BUILTIN_ROLES), sysroles:[], categories:[], courses:[], mods:{}, enrol:[], groups:[], completion:{},
     submissions:[], attempts:[], posts:[], messages:[], notifications:[], badges:[], badgeIssued:[], certIssued:[],
     lessonAttempts:[], glossary:[], choiceAnswers:[], wsSubs:[], wsAllocs:[], files:[], logs:[], access:{},
-    cohorts:[], paths:[], rules:[], accessRequests:[], liveSignups:[], feedbackResponses:[], qbank:[], courseVersions:[], outbox:[], audit:[], tokens:[],
+    cohorts:[], paths:[], rules:[], accessRequests:[], liveSignups:[], feedbackResponses:[], qbank:[], courseVersions:[], outbox:[], audit:[], tokens:[], chats:[], chatMessages:[],
     resume:{}, extraAttempts:{}};
 }
 /* Collections, used by the server for persistence */
 const ARRAYS = ['users', 'roles', 'sysroles', 'categories', 'courses', 'enrol', 'groups', 'submissions', 'attempts', 'posts', 'messages', 'notifications', 'badges', 'badgeIssued', 'certIssued', 'lessonAttempts', 'glossary', 'choiceAnswers', 'wsSubs', 'wsAllocs', 'files', 'logs',
-  'cohorts', 'paths', 'rules', 'accessRequests', 'liveSignups', 'feedbackResponses', 'qbank', 'courseVersions', 'outbox', 'audit', 'tokens'];
+  'cohorts', 'paths', 'rules', 'accessRequests', 'liveSignups', 'feedbackResponses', 'qbank', 'courseVersions', 'outbox', 'audit', 'tokens', 'chats', 'chatMessages'];
 const MAPS = ['mods', 'completion', 'access', 'resume', 'extraAttempts'];
 
 /* ---------------- SHA-256 (pure JS, used for the audit hash chain) ---------------- */
@@ -773,11 +782,12 @@ op('deleteUser', (S, h, p, env) => {
   need(h.has('user:manage'), 'You cannot delete users.'); const u = h.user(p.id); need(u, 'User not found.', 404);
   need(u.id !== h.meId, 'You cannot delete your own account.', 400); need(!u.admin || h.isAdmin(), 'Only administrators can delete administrators.');
   need(!u.builtinAdmin, 'This is a built-in site administrator set in the server configuration. Remove it from server/site-admins.js to delete it.', 400);
+  need(!u.admin || h.isSuperAdmin(), 'Only the super administrator can delete administrators.');
   S.users = S.users.filter(x => x.id !== u.id); S.enrol = S.enrol.filter(e => e.userId !== u.id); S.sysroles = S.sysroles.filter(r => r.userId !== u.id);
   S.groups.forEach(g => g.members = g.members.filter(m => m !== u.id)); S.cohorts.forEach(c => { c.members = c.members.filter(m => m !== u.id); c.leads = c.leads.filter(m => m !== u.id); c.trainers = c.trainers.filter(m => m !== u.id); });
   log(S, env, h.meId, `User deleted: ${u.username}`); audit(S, env, h.meId, 'User deleted', u.username);
 });
-op('suspendUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot suspend users.'); const u = h.user(p.id); need(u && u.id !== h.meId && !u.admin, 'This account cannot be suspended.', 400); u.suspended = !!p.on; log(S, env, h.meId, `${p.on ? 'Suspended' : 'Reactivated'} ${u.username}`); audit(S, env, h.meId, p.on ? 'User suspended' : 'User reactivated', u.username); });
+op('suspendUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot suspend users.'); const u = h.user(p.id); need(u && u.id !== h.meId && !u.builtinAdmin && (!u.admin || h.isSuperAdmin()), u?.admin ? 'Only the super administrator can suspend administrators.' : 'This account cannot be suspended.', u?.admin && !u.builtinAdmin ? 403 : 400); u.suspended = !!p.on; log(S, env, h.meId, `${p.on ? 'Suspended' : 'Reactivated'} ${u.username}`); audit(S, env, h.meId, p.on ? 'User suspended' : 'User reactivated', u.username); });
 op('loginAsCheck', (S, h, p) => { need(h.has('user:loginas'), 'You cannot log in as other users.'); const u = h.user(p.id); need(u && !u.admin, 'You cannot log in as this user.', 400); return {id:u.id}; });
 op('setSysRole', (S, h, p, env) => {
   need(h.has('role:manage'), 'You cannot assign site roles.'); need(h.user(p.userId) && h.role(p.roleId), 'User or role not found.', 404);
@@ -1290,6 +1300,9 @@ function view(S, meId) {
   V.resume = Object.fromEntries(Object.entries(S.resume).filter(([k]) => { const [u, m] = k.split(':'); return modVisible(m) && (u === meId || allIn(m) || oversee(u)); }));
   V.extraAttempts = Object.fromEntries(Object.entries(S.extraAttempts).filter(([k]) => { const [u, m] = k.split(':'); return u === meId || (S.mods[m] && h.has('attempts:manage', S.mods[m].courseId)); }));
   V.messages = clone(S.messages.filter(x => x.from === meId || x.to === meId));
+  // Group chats: members see them; the course's trainers and administrators can also see them to moderate
+  V.chats = clone((S.chats || []).filter(c => h.inChat(c) || h.canManageChats(c.courseId)).map(c => ({...c, memberIds:h.chatMembers(c)})));
+  const chatIds = new Set(V.chats.map(c => c.id)); V.chatMessages = clone((S.chatMessages || []).filter(m => chatIds.has(m.chatId)));
   V.notifications = clone(S.notifications.filter(n => n.userId === meId).slice(-150));
   V.badges = clone(S.badges.filter(b => viewable.has(b.courseId) || S.badgeIssued.some(i => i.badgeId === b.id)));
   V.badgeIssued = clone(S.badgeIssued);

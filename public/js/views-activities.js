@@ -7,6 +7,7 @@ function courseTabs(c) {
   if (h.has('group:manage', c.id)) t.push(['groups', 'Groups']);
   t.push(['grades', 'Grades']);
   if (S.badges.some(b => b.courseId === c.id) || h.has('badges:manage', c.id)) t.push(['badges', 'Badges']);
+  if ((S.chats || []).some(x => x.courseId === c.id) || h.canManageChats(c.id)) t.push(['chats', 'Group chats']);
   if (h.has('report:view', c.id)) t.push(['creports', 'Reports']);
   if (h.has('course:update', c.id) || h.has('backup:course', c.id)) t.push(['csettings', 'Settings']);
   return t;

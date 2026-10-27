@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (43 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (45 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -148,7 +148,7 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 | Badges | Course badges: activity criteria, course completion, manual award |
 | Gradebook | Grader report with group filter, user report, natural aggregation |
 | Groups | Groups, membership, filters in participants, assignments and grades |
-| Messaging, notifications | Private messages, notification bell, notifications page |
+| Messaging, notifications | Private messages, course group chats, notification bell, notifications page |
 | Roles and capabilities | 38+ capabilities, 6 built-in roles (Administrator, Trainer, Course author, Non-editing trainer, Learner, Team Lead), custom roles, site role assignments, comparison matrix |
 | Upload users (CSV) | Preview with validation, enrolments and groups, update existing users |
 | Backup and restore | Course backup with or without user data; restore as a new course |
@@ -181,6 +181,23 @@ location / {
 ## Starting password for new accounts
 
 Every new account starts with the password **`Welcome@1`** and must choose its own password at first sign-in. This covers accounts added in Site administration › Users without a password, CSV uploads with an empty password, and the built-in administrators. Accounts created through single sign-on or LDAP are the exception: they use the company sign-in instead. To use a different starting password, set `NB_DEFAULT_PASSWORD` on the server. Anyone who knows someone's username can sign in with the starting password until that person has signed in once, so ask new users to sign in soon after their account is created.
+
+## Super administrator
+
+The accounts listed under `admins` in `server/site-admins.js` (today geetansh.kumar@nobroker.in) are **super administrators**.
+- Only a super administrator can take administrator access away from other administrators, suspend them or delete them. The Users list shows them **Remove admin access** and **Delete** buttons on administrator rows.
+- Removing access keeps the account, with the person's learner, trainer or team lead personas. The person is notified, and the change is recorded in the audit log.
+- Other administrators can still create administrators. They cannot remove or demote one.
+
+## Course group chats
+
+Trainers of a course and administrators can create group chats for it:
+- when they create a course ("Create a group chat for everyone in this course", ticked by default);
+- or at any time from the course's **Group chats** tab.
+
+A chat is either **everyone in the course**, where people enrolled later join automatically, or **chosen people** from the course. Members see their chats in **Messages**, next to one-to-one conversations, with unread counts. They are told when they're added to a chat.
+
+The course's trainers and administrators can read every chat in the course, and can rename, change members or delete it. Chats of archived courses are read-only, and a course's chats are deleted with the course.
 
 ## Usernames
 

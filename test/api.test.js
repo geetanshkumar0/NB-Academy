@@ -408,6 +408,61 @@ test('usernames may use capital letters, keep them, and are matched without rega
   for (const typed of ['Rahul.Sharma', 'rahul.sharma', 'RAHUL.SHARMA']) assert.equal((await call('POST', '/api/login', {username:typed, password:'Welcome@1'})).status, 200, typed);
 });
 
+test('only the super administrator can remove, suspend or delete other administrators', async () => {
+  const a = await login('admin');
+  let r = await op(a, 'newUser', {firstname:'Second', lastname:'Admin', username:'admin2', email:'admin2@example.com', welcome:false, personas:['admin'], admin:true});
+  assert.equal(r.status, 200, r.text); const id2 = r.json.result.id;
+  assert.equal((await op(a, 'removeAdmin', {id:id2})).status, 403);
+  assert.equal((await op(a, 'deleteUser', {id:id2})).status, 403);
+  assert.equal((await op(a, 'suspendUser', {id:id2, on:true})).status, 403);
+  assert.equal((await op(a, 'setPersonas', {userId:id2, personas:['learner']})).status, 403);
+  // The super administrator signs in, sets a password and removes the other administrators' access
+  const g = (await call('POST', '/api/login', {username:'geetansh.kumar', password:'Welcome@1'})).cookie;
+  assert.equal((await op(g, 'setOwnPassword', {password:'Super@2026x'})).status, 200);
+  r = await op(g, 'removeAdmin', {id:id2}); assert.equal(r.status, 200, r.text);
+  const u2 = r.json.state.users.find(u => u.id === id2); assert.equal(u2.admin, false); assert.deepEqual(u2.personas, ['learner']);
+  assert.ok(r.json.state.audit.some(x => x.action === 'Administrator access removed' && x.target === 'admin2'));
+  assert.equal((await op(g, 'removeAdmin', {id:'u1'})).status, 200);
+  assert.equal((await op(a, 'deleteUser', {id:id2})).status, 403, 'a former admin cannot manage users any more');
+  assert.equal((await op(g, 'deleteUser', {id:id2})).status, 200);
+  const me = (await call('GET', '/api/state', null, g)).json.state.users.find(u => u.username === 'geetansh.kumar');
+  assert.equal((await op(g, 'removeAdmin', {id:me.id})).status, 400, 'cannot remove own access');
+  // give the demo admin its access back for the remaining tests
+  assert.equal((await op(g, 'setPersonas', {userId:'u1', personas:['admin']})).status, 200);
+});
+
+test('course group chats: trainers and admins create them; only members (and course managers) see them', async () => {
+  const rohan = await login('rohan'), asha = await login('asha'), dev = await login('dev'), a = await login('admin');
+  assert.equal((await op(asha, 'createChat', {cid:'c1', name:'Learners only'})).status, 403, 'learners cannot create chats');
+  assert.equal((await op(rohan, 'createChat', {cid:'c2', name:'Not my course'})).status, 403, 'trainers only in their own courses');
+  let r = await op(rohan, 'createChat', {cid:'c1', name:'DA101 everyone', mode:'course'}); assert.equal(r.status, 200, r.text);
+  const everyone = r.json.result.id;
+  const chat = r.json.state.chats.find(c => c.id === everyone);
+  for (const id of ['u2', 'u4', 'u5']) assert.ok(chat.memberIds.includes(id));
+  r = await op(asha, 'sendChatMessage', {id:everyone, text:'Hello team'}); assert.equal(r.status, 200, r.text);
+  let st = (await call('GET', '/api/state', null, rohan)).json.state;
+  assert.ok(st.chatMessages.some(m => m.chatId === everyone && m.text === 'Hello team'));
+  st = (await call('GET', '/api/state', null, dev)).json.state;
+  assert.ok(!st.chats.some(c => c.id === everyone) && !st.chatMessages.some(m => m.chatId === everyone), 'not in the course, cannot see it');
+  assert.equal((await op(dev, 'sendChatMessage', {id:everyone, text:'hi'})).status, 403);
+  // A smaller chat with chosen people
+  r = await op(rohan, 'createChat', {cid:'c1', name:'Asha and Rohan', mode:'custom', members:['u4']}); assert.equal(r.status, 200, r.text);
+  const small = r.json.result.id;
+  st = (await call('GET', '/api/state', null, await login('kabir'))).json.state;
+  assert.ok(!st.chats.some(c => c.id === small), 'kabir is not in the small chat');
+  st = (await call('GET', '/api/state', null, a)).json.state;
+  assert.ok(st.chats.some(c => c.id === small), 'admins can see every chat to moderate');
+  assert.equal((await op(asha, 'updateChat', {id:small, name:'x', mode:'course'})).status, 403);
+  assert.equal((await op(asha, 'deleteChat', {id:small})).status, 403);
+  assert.equal((await op(rohan, 'deleteChat', {id:small})).status, 200);
+  // Created together with a course, and removed with it
+  r = await op(a, 'newCourse', {fullname:'Chat course', shortname:'CHAT1', catId:getState().categories[0].id, sections:1, groupChat:'on'});
+  assert.equal(r.status, 200, r.text); const cid = r.json.result.id;
+  assert.ok(r.json.state.chats.some(c => c.courseId === cid && c.mode === 'course'));
+  r = await op(a, 'deleteCourse', {id:cid}); assert.equal(r.status, 200, r.text);
+  assert.ok(!r.json.state.chats.some(c => c.courseId === cid));
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);
