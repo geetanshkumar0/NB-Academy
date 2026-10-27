@@ -54,6 +54,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 - **Administrator:** `user.admin`, or the site role `manager`. Built-in admins have `builtinAdmin: true`. They are the **super administrators** (`h.isSuperAdmin()`). They hold every persona (`h.personas` returns all four; Trainer and Team Lead views show every course and cohort), and only they can remove admin access (`removeAdmin`), suspend or delete other admins, and they cannot themselves be deleted, suspended or demoted in the app.
 - **Course group chats** (`S.chats`, `S.chatMessages`; ops `createChat`, `updateChat`, `deleteChat`, `sendChatMessage`, `readChat` in core-ext.js): created by the course's trainers or by admins (`h.canManageChats`). `mode: 'course'` means everyone enrolled in the course is a member.
 
+- **Teams:** a user's team is stored in `user.department` and must be one of `S.site.teams` (default `TEAMS` in core.js, editable via `saveTeams`); `normTeam` validates it. The Company field is no longer asked for.
+
 `h.personas(uid)` drives the view switcher (`modes()` in base.js).
 
 ## Fixing an issue

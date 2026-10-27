@@ -515,10 +515,15 @@ const DEFAULT_TEMPLATES = {
   passwordReset:{label:'Password reset', subject:'Reset your {site} password', body:'Hi {firstname},\n\nUse this link to choose a new password. It is valid for 2 hours.\n\n{link}\n\nIf you did not ask for this, ignore this email.', email:true, inapp:false}
 };
 const TEMPLATE_VARS = '{firstname} {lastname} {username} {site} {course} {item} {due} {days} {progress} {link} {sender} {learner} {reason} {remarks} {grade} {code} {expires} {when} {where}';
+/* Teams people belong to (stored on the user as "department"; shown as "Team"). Administrators can edit the list. */
+const TEAMS = ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal', 'Seller Servicing', 'Owner Servicing', 'Buyer Acquisition and Property Sales', 'PnM Sales', 'PnM Servicing', 'Investment Advisory', 'Loan Sales', 'Loan Servicing', 'CPMS Tenant Search', 'CPMS Servicing', 'PMS Servicing', 'PMS Sales', 'Owner/Seller Sales', 'Tenant/Buyer Sales', 'CPMS Sales', 'NRI Sales', 'Commercial Sales', 'Outbound', 'Hood'];
+const teamsOf = S => Array.isArray(S.site.teams) && S.site.teams.length ? S.site.teams : TEAMS;
+/* A team name from the list (matched without regard to case or spacing), '' for none; anything else is refused */
+function normTeam(S, v) { const x = String(v ?? '').trim(); if (!x) return ''; const key = t => t.toLowerCase().replace(/\s+/g, ' '); const hit = teamsOf(S).find(t => key(t) === key(x)); if (!hit) throw new OpError(`"${x}" is not one of the teams. Choose a team from the list.`, 400); return hit; }
 function defaultSite() {
   return {name:'NB Academy', tagline:'Courses, assessments and progress tracking for every learner.', demo:false, url:'',
     branding:{logo:null, primary:'#0e6175', accent:'#d2831a'},
-    emailTheme:{color:'#FB3753'},
+    emailTheme:{color:'#FB3753'}, teams:TEAMS.slice(),
     terms:{version:1, text:'## Acceptable use\n- Use this platform only for work-related learning.\n- Keep your password private and do not share your account.\n- Complete assigned training honestly and by its due date.\n\n## Your data\nWe record your course progress, scores, time spent and certificates to manage training and meet compliance requirements. Your team lead and trainers can see progress for the courses and cohorts mapped to them.'},
     security:{minLength:8, upper:true, lower:true, digit:true, special:false, lockoutAttempts:5, lockoutMinutes:30, sessionTimeout:60, mfa:'off'},
     email:{enabled:false, host:'', port:587, secure:false, user:'', pass:'', from:'NB Academy <no-reply@example.com>'},
@@ -874,7 +879,8 @@ function validateUserRows(S, csvText) {
       enrols.push({courseId:c.id, shortname:c.shortname, role:roleObj.id, group:r['group' + k] || ''});
     }
     if (r.password) { try { checkPassword(S, r.password); } catch (e) { errors.push(e.message.replace(/\.$/, '')); } }
-    return {line:i + 2, username:un, firstname:r.firstname, lastname:r.lastname, email:r.email, company:r.company || '', department:r.department || '', password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
+    let team = ''; try { team = normTeam(S, r.team ?? r.department); } catch (e) { errors.push(`Team "${r.team ?? r.department}" is not on the team list`); }
+    return {line:i + 2, username:un, firstname:r.firstname, lastname:r.lastname, email:r.email, company:r.company || '', department:team, password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
   });
   return {headers, rows:out, errors:[]};
 }
@@ -925,7 +931,7 @@ op('heartbeat', (S, h, p) => { const e = h.enrolOf(p.cid); if (e && h.isLearner(
 op('updateProfile', (S, h, p, env) => {
   const u = h.user(p.id); need(u, 'User not found.', 404); const manage = h.has('user:manage');
   need(u.id === h.meId || manage, 'You cannot edit this profile.');
-  if (manage) { u.firstname = req(p.firstname, 'First name', 100); u.lastname = req(p.lastname, 'Last name', 100); const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; u.company = str(p.company, 120); u.department = str(p.department, 120); }
+  if (manage) { u.firstname = req(p.firstname, 'First name', 100); u.lastname = req(p.lastname, 'Last name', 100); const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; if (p.company !== undefined) u.company = str(p.company, 120); u.department = normTeam(S, p.team ?? p.department); }
   if (p.password) {
     if (u.id === h.meId && !h.isAdmin()) need(env.verify(u, String(p.current || '')), 'Your current password is not correct.', 400);
     checkPassword(S, p.password); Object.assign(u, env.hash(String(p.password))); u.pwChanged = env.now(); u.mustChangePassword = u.id !== h.meId;
@@ -974,7 +980,7 @@ op('newUser', (S, h, p, env) => {
   need(!p.admin || h.isAdmin(), 'Only site administrators can create administrators.');
   const pw = p.password ? String(p.password) : (env.defaultPassword || DEFAULT_PASSWORD);
   if (p.password) checkPassword(S, pw);
-  const u = {id:env.uid('u'), firstname:req(p.firstname, 'First name', 100), lastname:req(p.lastname, 'Last name', 100), username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, company:str(p.company, 120), department:str(p.department, 120), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
+  const u = {id:env.uid('u'), firstname:req(p.firstname, 'First name', 100), lastname:req(p.lastname, 'Last name', 100), username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, company:str(p.company, 120), department:normTeam(S, p.team ?? p.department), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
   S.users.push(u); log(S, env, h.meId, `User created: ${un}`); audit(S, env, h.meId, 'User created', un, `${u.firstname} ${u.lastname} <${u.email}>`);
   if (p.welcome !== false) welcomeUser(S, env, u);
   applyRules(S, env, u.id);
@@ -1533,5 +1539,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
   gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

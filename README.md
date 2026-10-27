@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (50 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (51 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -224,6 +224,13 @@ The course's trainers and administrators can read every chat in the course, and 
 - Trainers and admins see the detected SCORM version and start page on the activity page.
 - A package with several SCOs plays its first SCO; SCORM 2004 sequencing rules between SCOs are not applied.
 - If the server sits behind nginx, raise its upload limit, or big packages fail with "too large". See Deploying.
+
+## Teams
+
+- Each person can belong to a **Team**, chosen from a dropdown when adding or editing them. There is no Company field.
+- The list starts with 22 teams, from Legal Servicing to Hood. Administrators can change it under Site administration › Users › **Team list**.
+- The server only accepts teams on the list, matching without regard to capitals or spacing. CSV uploads use a `team` column; `department` is also accepted.
+- Teams are stored as the user's `department`, so assignment rules ("Are in the team…"), cohorts and analytics (Group by Team) use them.
 
 ## Usernames
 

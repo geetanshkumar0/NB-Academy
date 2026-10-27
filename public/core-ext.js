@@ -99,6 +99,12 @@ op('saveTemplate', (S, h, p, env) => {
   else { Object.assign(t, {subject:req(p.subject, 'Subject', 200), body:req(p.body, 'Message', 5000), email:!!p.email, inapp:!!p.inapp}); if (p.html !== undefined) t.html = str(p.html, 100000).trim(); }
   audit(S, env, h.meId, 'Notification template changed', t.label);
 });
+op('saveTeams', (S, h, p, env) => {
+  need(h.has('site:config'), 'You cannot change the team list.');
+  const list = [...new Map((Array.isArray(p.teams) ? p.teams : String(p.teams || '').split('\n')).map(x => str(x, 120).trim()).filter(Boolean).map(x => [x.toLowerCase(), x])).values()];
+  need(list.length, 'Add at least one team.', 400);
+  S.site.teams = list; audit(S, env, h.meId, 'Team list changed', 'Site', `${list.length} teams`);
+});
 op('saveEmailTheme', (S, h, p, env) => {
   need(h.has('site:config'), 'You cannot change these settings.');
   const c = String(p.color || '').trim(); need(/^#[0-9a-f]{6}$/i.test(c), 'Choose a colour such as #FB3753.', 400);
@@ -568,6 +574,8 @@ VIEW_HOOKS.push((S, h, V) => {
 });
 
 /* ---------------- Demo data for the lifecycle features ---------------- */
+// Demo data: its departments (Analytics, Sales…) join the team list so demo users stay valid
+SEED_HOOKS.push(S => { S.site.teams = [...new Set([...Core.TEAMS, ...S.users.map(u => u.department).filter(Boolean), 'Analytics', 'Sales', 'Operations', 'Learning & Development', 'IT'])]; });
 SEED_HOOKS.push((S, env, files, ids) => {
   const t0 = env.now(), day = n => t0 + n * D, at = (n, hh, mi = 0) => { const d = new Date(day(n)); d.setHours(hh, mi, 0, 0); return d.getTime(); };
   const pw = env.hash ? env.hash('demo') : {password:'demo'};

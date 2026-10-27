@@ -608,6 +608,28 @@ test('course group chats: trainers and admins create them; only members (and cou
   assert.ok(!r.json.state.chats.some(c => c.courseId === cid));
 });
 
+test('teams: users get a team from the list, company is no longer asked for, and admins can edit the list', async () => {
+  const a = await login('admin');
+  let r = await op(a, 'newUser', {firstname:'Neha', lastname:'G', username:'neha.g', email:'neha.g@example.com', welcome:false, personas:['learner'], team:'legal sales'});
+  assert.equal(r.status, 200, r.text); assert.equal(r.json.state.users.find(u => u.id === r.json.result.id).department, 'Legal Sales');
+  const id = r.json.result.id;
+  r = await op(a, 'newUser', {firstname:'X', lastname:'Y', username:'x.y', email:'x.y@example.com', welcome:false, personas:['learner'], team:'Marketing'});
+  assert.equal(r.status, 400); assert.match(r.json.error, /not one of the teams/);
+  assert.equal((await op(a, 'newUser', {firstname:'No', lastname:'Team', username:'no.team', email:'no.team@example.com', welcome:false, personas:['learner']})).status, 200, 'team is optional');
+  r = await op(a, 'updateProfile', {id, firstname:'Neha', lastname:'G', email:'neha.g@example.com', team:'Hood'}); assert.equal(r.status, 200, r.text);
+  assert.equal(getState().users.find(u => u.id === id).department, 'Hood');
+  assert.deepEqual(getState().site.teams.slice(0, 3), ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal']); assert.equal(require('../public/core.js').TEAMS.length, 22); assert.ok(require('../public/core.js').TEAMS.every(t => getState().site.teams.includes(t)));
+  assert.deepEqual(require('../public/core.js').emptyState().site.teams, require('../public/core.js').TEAMS, 'a real (non-demo) site starts with exactly the 22 teams');
+  // CSV upload checks the team column
+  const csv = 'username,firstname,lastname,email,team\nt.one,T,One,t.one@example.com,PnM Sales\nt.two,T,Two,t.two@example.com,Unknown Team';
+  r = await op(a, 'uploadUsers', {csv, updateExisting:false}); assert.equal(r.status, 200, r.text);
+  assert.equal(getState().users.find(u => u.username === 't.one').department, 'PnM Sales'); assert.ok(!getState().users.some(u => u.username === 't.two'));
+  // Admins can change the list; others cannot
+  assert.equal((await op(await login('rohan'), 'saveTeams', {teams:'A\nB'})).status, 403);
+  assert.equal((await op(a, 'saveTeams', {teams:[...getState().site.teams, 'Customer Success'].join('\n')})).status, 200);
+  assert.equal((await op(a, 'updateProfile', {id, firstname:'Neha', lastname:'G', email:'neha.g@example.com', team:'Customer Success'})).status, 200);
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

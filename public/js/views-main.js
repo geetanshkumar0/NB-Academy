@@ -242,7 +242,7 @@ VIEWS.profile = (p) => {
     <div class="dash"><div class="stack">
       <section class="block"><header><h2>User details</h2>${!self ? `<button class="btn sm" data-go="messages" data-with="${u.id}">Message</button>` : ''}</header><div class="bb"><table class="kv" style="border:0"><tbody>
         <tr><th>Email address</th><td>${esc(u.email)}</td></tr>${u.username ? `<tr><th>Username</th><td class="mono">${esc(u.username)}</td></tr>` : ''}
-        <tr><th>Company · Department</th><td>${esc(u.company || '–')} · ${esc(u.department || '–')}</td></tr>
+        <tr><th>Team</th><td>${esc(u.department || '–')}</td></tr>
         <tr><th>Site roles</th><td>${u.admin ? 'Site administrator' : sys.length ? esc(sys.join(', ')) : 'Authenticated user'}${u.suspended ? ' <span class="chip bad">Suspended</span>' : ''}${u.locked ? ' <span class="chip bad">Locked</span>' : ''}</td></tr>
         ${cohorts.length ? `<tr><th>Cohorts</th><td>${cohorts.map(c => `${esc(c.name)}${c.leads.includes(u.id) ? ' (team lead)' : c.trainers.includes(u.id) ? ' (trainer)' : ''}`).join('<br>')}</td></tr>` : ''}
         ${u.auth && u.auth !== 'manual' ? `<tr><th>Sign-in method</th><td>${u.auth === 'sso' ? 'Single sign-on' : 'LDAP directory'}</td></tr>` : ''}
@@ -255,7 +255,7 @@ VIEWS.profile = (p) => {
       <div class="fgrid"><div class="field"><label for="pf1">First name</label><input id="pf1" name="firstname" type="text" value="${esc(u.firstname)}" required></div>
       <div class="field"><label for="pf2">Last name</label><input id="pf2" name="lastname" type="text" value="${esc(u.lastname)}" required></div>
       <div class="field full"><label for="pf3">Email address</label><input id="pf3" name="email" type="email" value="${esc(u.email)}" required></div>
-      <div class="field"><label for="pf5">Company</label><input id="pf5" name="company" type="text" value="${esc(u.company)}"></div><div class="field"><label for="pf6">Department</label><input id="pf6" name="department" type="text" value="${esc(u.department)}"></div></div>
+      <div class="field"><label for="pf6">Team</label>${teamSelect('pf6', u.department || '')}</div></div>
       <button class="btn primary" type="submit">Save changes</button></form>
       <section class="card stack"><h2>Account actions</h2>
         <div class="row"><button class="btn" data-act="resetPw" data-u="${u.id}">Reset password</button>${u.locked ? `<button class="btn" data-act="unlockUser" data-u="${u.id}">Unlock account</button>` : ''}<button class="btn" data-act="resendWelcome" data-u="${u.id}">Resend welcome email</button>${u.mfaEnabled ? `<button class="btn" data-act="mfaOff" data-u="${u.id}">Turn off two-step sign-in</button>` : ''}</div>
