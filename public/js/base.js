@@ -91,6 +91,8 @@ const ServerBackend = {
   async req(method, url, body, headers = {}) {
     const r = await fetch(url, {method, credentials:'same-origin', headers:{'X-NB-Request':'1', ...(body && !(body instanceof Blob) ? {'Content-Type':'application/json'} : {}), ...headers}, body:body instanceof Blob ? body : body ? JSON.stringify(body) : undefined});
     let data = {}; try { data = await r.json(); } catch (e) {}
+    if (!r.ok && r.status === 413 && !data.error) throw new ApiError('This file is larger than the web server in front of NB Academy allows. Ask whoever runs the server to raise the upload limit (for nginx: client_max_body_size 1g;) and try again.', 413);
+    if (!r.ok && (r.status === 502 || r.status === 504) && !data.error) throw new ApiError('The server took too long to answer. For large uploads, ask whoever runs the server to raise the proxy timeouts (for nginx: proxy_read_timeout and client_body_timeout 600s;).', r.status);
     if (!r.ok) throw new ApiError(data.error || `Request failed (${r.status})`, r.status);
     return data;
   },
@@ -109,7 +111,7 @@ const ServerBackend = {
   fileUrl: (f, dl) => `/files/${f.id}/${encodeURIComponent(f.name)}${dl ? '?dl=1' : ''}`,
   backupUrl: (cid, users) => `/api/backup/${cid}${users ? '?users=1' : ''}`,
   certPdfUrl: code => `/cert/${code}.pdf`,
-  scormUrl: m => `/scorm/${m.id}/${(m.launch || 'index.html').split('/').map(encodeURIComponent).join('/')}`,
+  scormUrl: m => { const [p, q] = (m.launch || 'index.html').split('?'); return `/scorm/${m.id}/${p.split('/').map(encodeURIComponent).join('/')}${q ? '?' + q : ''}`; },
   async fileText(f) { const r = await fetch(this.fileUrl(f)); return r.text(); }
 };
 const LocalBackend = (() => {
@@ -152,7 +154,7 @@ const LocalBackend = (() => {
     },
     async loginAs(uid) { await this.op('loginAsCheck', {id:uid}); C._.audit(DB, env, SID, 'Logged in as another user', DB.users.find(u => u.id === uid).username); SID = uid; persist(); return view(); },
     async upload(file) {
-      if (file.size > 3 * 1048576) throw new ApiError('In the preview, files are limited to 3 MB. The server edition accepts up to 100 MB.', 413);
+      if (file.size > 3 * 1048576) throw new ApiError('In the preview, files are limited to 3 MB. The server edition accepts up to 1 GB.', 413);
       const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new ApiError('Could not read the file.', 400)); r.readAsDataURL(file); });
       const fid = 'f_' + Math.random().toString(36).slice(2, 12);
       FILES[fid] = url;

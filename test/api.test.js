@@ -123,6 +123,53 @@ test('SCORM content is served only to people in the course and saves progress', 
   const bad = await call('POST', '/api/upload?name=bad.zip', Buffer.from('not a zip'), admin, {'Content-Type':'application/zip'});
   assert.equal((await op(admin, 'saveMod', {cid:'c3', type:'scorm', sid:'c3s1', name:'Bad', visible:true, fields:{packageId:bad.json.result.id}})).status, 400);
 });
+/* Builds a zip (stored entries) for SCORM tests */
+function makeZip(entries) {
+  const zlib = require('node:zlib'); const locals = [], centrals = []; let off = 0;
+  for (const [name, content] of entries) {
+    const data = Buffer.isBuffer(content) ? content : Buffer.from(content), nm = Buffer.from(name), crc = zlib.crc32(data);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nm.length, 26);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nm.length, 28); ch.writeUInt32LE(off, 42);
+    locals.push(lh, nm, data); centrals.push(ch, nm); off += 30 + nm.length + data.length;
+  }
+  const cd = Buffer.concat(centrals), end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+const MAN_2004 = `<?xml version="1.0" encoding="UTF-8"?><manifest identifier="NB" version="1" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><metadata><schema>ADL SCORM</schema><schemaversion>2004 4th Edition</schemaversion></metadata>
+  <organizations default="ORG"><organization identifier="ORG"><title>NoBroker Story</title><item identifier="I1" identifierref="RES_SCO" parameters="?start=1"><title>Story</title></item></organization></organizations>
+  <resources xml:base="content/"><resource identifier="RES_ASSET" type="webcontent" adlcp:scormType="asset" href="shared/player.js"><file href="shared/player.js"/></resource>
+  <resource identifier="RES_SCO" type="webcontent" adlcp:scormType="sco" href="scormdriver/indexAPI.html"><file href="scormdriver/indexAPI.html"/></resource></resources></manifest>`;
+
+test('SCORM 2004 packages zipped one folder deep: found, served, streamed and re-read when older', async () => {
+  const admin = await login('admin'), asha = await login('asha');
+  const audio = Buffer.alloc(5000, 7); audio.write('ID3', 0);
+  const zip = makeZip([['NoBroker Story/imsmanifest.xml', MAN_2004], ['NoBroker Story/content/scormdriver/indexAPI.html', '<!doctype html><script src="../shared/player.mjs" type="module"></script>API_1484_11'],
+    ['NoBroker Story/content/shared/player.js', 'x'], ['NoBroker Story/content/shared/player.mjs', 'export default 1'], ['NoBroker Story/content/Media/Intro.MP3', audio]]);
+  const up = await call('POST', '/api/upload?name=story.zip', zip, admin, {'Content-Type':'application/zip'}); assert.equal(up.status, 200, up.text);
+  const sid = getState().courses.find(c => c.id === 'c1').sections[0].id;
+  const sm = await op(admin, 'saveMod', {cid:'c1', type:'scorm', sid, name:'NoBroker Story', visible:true, fields:{packageId:up.json.result.id, maxgrade:100}});
+  assert.equal(sm.status, 200, sm.text); const mid = sm.json.result.id, m = getState().mods[mid];
+  assert.equal(m.scormVersion, '2004'); assert.equal(m.launch, 'NoBroker Story/content/scormdriver/indexAPI.html?start=1');
+  const page = await call('GET', `/scorm/${mid}/NoBroker%20Story/content/scormdriver/indexAPI.html?start=1`, null, asha);
+  assert.equal(page.status, 200); assert.match(page.text, /API_1484_11/);
+  const mjs = await fetch(`${base}/scorm/${mid}/NoBroker%20Story/content/shared/player.mjs`, {headers:{Cookie:asha}}); assert.equal(mjs.headers.get('content-type'), 'text/javascript');
+  // a link that differs only in capital letters still works; byte ranges for media
+  const part = await fetch(`${base}/scorm/${mid}/NoBroker%20Story/content/media/intro.mp3`, {headers:{Cookie:asha, Range:'bytes=0-2'}});
+  assert.equal(part.status, 206); assert.equal(part.headers.get('content-range'), 'bytes 0-2/5000'); assert.equal(Buffer.from(await part.arrayBuffer()).toString(), 'ID3');
+  // A package saved before SCORM 2004 support (wrong launch, no version) is read again when opened
+  const S = getState(); S.mods[mid].launch = 'content/shared/player.js'; delete S.mods[mid].scormVersion;
+  assert.equal((await call('GET', `/scorm/${mid}/x`, null, asha)).status, 404);
+  assert.equal(getState().mods[mid].launch, 'NoBroker Story/content/scormdriver/indexAPI.html?start=1'); assert.equal(getState().mods[mid].scormVersion, '2004');
+  // SCORM 2004 progress is saved through the same record (status and a percentage score)
+  const c = await op(asha, 'scormCommit', {mid, cmi:{'cmi.core.lesson_location':'slide-4', 'cmi.suspend_data':'abc', 'cmi.core.lesson_status':'passed', 'cmi.core.score.raw':'90'}, finish:true});
+  assert.equal(c.status, 200, c.text); assert.equal(c.json.result.completed, true);
+  // A package whose manifest names a missing start page is refused with a clear message
+  const broken = makeZip([['imsmanifest.xml', MAN_2004.replace('xml:base="content/"', '')]]);
+  const up2 = await call('POST', '/api/upload?name=broken.zip', broken, admin, {'Content-Type':'application/zip'});
+  const r2 = await op(admin, 'saveMod', {cid:'c1', type:'scorm', sid, name:'Broken', visible:true, fields:{packageId:up2.json.result.id}});
+  assert.equal(r2.status, 400); assert.match(r2.json.error, /launch file "scormdriver\/indexAPI.html".*not in the package/);
+});
+
 test('essay questions wait for a trainer, then count', async () => {
   const dev = await login('dev');
   const s = await op(dev, 'startQuiz', {mid:'m21'}); assert.equal(s.status, 200);

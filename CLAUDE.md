@@ -41,6 +41,7 @@ npm run build:preview         # dist/preview.html: browser-only edition, data in
   - the scheduler (every 5 minutes) and email delivery (every 30 seconds).
 - `server/store.js` handles SQLite persistence. Each record is a JSON row, and audit rows are append-only (enforced by database triggers).
 - `server/mailer.js`, `ldap.js`, `oidc.js`, `unzip.js` and `pdf.js` are hand-written protocol and format code.
+- **SCORM:** `server/unzip.js` `scormLaunch` reads the manifest (default organisation, xml:base, launch parameters; detects 1.2 or 2004). `mountPlayers()` in views-activities.js provides both `window.API` (1.2) and `window.API_1484_11` (2004) over one saved record; `scormCommit` stores it with 1.2-style keys and the score as a percentage. Activities without `scormVersion` are re-read on first open (`ensureScorm`).
 
 A change flows like this: the browser sends `POST /api/op {op, payload}`. The server runs `Core.run(S, uid, op, payload, env)`, which checks capabilities with `need(...)`, then saves the changed rows and returns that user's filtered view. If an op throws, the server reloads the last saved state.
 

@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (46 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (47 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -62,7 +62,7 @@ node tools/build-preview.js            # build dist/preview.html (browser-only d
 | Run | `node server/server.js` | `dist/preview.html` (single file) |
 | Data | SQLite on the server, shared by everyone | `localStorage` in one browser |
 | Logins | Hashed passwords (scrypt), HttpOnly session cookies | Demo only |
-| Files | Up to 25 MB, stored on disk, permission-checked downloads | Up to 2 MB, kept in the browser |
+| Files | Up to 1 GB (`NB_MAX_UPLOAD_MB`), stored on disk, permission-checked downloads | Up to 2 MB, kept in the browser |
 | Use | Real deployments | Demos and design reviews |
 
 Both editions run the **same business logic** (`public/core.js`). In the server edition the server runs every operation and the browser never decides permissions.
@@ -159,7 +159,7 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 
 1. Install Node.js 22.13+ on the server and copy this folder.
 2. Start it with `NODE_ENV=production node server/server.js` (sign in as `geetansh.kumar` / `Welcome@1`), using a process manager with a process manager (systemd, pm2 or similar).
-3. Put it behind a reverse proxy (nginx, Caddy) with HTTPS, and set `NB_SECURE_COOKIES=1`. Allow upload bodies of 25 MB.
+3. Put it behind a reverse proxy (nginx, Caddy) with HTTPS, and set `NB_SECURE_COOKIES=1`. Allow upload bodies of 1 GB (SCORM packages with video are often well over 25 MB).
 4. Back up the `data/` folder (database and files). SQLite's WAL mode allows a hot copy using `sqlite3 data/nbacademy.db ".backup backup.db"`.
 
 Example nginx location:
@@ -168,7 +168,10 @@ Example nginx location:
 location / {
   proxy_pass http://127.0.0.1:8080;
   proxy_set_header X-Forwarded-Proto $scheme;
-  client_max_body_size 25m;
+  client_max_body_size 1g;
+  client_body_timeout 600s;
+  proxy_read_timeout 600s;
+  proxy_request_buffering off;
 }
 ```
 
@@ -176,7 +179,7 @@ location / {
 
 - **Scale:** the server keeps all data in memory and saves changed rows to SQLite. That suits a school or company with up to a few thousand users. Larger sites would move per-request reads to SQL queries and run several processes.
 - **Background jobs** (deadline reminders, overdue locks, recertification, email delivery) run inside the server process every 5 minutes and every 30 seconds. Run one server process per data folder.
-- **Not included from Moodle:** SCORM 2004 / xAPI, LTI, H5P, plagiarism plugins, mobile app web services, multi-language packs, and the plugin system. See COVERAGE.md for the remaining limits.
+- **Not included from Moodle:** xAPI / cmi5, SCORM 2004 sequencing between several SCOs, LTI, H5P, plagiarism plugins, mobile app web services, multi-language packs, and the plugin system. See COVERAGE.md for the remaining limits.
 
 ## Starting password for new accounts
 
@@ -199,6 +202,16 @@ Trainers of a course and administrators can create group chats for it:
 A chat is either **everyone in the course**, where people enrolled later join automatically, or **chosen people** from the course. Members see their chats in **Messages**, next to one-to-one conversations, with unread counts. They are told when they're added to a chat.
 
 The course's trainers and administrators can read every chat in the course, and can rename, change members or delete it. Chats of archived courses are read-only, and a course's chats are deleted with the course.
+
+## SCORM packages
+
+- **SCORM 1.2 and SCORM 2004** (2nd, 3rd and 4th editions) both work. This covers exports from Articulate Storyline and Rise, iSpring, Adobe Captivate and similar tools.
+- Upload the **.zip exactly as exported**. It must contain `imsmanifest.xml`; a package zipped one folder deep also works.
+- The start page is found the way the standard describes: the first item of the default organisation, its launch parameters, and `xml:base`.
+- Packages up to 1 GB are accepted. Audio and video inside them stream and can be skipped through.
+- Trainers and admins see the detected SCORM version and start page on the activity page.
+- A package with several SCOs plays its first SCO; SCORM 2004 sequencing rules between SCOs are not applied.
+- If the server sits behind nginx, raise its upload limit, or big packages fail with "too large". See Deploying.
 
 ## Usernames
 

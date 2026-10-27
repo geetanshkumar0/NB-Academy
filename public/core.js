@@ -951,7 +951,7 @@ op('saveMod', (S, h, p, env) => {
   if (p.type === 'quiz') { m.questions ||= []; m.maxgrade ||= 10; }
   if (p.type === 'lesson') { m.pages ||= []; m.maxgrade ||= 10; }
   if (p.type === 'workshop') { m.phase ||= 1; m.peers = Math.min(5, Math.max(1, m.peers || 2)); m.maxgrade ||= 80; }
-  if (p.type === 'scorm') { m.maxgrade ||= 100; if (env.scormExtract) { const r = env.scormExtract(m.packageId, m.id); if (r) { m.launch = r.launch; m.single = r.single; m.title = r.title; } } }
+  if (p.type === 'scorm') { m.maxgrade ||= 100; if (env.scormExtract) { const r = env.scormExtract(m.packageId, m.id); if (r) { m.launch = r.launch; m.single = r.single; m.title = r.title; m.scormVersion = r.version; m.scormFiles = r.files; } } }
   if (p.type === 'video') m.completePct ||= 90;
   if (p.type === 'live') { need(m.start, 'Set the session date and time.', 400); m.duration ||= 60; }
   m.requires = (Array.isArray(f.requires) ? f.requires : []).filter(id => id !== m.id && S.mods[id]?.courseId === c.id);

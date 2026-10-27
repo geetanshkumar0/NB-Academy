@@ -471,6 +471,7 @@ BODIES.scorm = (m, c) => {
   let html = learner ? `<div class="spread" style="margin-bottom:10px"><div class="row" style="gap:6px">${r?.completed ? `<span class="chip ok">Completed${r.score != null ? ` · score ${r.score}%` : ''}</span>` : r ? `<span class="chip brand">In progress</span><span class="muted small">Your place is saved. You will continue where you stopped.</span>` : '<span class="chip">Not started</span>'}</div><span class="muted small" id="scormstatus"></span></div>` : '';
   if (src || local) html += `<iframe id="scormframe" data-mid="${m.id}" title="${esc(m.name)}" ${src ? `src="${esc(src)}"` : ''} style="width:100%;height:min(70vh,620px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>`;
   else html += `<div class="card muted">This SCORM package can only be played on the server edition. In the preview, single-page packages play directly.</div>`;
+  if (h.has('grade:viewall', c.id) && B.server) html += `<p class="muted small" style="margin-top:8px">Package: ${m.scormVersion ? `SCORM ${esc(m.scormVersion)}` : 'SCORM (checked when first opened)'}${m.scormFiles ? ` · ${m.scormFiles} files` : ''} · starts at <span class="mono">${esc(m.launch || '–')}</span></p>`;
   if (h.has('grade:viewall', c.id)) html += `<section class="stack" style="margin-top:22px"><h2>Learner progress</h2><div class="tw"><table><thead><tr><th>Learner</th><th>Status</th><th class="n">Score</th><th>Location</th><th>Last activity</th></tr></thead><tbody>${h.students(c.id).map(s => { const x = h.resume(m.id, s.id); return `<tr><td>${esc(fullname(s))}</td><td>${x ? `<span class="chip ${x.completed ? 'ok' : 'brand'}">${esc(x.status || 'incomplete')}</span>` : '<span class="chip">Not attempted</span>'}</td><td class="n">${x?.score != null ? x.score + '%' : '–'}</td><td class="small">${esc(x?.location || '–')}</td><td class="small">${x ? ago(x.updated) : '–'}</td></tr>`; }).join('')}</tbody></table></div></section>`;
   return html;
 };
@@ -540,15 +541,77 @@ function mountPlayers() {
   const f = document.getElementById('scormframe');
   if (f && !f.dataset.mounted) {
     f.dataset.mounted = '1'; const mid = f.dataset.mid, m = S.mods[mid], learner = h.isLearner(m.courseId), r = h.resume(mid, S.me) || {}, u = me();
-    const cmi = {'cmi.core.student_id':u.username || u.id, 'cmi.core.student_name':`${u.lastname}, ${u.firstname}`, 'cmi.core.lesson_location':r.location || '', 'cmi.core.lesson_status':r.status || 'not attempted', 'cmi.core.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.core.credit':learner ? 'credit' : 'no-credit', 'cmi.core.lesson_mode':learner ? 'normal' : 'browse', 'cmi.core.score.raw':r.score ?? '', 'cmi.core.score.min':'0', 'cmi.core.score.max':'100', 'cmi.core.total_time':'0000:00:00', 'cmi.suspend_data':r.suspend || '', 'cmi.launch_data':'', 'cmi.core.exit':'', 'cmi.core.session_time':''};
-    let err = '0', dirty = false;
-    const commit = async finish => { if (!learner || !dirty) return 'true'; dirty = false; try { const out = await B.op('scormCommit', {mid, cmi:{'cmi.core.lesson_location':cmi['cmi.core.lesson_location'], 'cmi.suspend_data':cmi['cmi.suspend_data'], 'cmi.core.lesson_status':cmi['cmi.core.lesson_status'], 'cmi.core.score.raw':cmi['cmi.core.score.raw']}, finish}); const el = document.getElementById('scormstatus'); if (el) el.textContent = `Saved ${new Date().toLocaleTimeString('en-IN', {hour:'numeric', minute:'2-digit'})}`; if (out.result?.completed && !r.completed) { r.completed = true; toast('Module completed'); setTimeout(async () => setState(await B.init()), 0); } } catch (e) { err = '101'; } return 'true'; };
-    scormAPI = window.API = {
-      LMSInitialize:() => 'true', LMSFinish:() => { commit(true); return 'true'; },
-      LMSGetValue:k => { err = '0'; if (k in cmi) return String(cmi[k]); if (k === 'cmi.core._children') return 'student_id,student_name,lesson_location,credit,lesson_status,entry,score,total_time,lesson_mode,exit,session_time'; err = '401'; return ''; },
-      LMSSetValue:(k, v) => { err = '0'; if (['cmi.core.student_id', 'cmi.core.student_name', 'cmi.core.credit', 'cmi.core.entry', 'cmi.core.total_time', 'cmi.core.lesson_mode', 'cmi.launch_data'].includes(k)) { err = '403'; return 'false'; } cmi[k] = String(v); dirty = true; return 'true'; },
-      LMSCommit:() => { commit(false); return 'true'; }, LMSGetLastError:() => err, LMSGetErrorString:c2 => ({'0':'No error', '101':'General exception', '401':'Not implemented', '403':'Element is read only'}[c2] || 'Error'), LMSGetDiagnostic:() => ''
+    /* One saved record (location, suspend data, status, score as a percentage) behind two runtimes:
+       SCORM 1.2 (window.API) and SCORM 2004 (window.API_1484_11). Content finds whichever it was built for. */
+    const st = {location:r.location || '', suspend:r.suspend || '', status:r.status || 'not attempted', success:/passed|failed/.test(r.status || '') ? r.status : 'unknown', score:r.score ?? '', raw:'', min:'', max:'', scaled:''};
+    const extra = {}; // interactions, objectives, preferences and anything else content stores during the session
+    let dirty = false, saving = null;
+    const percent = () => { if (st.scaled !== '' && !isNaN(st.scaled)) return Math.round(Number(st.scaled) * 1000) / 10; if (st.raw === '' || isNaN(st.raw)) return st.score;
+      const raw = Number(st.raw), max = st.max !== '' && !isNaN(st.max) ? Number(st.max) : 100, min = st.min !== '' && !isNaN(st.min) ? Number(st.min) : 0;
+      return max > min ? Math.round((raw - min) / (max - min) * 1000) / 10 : raw; };
+    const status12 = () => st.success === 'passed' ? 'passed' : st.success === 'failed' ? 'failed' : st.status;
+    const commit = finish => { if (!learner || (!dirty && !finish)) return Promise.resolve(); dirty = false;
+      const payload = {mid, cmi:{'cmi.core.lesson_location':st.location, 'cmi.suspend_data':st.suspend, 'cmi.core.lesson_status':status12(), 'cmi.core.score.raw':percent() === '' ? '' : String(percent())}, finish};
+      saving = B.op('scormCommit', payload).then(out => { const el = document.getElementById('scormstatus'); if (el) el.textContent = `Saved ${new Date().toLocaleTimeString('en-IN', {hour:'numeric', minute:'2-digit'})}`;
+        if (out.result?.completed && !r.completed) { r.completed = true; toast('Module completed'); setTimeout(async () => setState(await B.init()), 0); } }).catch(() => { dirty = true; });
+      return saving; };
+    const countOf = (k, prefix) => { const n = new Set(Object.keys(extra).filter(x => x.startsWith(prefix)).map(x => x.slice(prefix.length).split('.')[0])); return String(n.size); };
+    // SCORM 1.2
+    let err12 = '0';
+    const v12 = {'cmi.core.student_id':u.username || u.id, 'cmi.core.student_name':`${u.lastname}, ${u.firstname}`, 'cmi.core.credit':learner ? 'credit' : 'no-credit', 'cmi.core.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.core.lesson_mode':learner ? 'normal' : 'browse', 'cmi.core.total_time':'0000:00:00', 'cmi.launch_data':'', 'cmi.student_data.mastery_score':'', 'cmi.core.score.min':'0', 'cmi.core.score.max':'100'};
+    const RO12 = new Set(Object.keys(v12).filter(k => !/score\.(min|max)/.test(k)));
+    window.API = {
+      LMSInitialize:() => { err12 = '0'; return 'true'; }, LMSFinish:() => { commit(true); return 'true'; },
+      LMSGetValue:k => { err12 = '0';
+        if (k === 'cmi.core.lesson_location') return st.location; if (k === 'cmi.suspend_data') return st.suspend; if (k === 'cmi.core.lesson_status') return status12();
+        if (k === 'cmi.core.score.raw') return st.raw !== '' ? st.raw : String(st.score ?? ''); if (k === 'cmi.core.score.min') return st.min || '0'; if (k === 'cmi.core.score.max') return st.max || '100';
+        if (k in v12) return String(v12[k]); if (k in extra) return extra[k];
+        if (k === 'cmi.core._children') return 'student_id,student_name,lesson_location,credit,lesson_status,entry,score,total_time,lesson_mode,exit,session_time';
+        if (k === 'cmi.core.score._children') return 'raw,min,max'; if (k === 'cmi.interactions._count') return countOf(k, 'cmi.interactions.'); if (k === 'cmi.objectives._count') return countOf(k, 'cmi.objectives.');
+        if (/_children$/.test(k)) return ''; err12 = '401'; return ''; },
+      LMSSetValue:(k, v) => { err12 = '0'; v = String(v); if (RO12.has(k)) { err12 = '403'; return 'false'; }
+        if (k === 'cmi.core.lesson_location') st.location = v; else if (k === 'cmi.suspend_data') st.suspend = v;
+        else if (k === 'cmi.core.lesson_status') { if (v === 'passed' || v === 'failed') st.success = v; else st.status = v; }
+        else if (k === 'cmi.core.score.raw') st.raw = v; else if (k === 'cmi.core.score.min') st.min = v; else if (k === 'cmi.core.score.max') st.max = v;
+        else extra[k] = v;
+        dirty = true; return 'true'; },
+      LMSCommit:() => { commit(false); return 'true'; }, LMSGetLastError:() => err12,
+      LMSGetErrorString:c2 => ({'0':'No error', '101':'General exception', '201':'Invalid argument', '301':'Not initialized', '401':'Not implemented', '403':'Element is read only', '404':'Element is write only', '405':'Incorrect data type'}[c2] || 'Error'), LMSGetDiagnostic:c2 => ''
     };
+    // SCORM 2004 (2nd, 3rd and 4th editions)
+    let state04 = 'new', err04 = 0;
+    const ok = (v = 'true') => { err04 = 0; return v; }, bad = (code, v = 'false') => { err04 = code; return v; };
+    const v04 = {'cmi._version':'1.0', 'cmi.learner_id':u.username || u.id, 'cmi.learner_name':`${u.lastname}, ${u.firstname}`, 'cmi.credit':learner ? 'credit' : 'no-credit', 'cmi.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.mode':learner ? 'normal' : 'browse', 'cmi.launch_data':'', 'cmi.total_time':'PT0H0M0S', 'cmi.completion_threshold':'', 'cmi.scaled_passing_score':'', 'cmi.max_time_allowed':'', 'cmi.time_limit_action':'continue,no message', 'cmi.learner_preference.audio_level':'1', 'cmi.learner_preference.language':'', 'cmi.learner_preference.delivery_speed':'1', 'cmi.learner_preference.audio_captioning':'0'};
+    const RO04 = new Set(['cmi._version', 'cmi.learner_id', 'cmi.learner_name', 'cmi.credit', 'cmi.entry', 'cmi.mode', 'cmi.launch_data', 'cmi.total_time', 'cmi.completion_threshold', 'cmi.scaled_passing_score', 'cmi.max_time_allowed', 'cmi.time_limit_action']);
+    const WO04 = new Set(['cmi.exit', 'cmi.session_time']);
+    const completion04 = () => ['completed', 'passed', 'failed'].includes(st.status) ? (st.status === 'completed' || st.status === 'passed' ? 'completed' : 'incomplete') : st.status === 'not attempted' ? 'not attempted' : st.status === 'incomplete' ? 'incomplete' : 'unknown';
+    window.API_1484_11 = {
+      Initialize:() => state04 === 'running' ? bad(103) : state04 === 'done' ? bad(104) : (state04 = 'running', ok()),
+      Terminate:() => state04 !== 'running' ? bad(state04 === 'new' ? 112 : 113) : (state04 = 'done', commit(true), ok()),
+      GetValue:k => { if (state04 !== 'running') return bad(state04 === 'new' ? 122 : 123, '');
+        if (k === 'cmi.location') return ok(st.location); if (k === 'cmi.suspend_data') return ok(st.suspend);
+        if (k === 'cmi.completion_status') return ok(completion04()); if (k === 'cmi.success_status') return ok(st.success);
+        if (k === 'cmi.score.scaled') return ok(st.scaled !== '' ? st.scaled : st.score !== '' && st.score != null ? String(Number(st.score) / 100) : '');
+        if (k === 'cmi.score.raw') return ok(st.raw); if (k === 'cmi.score.min') return ok(st.min); if (k === 'cmi.score.max') return ok(st.max);
+        if (WO04.has(k)) return bad(405, ''); if (k in v04) return ok(String(v04[k])); if (k in extra) return ok(extra[k]);
+        if (k === 'cmi.interactions._count') return ok(countOf(k, 'cmi.interactions.')); if (k === 'cmi.objectives._count') return ok(countOf(k, 'cmi.objectives.')); if (k === 'cmi.comments_from_learner._count' || k === 'cmi.comments_from_lms._count') return ok(countOf(k, k.replace('_count', '')));
+        if (k === 'cmi.progress_measure' || /^adl\.nav\./.test(k)) return ok(k === 'adl.nav.request' ? '_none_' : /request_valid/.test(k) ? 'unknown' : '');
+        if (/\._children$/.test(k)) return ok('');
+        return bad(/^cmi\./.test(k) ? 403 : 401, ''); },
+      SetValue:(k, v) => { if (state04 !== 'running') return bad(state04 === 'new' ? 132 : 133); v = String(v); if (RO04.has(k)) return bad(404);
+        if (k === 'cmi.location') st.location = v; else if (k === 'cmi.suspend_data') st.suspend = v;
+        else if (k === 'cmi.completion_status') { if (!['completed', 'incomplete', 'not attempted', 'unknown'].includes(v)) return bad(406); st.status = v === 'completed' ? 'completed' : v === 'unknown' ? st.status : v; }
+        else if (k === 'cmi.success_status') { if (!['passed', 'failed', 'unknown'].includes(v)) return bad(406); st.success = v; }
+        else if (k === 'cmi.score.scaled') { if (isNaN(v) || Number(v) < -1 || Number(v) > 1) return bad(407); st.scaled = v; }
+        else if (k === 'cmi.score.raw') st.raw = v; else if (k === 'cmi.score.min') st.min = v; else if (k === 'cmi.score.max') st.max = v;
+        else extra[k] = v;
+        dirty = true; return ok(); },
+      Commit:() => state04 !== 'running' ? bad(state04 === 'new' ? 142 : 143) : (commit(false), ok()),
+      GetLastError:() => String(err04),
+      GetErrorString:c2 => ({'0':'No error', '101':'General exception', '103':'Already initialized', '104':'Content instance terminated', '112':'Termination before initialization', '113':'Termination after termination', '122':'Retrieve data before initialization', '123':'Retrieve data after termination', '132':'Store data before initialization', '133':'Store data after termination', '142':'Commit before initialization', '143':'Commit after termination', '401':'Undefined data model element', '403':'Data model element value not initialized', '404':'Data model element is read only', '405':'Data model element is write only', '406':'Data model element type mismatch', '407':'Data model element value out of range'}[String(c2)] || 'Error'),
+      GetDiagnostic:c2 => ''
+    };
+    scormAPI = window.API;
     if (!B.server) { const data = B.fileData?.(m.launchFileId); if (data) { try { f.srcdoc = decodeURIComponent(data.slice(data.indexOf(',') + 1)); } catch (e) {} } }
   }
 }

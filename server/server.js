@@ -32,7 +32,7 @@ const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA = path.resolve(process.env.NB_DATA_DIR || path.join(ROOT, 'data'));
 const SESSION_TTL = 7 * 24 * 3600 * 1000;
-const MAX_JSON = 8 * 1024 * 1024, MAX_UPLOAD = 100 * 1024 * 1024;
+const MAX_JSON = 8 * 1024 * 1024, MAX_UPLOAD = (Number(process.env.NB_MAX_UPLOAD_MB) || 1024) * 1024 * 1024; // SCORM packages with video can be large
 const args = new Set(process.argv.slice(2));
 
 /* ---------- Passwords and environment for the core ---------- */
@@ -187,10 +187,12 @@ function extractScorm(fileId, cmid) {
 }
 function ensureScorm(m) {
   const dir = store.scormDir(m.id), marker = path.join(dir, '.package');
-  if (fs.existsSync(marker) && fs.readFileSync(marker, 'utf8') === m.packageId) return;
-  const info = extractScorm(m.packageId, m.id); if (!m.launch) mutate(() => { m.launch = info.launch; });
+  // Packages from before SCORM 2004 support (no scormVersion yet) are read again, so their launch file is found the new way
+  if (fs.existsSync(marker) && fs.readFileSync(marker, 'utf8') === m.packageId && m.scormVersion) return;
+  const info = extractScorm(m.packageId, m.id);
+  if (m.launch !== info.launch || m.scormVersion !== info.version) mutate(() => { m.launch = info.launch; m.scormVersion = info.version; m.scormFiles = info.files; m.single = info.single; });
 }
-const SCORM_TYPES = {'.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.xml':'application/xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml', '.webp':'image/webp', '.mp4':'video/mp4', '.webm':'video/webm', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.pdf':'application/pdf', '.vtt':'text/vtt', '.swf':'application/octet-stream'};
+const SCORM_TYPES = {'.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.xml':'application/xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml', '.webp':'image/webp', '.mp4':'video/mp4', '.webm':'video/webm', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.pdf':'application/pdf', '.vtt':'text/vtt', '.swf':'application/x-shockwave-flash', '.mjs':'text/javascript', '.txt':'text/plain; charset=utf-8', '.xsd':'application/xml', '.dtd':'application/xml-dtd', '.ico':'image/x-icon', '.bmp':'image/bmp', '.otf':'font/otf', '.eot':'application/vnd.ms-fontobject', '.m4a':'audio/mp4', '.m4v':'video/mp4', '.ogg':'audio/ogg', '.oga':'audio/ogg', '.ogv':'video/ogg', '.aac':'audio/aac', '.wasm':'application/wasm', '.csv':'text/csv', '.webmanifest':'application/manifest+json', '.map':'application/json'};
 
 /* ---------- HTTP helpers ---------- */
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; frame-src 'self' blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'";
@@ -318,11 +320,23 @@ async function handle(req, res) {
       const me = currentUser(req); if (!me) return sendErr(res, 401, 'Please log in.');
       const [, , cmid, ...rest] = p.split('/'); const m = S.mods[cmid];
       const V = m && Core.view(S, me.uid); if (!m || m.type !== 'scorm' || !V?.mods[cmid] || V.mods[cmid].oversightOnly) return sendErr(res, 404, 'Not found.');
-      ensureScorm(m);
-      const dir = store.scormDir(cmid), rel = decodeURIComponent(rest.join('/')), fp = path.join(dir, rel);
-      if (!fp.startsWith(dir + path.sep) || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) return sendErr(res, 404, 'Not found.');
-      return send(res, 200, fs.readFileSync(fp), {'Content-Type':SCORM_TYPES[path.extname(fp).toLowerCase()] || 'application/octet-stream', 'Cache-Control':'private, max-age=600',
-        'Content-Security-Policy':"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors 'self'"});
+      const page = (title, msg) => send(res, 200, `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font:15px/1.5 system-ui,sans-serif;padding:24px;color:#15212b"><h2 style="margin:0 0 8px">${title}</h2><p>${msg.replace(/[<>&]/g, c => ({'<':'&lt;', '>':'&gt;', '&':'&amp;'}[c]))}</p></body>`, {'Content-Type':'text/html; charset=utf-8'});
+      try { ensureScorm(m); } catch (e) { return page('This SCORM package could not be opened', e.message + ' Ask an administrator to upload the package again.'); }
+      const dir = store.scormDir(cmid); let rel; try { rel = decodeURIComponent(rest.join('/')); } catch (e) { return sendErr(res, 400, 'Bad file name.'); }
+      let fp = path.join(dir, rel);
+      if (fp.startsWith(dir + path.sep) && !fs.existsSync(fp)) { // packages made on Windows sometimes differ only in capital letters from what they link to
+        const parts = rel.split('/'); let cur = dir; for (const part of parts) { const hit = fs.existsSync(cur) && fs.statSync(cur).isDirectory() ? fs.readdirSync(cur).find(x => x.toLowerCase() === part.toLowerCase()) : null; if (!hit) { cur = null; break; } cur = path.join(cur, hit); } if (cur) fp = cur; }
+      if (!fp.startsWith(dir + path.sep) || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) return rel === (m.launch || '').split('?')[0] ? page('The start page of this package is missing', `The package says it starts at "${rel}", but that file is not in it.`) : sendErr(res, 404, 'Not found.');
+      const headers = {'Content-Type':SCORM_TYPES[path.extname(fp).toLowerCase()] || 'application/octet-stream', 'Cache-Control':'private, max-age=600', 'Accept-Ranges':'bytes',
+        'Content-Security-Policy':"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: mediastream:; frame-ancestors 'self'"};
+      // Byte ranges, so audio and video inside packages can stream and seek (Safari needs this)
+      const total = fs.statSync(fp).size, range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+      if (range) {
+        let a = range[1] === '' ? Math.max(0, total - Number(range[2])) : Number(range[1]), b = range[1] !== '' && range[2] !== '' ? Number(range[2]) : total - 1; b = Math.min(b, total - 1);
+        if (a > b || a >= total) { res.writeHead(416, {...SEC_HEADERS, 'Content-Range':`bytes */${total}`}); return res.end(); }
+        res.writeHead(206, {...SEC_HEADERS, ...headers, 'Content-Range':`bytes ${a}-${b}/${total}`, 'Content-Length':b - a + 1}); return fs.createReadStream(fp, {start:a, end:b}).pipe(res);
+      }
+      res.writeHead(200, {...SEC_HEADERS, ...headers, 'Content-Length':total}); return fs.createReadStream(fp).pipe(res);
     }
     if (req.method === 'GET' && p === '/api/state') { const me = currentUser(req); if (!me) return send(res, 200, {state:null}); return send(res, 200, {state:Core.view(S, me.uid), server:true}); }
     if (req.method === 'GET' && p === '/api/token') { const t = Core._.useToken(S, env, url.searchParams.get('t'), false); const u = t && S.users.find(x => x.id === t.userId); return send(res, 200, u ? {valid:true, name:u.firstname, username:u.username, kind:t.kind} : {valid:false}); }
@@ -410,11 +424,17 @@ async function handle(req, res) {
     if (p === '/api/upload') {
       const name = String(url.searchParams.get('name') || 'file').slice(0, 200);
       const type = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].slice(0, 100);
-      const body = await readBody(req, MAX_UPLOAD);
-      if (!body.length) return sendErr(res, 400, 'The file is empty.');
-      const id = 'f_' + crypto.randomBytes(10).toString('hex');
-      fs.writeFileSync(store.filePath(id), body);
-      const f = runOp(me.uid, 'registerFile', {id, name, type, size:body.length});
+      // Stream the upload straight to disk, so large SCORM packages and videos do not fill memory
+      const id = 'f_' + crypto.randomBytes(10).toString('hex'), fp = store.filePath(id);
+      const size = await new Promise((resolve, reject) => {
+        const out = fs.createWriteStream(fp); let n = 0, failed = false;
+        const fail = e => { if (failed) return; failed = true; out.destroy(); fs.rm(fp, {force:true}, () => {}); reject(e); };
+        req.on('data', c => { n += c.length; if (n > MAX_UPLOAD) { fail(Object.assign(new Error(`The file is larger than ${Math.round(MAX_UPLOAD / 1048576)} MB.`), {status:413})); req.destroy(); } });
+        req.on('error', fail); out.on('error', fail); out.on('finish', () => { if (!failed) resolve(n); });
+        req.pipe(out);
+      });
+      if (!size) { fs.rmSync(fp, {force:true}); return sendErr(res, 400, 'The file is empty.'); }
+      const f = runOp(me.uid, 'registerFile', {id, name, type, size});
       return send(res, 200, {result:f, state:Core.view(S, me.uid)});
     }
     if (p === '/api/admin/test-email') {

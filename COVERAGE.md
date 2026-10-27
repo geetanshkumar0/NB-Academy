@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (46 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (47 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -57,7 +57,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | Personas (Learner, Trainer, Team Lead, Administrator, in any combination) | Add a new user, and Personas on each user's profile, including cohorts and courses. Anyone with more than one persona, administrators included, switches views from the top bar. Tested. |
 | Login As | Users and profile |
 | Cohort, trainer and team lead mapping | Admin › Cohorts and mapping |
-| SCORM, video, PDF, slide decks; central question bank | SCORM 1.2, Video, File (PDF inline); Admin › Question bank (edits sync to quizzes) |
+| SCORM, video, PDF, slide decks; central question bank | SCORM 1.2 and 2004, Video, File (PDF inline); Admin › Question bank (edits sync to quizzes) |
 | Version control (keep progress or restart) | Course › Settings › Status and versions, with rollback |
 | Delete drafts, archive completed courses | Course settings. Tested. |
 | Automatic assignment rules | Admin › Learning paths and rules. Tested. |
@@ -78,7 +78,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 
 - **Integrations need your details.** Email, SSO and LDAP were tested against simulated servers. Connecting them to your real mail server, identity provider and directory needs those settings.
 - **Course versions.** When a new version is published, learners in progress either keep their progress on the updated content or restart on it. They cannot stay on the old content side by side.
-- **SCORM.** SCORM 1.2 is supported. SCORM 2004, xAPI and cmi5 are not. In the preview edition, only single-page packages play.
+- **SCORM.** SCORM 1.2 and 2004 are supported, packages up to 1 GB. xAPI, cmi5 and SCORM 2004 sequencing between several SCOs are not. In the preview edition, only single-page packages play.
 - **Slide decks.** PowerPoint files are downloadable, not shown inline. Export to PDF to show slides inside a course.
 - **MFA set-up.** Uses a setup key typed into the authenticator app. There is no QR code.
 - **Assigning an individual assessment.** Trainers assign courses or learning paths. To assign a single assessment, put it in its own short course.
