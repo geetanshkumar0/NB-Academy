@@ -320,6 +320,7 @@ test('SMTP settings: spaces are trimmed, app-password groups joined, and Google 
   assert.equal((await op(a, 'saveIntegration', {kind:'email', enabled:false, host:'127.0.0.1', port, secure:false, user:'learning@nobroker.in', pass:'NormalPassword1', from:'NB Academy <learning@nobroker.in>'})).status, 200);
   let t = await call('POST', '/api/admin/test-email', {to:'x@example.com'}, a);
   assert.equal(t.status, 400); assert.match(t.json.error, /app password/);
+  assert.match(t.json.error, /Tried username "learning@nobroker.in" with a 15-character password/); assert.doesNotMatch(t.json.error, /NormalPassword1/);
   // App password pasted with spaces and a username with a stray space: cleaned up and accepted
   assert.equal((await op(a, 'saveIntegration', {kind:'email', enabled:false, host:'127.0.0.1', port, secure:false, user:' learning@nobroker.in ', pass:' abcd efgh ijkl mnop ', from:'NB Academy <learning@nobroker.in>'})).status, 200);
   assert.equal(getState().site.email.user, 'learning@nobroker.in'); assert.equal(getState().site.email.pass, 'abcdefghijklmnop');

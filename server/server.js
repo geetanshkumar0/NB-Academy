@@ -454,7 +454,8 @@ async function handle(req, res) {
       if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');
       const cfg = S.site.email; if (!cfg.host) return sendErr(res, 400, 'Save the SMTP settings first.');
       try { await sendMail(cfg, {to:b.to || u.email, toName:'', subject:`Test email from ${S.site.name}`, body:`This is a test email from ${S.site.name}.\n\nIf you can read this, email delivery works.`}); return send(res, 200, {ok:true}); }
-      catch (er) { return sendErr(res, 400, `Sending failed: ${er.message}${smtpHint(cfg, er.message)}`); }
+      catch (er) { const tried = /\b535\b|BadCredentials|not accepted|authentication failed/i.test(er.message) ? ` (Tried username "${cfg.user || '(empty)'}" with a ${String(cfg.pass || '').length}-character password. A Google app password is 16 letters.)` : '';
+        return sendErr(res, 400, `Sending failed: ${er.message}${smtpHint(cfg, er.message)}${tried}`); }
     }
     if (p === '/api/admin/test-ldap') {
       const b = await readJSON(req); if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');
