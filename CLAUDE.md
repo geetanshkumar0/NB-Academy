@@ -61,10 +61,14 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 2. Fix it in the shared core when the issue is about behaviour, so both editions get the fix.
 3. Run `npm test`. For UI changes, also rebuild the preview, click through the affected screens and check the browser console for errors.
 4. Keep `README.md` and `COVERAGE.md` accurate when features or limits change.
-5. Commit with a clear message. Deploying to the server is a separate step (`tools/update-server.sh` on the server).
+5. Commit with a clear message and push to `main`. **Pushing to `main` deploys to production** within about 5 minutes (see Deployment), so push only finished, tested changes.
 
 **Demo data:** a site started without `--demo` that holds demo data is cleaned automatically, after a backup (`removeDemoData` in server.js). The production server must never be started with `--demo`. The tests set `NB_DEMO=1` themselves.
 
 ## Deployment
 
-The production server runs a clone of this repository as a systemd service. To update it, someone with access runs `tools/update-server.sh` on the server. The script pulls, tests and restarts. Claude cannot reach the server directly; it changes the repository, and the server pulls from it.
+- Production runs in **Docker**, with its own updater. Every 5 minutes it checks `main` on GitHub, pulls new commits, runs the tests and restarts. **A push to `main` is live within about 5 minutes**, with no action from the user.
+- So `npm test` must pass before every push, and work in progress goes on a branch, not `main`.
+- If a change needs a person to do something on the server, say so clearly when reporting back. Examples: an environment variable, a reverse-proxy setting such as nginx `client_max_body_size`, or a data migration. Otherwise, just say when it will be live.
+- `tools/update-server.sh` is for servers without the Docker updater (a plain systemd install). The user does not need it.
+- Claude cannot reach the server directly.

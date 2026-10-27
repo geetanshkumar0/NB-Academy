@@ -157,6 +157,8 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 
 ## Deploying
 
+**Current production setup:** NB Academy runs in Docker, with an updater that checks `main` on GitHub every 5 minutes, pulls, runs the tests and restarts. A push to `main` is live within about 5 minutes. The steps below are for a plain (non-Docker) install. `tools/update-server.sh` does the same pull, test and restart by hand.
+
 1. Install Node.js 22.13+ on the server and copy this folder.
 2. Start it with `NODE_ENV=production node server/server.js` (sign in as `geetansh.kumar` / `Welcome@1`), using a process manager with a process manager (systemd, pm2 or similar).
 3. Put it behind a reverse proxy (nginx, Caddy) with HTTPS, and set `NB_SECURE_COOKIES=1`. Allow upload bodies of 1 GB (SCORM packages with video are often well over 25 MB).
