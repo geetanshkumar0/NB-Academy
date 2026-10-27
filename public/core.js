@@ -428,156 +428,75 @@ const WELCOME_HTML = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Your Account Is Ready</title>
 </head>
-
 <body style="margin:0; padding:0; background-color:#f5f5f7; font-family:Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f5f5f7; padding:30px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; background-color:#ffffff; border-radius:14px; overflow:hidden;">
 
-  <!-- Email Wrapper -->
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
-         border="0" style="background-color:#f5f5f7; padding:30px 12px;">
-    <tr>
-      <td align="center">
-
-        <!-- Main Email Card -->
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0"
-               border="0" style="width:100%; max-width:600px; background-color:#ffffff;
-               border-radius:12px; overflow:hidden;">
-
-          <!-- Header -->
-          <tr>
-            <td align="center" style="background-color:{brand}; padding:35px 25px;">
-              <h1 style="margin:0; color:#ffffff; font-size:28px;
-                         line-height:1.3; font-weight:700;">
-                Welcome Aboard!
-              </h1>
-              <p style="margin:10px 0 0; color:#ffffff; font-size:15px;
-                        line-height:1.6;">
-                Your account has been created successfully.
-              </p>
+        <!-- Header: icon and heading -->
+        <tr><td style="background-color:{brand}; padding:30px 32px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"><tr>
+            <td width="96" valign="middle" style="width:96px; padding-right:20px;"><img src="{iconWelcome}" width="80" height="80" alt="" style="display:block; width:80px; height:80px; border:0;"></td>
+            <td valign="middle">
+              <h1 style="margin:0; color:#ffffff; font-size:34px; line-height:1.15; font-weight:700;">Welcome Aboard!</h1>
+              <p style="margin:8px 0 0; color:#ffffff; font-size:17px; line-height:1.5;">Your account has been created successfully.</p>
             </td>
-          </tr>
+          </tr></table>
+        </td></tr>
 
-          <!-- Main Content -->
-          <tr>
-            <td style="padding:35px 32px 20px; color:#333333;">
+        <!-- Main content -->
+        <tr><td style="padding:36px 36px 24px; color:#1e293b;">
+          <p style="margin:0 0 14px; font-size:24px; line-height:1.4; color:#1e293b;">Hi <strong>{firstname},</strong></p>
+          <p style="margin:0 0 26px; font-size:17px; line-height:1.65; color:#334155;">An account has been created for you on <strong style="color:{brand};">{site}</strong>.<br>You&rsquo;re just one step away from getting started.</p>
 
-              <p style="margin:0 0 18px; font-size:16px; line-height:1.7;">
-                Hi <strong>{firstname}</strong>,
-              </p>
+          <!-- Login details -->
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:{brandSoft}; border:1px solid {brandLine}; border-radius:10px; margin-bottom:28px;">
+            <tr><td style="padding:20px 24px;">
+              <p style="margin:0 0 14px; font-size:13px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:2px;">Your login details</p>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
+                <td valign="middle" style="padding-right:16px;"><img src="{iconUser}" width="36" height="36" alt="" style="display:block; width:36px; height:36px; border:0;"></td>
+                <td valign="middle">
+                  <p style="margin:0 0 2px; font-size:15px; color:#64748b;">Username</p>
+                  <p style="margin:0; font-size:21px; color:#1e293b; word-break:break-word;">{username}</p>
+                </td>
+              </tr></table>
+            </td></tr>
+          </table>
 
-              <p style="margin:0 0 22px; font-size:15px; line-height:1.8; color:#555555;">
-                An account has been created for you on
-                <strong style="color:{brand};">{site}</strong>.
-                You're just one step away from getting started.
-              </p>
+          <p style="margin:0 0 24px; font-size:17px; line-height:1.65; color:#334155;">To activate your account, set your password using the button below.</p>
 
-              <!-- Account Details -->
-              <table role="presentation" width="100%" cellspacing="0"
-                     cellpadding="0" border="0"
-                     style="background-color:{brandSoft}; border:1px solid {brandLine};
-                     border-radius:8px; margin-bottom:25px;">
-                <tr>
-                  <td style="padding:18px 20px;">
-                    <p style="margin:0 0 6px; font-size:12px;
-                              color:#777777; text-transform:uppercase;
-                              letter-spacing:1px;">
-                      Your Login Details
-                    </p>
+          <!-- Button -->
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto 30px;">
+            <tr><td align="center" bgcolor="{brand}" style="border-radius:8px;">
+              <a href="{link}" target="_blank" style="display:inline-block; padding:18px 40px; font-size:19px; line-height:1.2; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px; white-space:nowrap;">Set Your Password&nbsp;&nbsp;&rarr;</a>
+            </td></tr>
+          </table>
 
-                    <p style="margin:12px 0 5px; font-size:13px; color:#666666;">
-                      Username
-                    </p>
-                    <p style="margin:0; font-size:16px; font-weight:700;
-                              color:#222222; word-break:break-word;">
-                      {username}
-                    </p>
-                  </td>
-                </tr>
-              </table>
+          <!-- Important notice -->
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#fff6f2; border-left:5px solid {brand}; border-radius:6px; margin-bottom:28px;">
+            <tr>
+              <td valign="middle" width="44" style="width:44px; padding:18px 0 18px 20px;"><img src="{iconClock}" width="36" height="36" alt="" style="display:block; width:36px; height:36px; border:0;"></td>
+              <td valign="middle" style="padding:18px 20px 18px 16px;">
+                <p style="margin:0; font-size:16px; line-height:1.6; color:#334155;"><strong style="color:{brand};">Important:</strong> This password setup link is valid for <strong style="color:#1e293b;">7 days</strong>.<br>Please complete the setup before it expires.</p>
+              </td>
+            </tr>
+          </table>
 
-              <p style="margin:0 0 22px; font-size:15px; line-height:1.7;
-                        color:#555555;">
-                To activate your account, set your password using the button below.
-              </p>
+          <p style="margin:0 0 8px; font-size:15px; line-height:1.6; color:#475569;">If the button doesn&rsquo;t work, copy and paste the following link into your browser:</p>
+          <p style="margin:0 0 30px; font-size:15px; line-height:1.6; word-break:break-all;"><a href="{link}" target="_blank" style="color:{brand}; text-decoration:none;">{link}</a></p>
 
-              <!-- CTA Button -->
-              <table role="presentation" cellspacing="0" cellpadding="0"
-                     border="0" align="center" style="margin:0 auto 25px;">
-                <tr>
-                  <td align="center" bgcolor="{brand}" style="border-radius:6px;">
-                    <a href="{link}"
-                       target="_blank"
-                       style="display:inline-block; padding:15px 35px;
-                              font-size:15px; line-height:1.2;
-                              font-weight:700; color:#ffffff;
-                              text-decoration:none; border-radius:6px;">
-                      Set Your Password
-                    </a>
-                  </td>
-                </tr>
-              </table>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.6; color:#1e293b;">We look forward to having you on board!</p>
+          <p style="margin:0; font-size:16px; line-height:1.6; color:#1e293b;">Best regards,<br><strong>{site} Team</strong></p>
+        </td></tr>
 
-              <!-- Expiry Notice -->
-              <table role="presentation" width="100%" cellspacing="0"
-                     cellpadding="0" border="0"
-                     style="background-color:#fff8e8; border-left:4px solid {brand};
-                     margin-bottom:20px;">
-                <tr>
-                  <td style="padding:13px 16px;">
-                    <p style="margin:0; font-size:13px; line-height:1.7;
-                              color:#664d24;">
-                      <strong>Important:</strong> This password setup link
-                      is valid for <strong>7 days</strong>. Please complete
-                      the setup before it expires.
-                    </p>
-                  </td>
-                </tr>
-              </table>
+        <!-- Footer -->
+        <tr><td align="center" style="background-color:{brand}; padding:20px 24px;">
+          <p style="margin:0; color:#ffffff; font-size:13px; line-height:1.7;">This is an automated email. Please do not reply to this message.</p>
+        </td></tr>
 
-              <p style="margin:0 0 12px; font-size:13px; line-height:1.7;
-                        color:#777777;">
-                If the button doesn't work, copy and paste the following link
-                into your browser:
-              </p>
-
-              <p style="margin:0 0 25px; font-size:13px; line-height:1.7;
-                        word-break:break-all;">
-                <a href="{link}" target="_blank"
-                   style="color:{brand}; text-decoration:underline;">
-                  {link}
-                </a>
-              </p>
-
-              <p style="margin:0 0 8px; font-size:15px; line-height:1.7;
-                        color:#555555;">
-                We look forward to having you on board!
-              </p>
-
-              <p style="margin:0; font-size:15px; line-height:1.7;
-                        color:#333333;">
-                Best regards,<br>
-                <strong>{site} Team</strong>
-              </p>
-
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td align="center"
-                style="background-color:{brand}; padding:18px 24px;">
-              <p style="margin:0; color:#ffffff; font-size:12px; line-height:1.7;">
-                This is an automated email. Please do not reply to this message.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-        <!-- End Main Email Card -->
-
-      </td>
-    </tr>
+      </table>
+    </td></tr>
   </table>
-
 </body>
 </html>`;
 const DEFAULT_TEMPLATES = {
@@ -671,6 +590,82 @@ function queueEmail(S, env, u, subject, body, key, html) {
   S.outbox.push({id:env.uid('em'), userId:u.id, to:u.email, toName:`${u.firstname} ${u.lastname}`, subject, body, html:html || '', key, time:env.now(), status:S.site.email?.enabled ? 'queued' : 'not sent', tries:0});
   if (S.outbox.length > 3000) S.outbox.splice(0, S.outbox.length - 3000);
 }
+/* ---------- Email icons: drawn here as PNG (email apps do not show SVG), in the site's email colour ---------- */
+const EI = (() => {
+  const seg = (a, b, w) => ({t:'seg', a, b, w}), arc = (c, r, w, a0, a1) => ({t:'arc', c, r, w, a0, a1}), disc = (c, r) => ({t:'disc', c, r});
+  const D = Math.PI / 180;
+  // Icons on a 24-unit grid (stroke 2), placed inside the header ring or drawn alone
+  const G = {
+    user:[arc([12, 8], 4, 2), arc([12, 23], 8.5, 2, 205 * D, 335 * D)],
+    clock:[arc([12, 12], 10, 2), seg([12, 6.5], [12, 12], 2), seg([12, 12], [15.5, 14], 2)],
+    bell:[arc([12, 9], 6, 2, 180 * D, 360 * D), seg([6, 9], [6, 14], 2), seg([18, 9], [18, 14], 2), seg([6, 14], [3.5, 17], 2), seg([18, 14], [20.5, 17], 2), seg([3.5, 17], [20.5, 17], 2), arc([12, 19.5], 2.2, 2, 20 * D, 160 * D)],
+    lock:[seg([5, 11], [19, 11], 2), seg([19, 11], [19, 21], 2), seg([19, 21], [5, 21], 2), seg([5, 21], [5, 11], 2), arc([12, 7.5], 4, 2, 180 * D, 360 * D), seg([8, 7.5], [8, 11], 2), seg([16, 7.5], [16, 11], 2), disc([12, 16], 1.3)],
+    check:[arc([12, 12], 10, 2), seg([7.5, 12.5], [10.5, 15.5], 2), seg([10.5, 15.5], [16.5, 9], 2)],
+    award:[arc([12, 9], 6, 2), seg([8.6, 14], [7, 22], 2), seg([7, 22], [12, 19.5], 2), seg([12, 19.5], [17, 22], 2), seg([17, 22], [15.4, 14], 2)],
+    key:[arc([7.5, 15.5], 4.5, 2), seg([10.7, 12.3], [20, 3], 2), seg([15.5, 7.5], [18.5, 10.5], 2), seg([18.2, 4.8], [20.7, 7.3], 2)],
+    book:[seg([2, 4], [8, 4], 2), seg([8, 4], [12, 7], 2), seg([12, 7], [12, 21], 2), seg([22, 4], [16, 4], 2), seg([16, 4], [12, 7], 2), seg([2, 4], [2, 18], 2), seg([2, 18], [9, 18], 2), seg([9, 18], [12, 21], 2), seg([22, 4], [22, 18], 2), seg([22, 18], [15, 18], 2), seg([15, 18], [12, 21], 2)],
+    calendar:[seg([3, 6], [21, 6], 2), seg([21, 6], [21, 21], 2), seg([21, 21], [3, 21], 2), seg([3, 21], [3, 6], 2), seg([3, 10.5], [21, 10.5], 2), seg([8, 3], [8, 8], 2), seg([16, 3], [16, 8], 2)],
+    mail:[seg([3, 5], [21, 5], 2), seg([21, 5], [21, 19], 2), seg([21, 19], [3, 19], 2), seg([3, 19], [3, 5], 2), seg([3, 6], [12, 13], 2), seg([12, 13], [21, 6], 2)],
+  };
+  const place = (shapes, k, dx, dy) => shapes.map(s => s.t === 'seg' ? seg([s.a[0] * k + dx, s.a[1] * k + dy], [s.b[0] * k + dx, s.b[1] * k + dy], s.w * k) : s.t === 'arc' ? arc([s.c[0] * k + dx, s.c[1] * k + dy], s.r * k, s.w * k, s.a0, s.a1) : disc([s.c[0] * k + dx, s.c[1] * k + dy], s.r * k));
+  // Header icons: a ring with the icon inside; the welcome one is a person with a "+" badge and small sparks
+  const header = name => {
+    if (name === 'welcome') { const c = [46, 42], W = 3.2;
+      return {w:80, h:80, layers:[['fg', [arc(c, 26, W), ...[192, 222, 252].map(a => seg([c[0] + Math.cos(a * D) * 32, c[1] + Math.sin(a * D) * 32], [c[0] + Math.cos(a * D) * 39, c[1] + Math.sin(a * D) * 39], W)),
+        arc([46, 34], 7.5, W), arc([46, 63], 15, W, 207 * D, 333 * D)]], ['bg', [disc([66, 62], 11.5)]], ['fg', [arc([66, 62], 10, 3), seg([66, 56.5], [66, 67.5], 3), seg([60.5, 62], [71.5, 62], 3)]]]}; }
+    return {w:80, h:80, layers:[['fg', [arc([40, 40], 30, 3.2), ...place(G[name] || G.mail, 1.6, 40 - 12 * 1.6, 40 - 12 * 1.6)]]]};
+  };
+  const small = name => ({w:24, h:24, layers:[['fg', G[name] || G.mail]]});
+  function raster(def, px, fg, bg) {
+    const W = Math.round(def.w * px), Hh = Math.round(def.h * px), out = new Float32Array(W * Hh * 4), n = 4, TAU = Math.PI * 2;
+    const inArc = (a, a0, a1) => { a = (a + TAU) % TAU; a0 = (a0 + TAU) % TAU; a1 = (a1 + TAU) % TAU; return a0 <= a1 ? a >= a0 && a <= a1 : a >= a0 || a <= a1; };
+    const hit = (s, x, y) => {
+      if (s.t === 'disc') return Math.hypot(x - s.c[0], y - s.c[1]) <= s.r;
+      if (s.t === 'seg') { const [ax, ay] = s.a, [bx, by] = s.b, dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L)) : 0; return Math.hypot(x - ax - t * dx, y - ay - t * dy) <= s.w / 2; }
+      const d = Math.hypot(x - s.c[0], y - s.c[1]);
+      if (s.a0 === undefined) return Math.abs(d - s.r) <= s.w / 2;
+      if (Math.abs(d - s.r) <= s.w / 2 && inArc(Math.atan2(y - s.c[1], x - s.c[0]), s.a0, s.a1)) return true;
+      return [s.a0, s.a1].some(a => Math.hypot(x - s.c[0] - Math.cos(a) * s.r, y - s.c[1] - Math.sin(a) * s.r) <= s.w / 2);
+    };
+    for (const [which, shapes] of def.layers) {
+      const col = which === 'fg' ? fg : bg;
+      for (let py = 0; py < Hh; py++) for (let qx = 0; qx < W; qx++) {
+        let c = 0; for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const x = (qx + (j + 0.5) / n) / px, y = (py + (i + 0.5) / n) / px; if (shapes.some(s => hit(s, x, y))) c++; }
+        if (!c) continue; const a = c / (n * n), o = (py * W + qx) * 4;
+        for (let k = 0; k < 3; k++) out[o + k] = col[k] * a + out[o + k] * (1 - a); out[o + 3] = a + out[o + 3] * (1 - a);
+      }
+    }
+    const px8 = new Uint8Array(W * Hh * 4);
+    for (let i = 0; i < W * Hh; i++) { const a = out[i * 4 + 3]; px8[i * 4 + 3] = Math.round(a * 255); for (let k = 0; k < 3; k++) px8[i * 4 + k] = a ? Math.round(Math.min(255, out[i * 4 + k] / a)) : 0; }
+    return {w:W, h:Hh, rgba:px8};
+  }
+  let CRC; const crc32 = b => { if (!CRC) { CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } } let c = 0xFFFFFFFF; for (const x of b) c = CRC[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  // PNG writer; deflate is optional (the server passes zlib's), otherwise uncompressed "stored" blocks are used
+  function png({w, h, rgba}, deflate) {
+    const raw = new Uint8Array((w * 4 + 1) * h); for (let y = 0; y < h; y++) { raw[y * (w * 4 + 1)] = 0; raw.set(rgba.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1); }
+    let z; if (deflate) z = deflate(raw); else { const blocks = []; for (let i = 0; i < raw.length || i === 0; i += 65535) { const part = raw.subarray(i, Math.min(raw.length, i + 65535)), last = i + 65535 >= raw.length; blocks.push(Uint8Array.of(last ? 1 : 0, part.length & 255, part.length >> 8, ~part.length & 255, (~part.length >> 8) & 255), part); if (last) break; }
+      let a = 1, b = 0; for (const x of raw) { a = (a + x) % 65521; b = (b + a) % 65521; } const ad = ((b << 16) | a) >>> 0;
+      const len = 2 + blocks.reduce((n, x) => n + x.length, 0) + 4; z = new Uint8Array(len); z[0] = 0x78; z[1] = 0x01; let o = 2; for (const x of blocks) { z.set(x, o); o += x.length; } z[o] = ad >>> 24; z[o + 1] = (ad >>> 16) & 255; z[o + 2] = (ad >>> 8) & 255; z[o + 3] = ad & 255; }
+    const chunk = (type, data) => { const t = [...type].map(c => c.charCodeAt(0)), body = new Uint8Array(4 + data.length); body.set(t); body.set(data, 4); const c = crc32(body), out = new Uint8Array(12 + data.length); const v = new DataView(out.buffer); v.setUint32(0, data.length); out.set(body, 4); v.setUint32(8 + data.length, c); return out; };
+    const ih = new Uint8Array(13), v = new DataView(ih.buffer); v.setUint32(0, w); v.setUint32(4, h); ih[8] = 8; ih[9] = 6;
+    const parts = [Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10), chunk('IHDR', ih), chunk('IDAT', z), chunk('IEND', new Uint8Array(0))];
+    const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of parts) { out.set(x, o); o += x.length; } return out;
+  }
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const NAMES = ['welcome', 'header-bell', 'header-lock', 'header-check', 'header-award', 'header-key', 'header-book', 'header-calendar', 'header-mail', 'user', 'clock'];
+  // Header icons are white on the email colour; small icons are drawn in the email colour
+  function iconPng(name, hex, deflate) {
+    if (!NAMES.includes(name) || !/^#[0-9a-f]{6}$/i.test(hex)) return null;
+    const brand = rgb(hex), white = [255, 255, 255];
+    if (name === 'welcome') return png(raster(header('welcome'), 2, white, brand), deflate);
+    if (name.startsWith('header-')) return png(raster(header(name.slice(7)), 2, white, brand), deflate);
+    return png(raster(small(name), name === 'user' ? 3 : 3, brand, white), deflate);
+  }
+  return {iconPng, NAMES};
+})();
+const HEADER_ICON = {welcome:'welcome', assigned:'header-book', deadline:'header-bell', overdue:'header-lock', accessRequest:'header-mail', accessApproved:'header-check', accessRejected:'header-lock', graded:'header-check', certificate:'header-award', recert:'header-calendar', nudge:'header-bell', liveSession:'header-calendar', passwordReset:'header-key'};
+/* Where emails load their icons from. On the server: /email-assets/... (made absolute when sent). In the browser-only preview: inline images. */
+let emailIconUrl = (name, hex) => `/email-assets/${name}-${hex.slice(1).toUpperCase()}.png`;
 /* ---------- Email rendering: every email shares one look (the site's email colour) ---------- */
 const escHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
 function emailPalette(S) {
@@ -688,23 +683,23 @@ function emailLayout(S, key, subject, text, v) {
     return x;
   }).filter(Boolean);
   const [hello, ...body] = /^(hi|hello|dear|congratulations)\b/i.test(paras[0] || '') ? paras : ['', ...paras];
-  const P = (x, style) => `<p style="margin:0 0 18px; font-size:15px; line-height:1.8; color:#555555;${style || ''}">${escHtml(x).replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, `<a href="$1" style="color:${p.brand}; text-decoration:underline;">$1</a>`)}</p>`;
-  const button = link ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:6px auto 25px;"><tr><td align="center" bgcolor="${p.brand}" style="border-radius:6px;"><a href="${escHtml(link)}" target="_blank" style="display:inline-block; padding:15px 35px; font-size:15px; line-height:1.2; font-weight:700; color:#ffffff; text-decoration:none; border-radius:6px;">${escHtml(CTA[key] || 'Open ' + S.site.name)}</a></td></tr></table>
-    <p style="margin:0 0 12px; font-size:13px; line-height:1.7; color:#777777;">If the button doesn't work, copy and paste the following link into your browser:</p>
-    <p style="margin:0 0 25px; font-size:13px; line-height:1.7; word-break:break-all;"><a href="${escHtml(link)}" target="_blank" style="color:${p.brand}; text-decoration:underline;">${escHtml(link)}</a></p>` : '';
+  const P = (x, style) => `<p style="margin:0 0 20px; font-size:17px; line-height:1.65; color:#334155;${style || ''}">${escHtml(x).replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, `<a href="$1" style="color:${p.brand}; text-decoration:none;">$1</a>`)}</p>`;
+  const button = link ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:6px auto 30px;"><tr><td align="center" bgcolor="${p.brand}" style="border-radius:8px;"><a href="${escHtml(link)}" target="_blank" style="display:inline-block; padding:18px 36px; font-size:19px; line-height:1.2; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px; white-space:nowrap;">${escHtml(CTA[key] || 'Open ' + S.site.name)}&nbsp;&nbsp;&rarr;</a></td></tr></table>
+    <p style="margin:0 0 8px; font-size:15px; line-height:1.6; color:#475569;">If the button doesn&rsquo;t work, copy and paste the following link into your browser:</p>
+    <p style="margin:0 0 30px; font-size:15px; line-height:1.6; word-break:break-all;"><a href="${escHtml(link)}" target="_blank" style="color:${p.brand}; text-decoration:none;">${escHtml(link)}</a></p>` : '';
   const signed = body.length && /^best regards/i.test(body[body.length - 1]);
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escHtml(subject)}</title></head>
 <body style="margin:0; padding:0; background-color:#f5f5f7; font-family:Arial, Helvetica, sans-serif;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f5f5f7; padding:30px 12px;"><tr><td align="center">
-<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden;">
-<tr><td align="center" style="background-color:${p.brand}; padding:35px 25px;"><h1 style="margin:0; color:#ffffff; font-size:26px; line-height:1.3; font-weight:700;">${escHtml(subject)}</h1></td></tr>
-<tr><td style="padding:35px 32px 20px; color:#333333;">
-${hello ? `<p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#333333;">${escHtml(hello).replace(/\n/g, '<br>')}</p>` : ''}
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; background-color:#ffffff; border-radius:14px; overflow:hidden;">
+<tr><td style="background-color:${p.brand}; padding:30px 32px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"><tr><td width="96" valign="middle" style="width:96px; padding-right:20px;"><img src="${escHtml(emailIconUrl(HEADER_ICON[key] || 'header-mail', p.brand))}" width="80" height="80" alt="" style="display:block; width:80px; height:80px; border:0;"></td><td valign="middle"><h1 style="margin:0; color:#ffffff; font-size:28px; line-height:1.25; font-weight:700;">${escHtml(subject)}</h1></td></tr></table></td></tr>
+<tr><td style="padding:36px 36px 24px; color:#1e293b;">
+${hello ? `<p style="margin:0 0 14px; font-size:24px; line-height:1.4; color:#1e293b;">${escHtml(hello).replace(/\n/g, '<br>').replace(/^(Hi|Hello|Dear|Congratulations)\s+(.+)$/i, '$1 <strong>$2</strong>')}</p>` : ''}
 ${body.map(x => P(x)).join('\n')}
 ${button}
-${signed ? '' : `<p style="margin:0; font-size:15px; line-height:1.7; color:#333333;">Best regards,<br><strong>${escHtml(S.site.name)} Team</strong></p>`}
+${signed ? '' : `<p style="margin:0; font-size:16px; line-height:1.6; color:#1e293b;">Best regards,<br><strong>${escHtml(S.site.name)} Team</strong></p>`}
 </td></tr>
-<tr><td align="center" style="background-color:${p.brand}; padding:18px 24px;"><p style="margin:0; color:#ffffff; font-size:12px; line-height:1.7;">This is an automated email. Please do not reply to this message.</p></td></tr>
+<tr><td align="center" style="background-color:${p.brand}; padding:20px 24px;"><p style="margin:0; color:#ffffff; font-size:13px; line-height:1.7;">This is an automated email. Please do not reply to this message.</p></td></tr>
 </table></td></tr></table></body></html>`;
 }
 /* Subject, plain text and HTML for one template. A template's own HTML (the welcome design, or one an administrator saved) is used when present; otherwise the shared layout. */
@@ -712,7 +707,8 @@ function renderEmail(S, key, vars) {
   const t = S.site.templates?.[key] || DEFAULT_TEMPLATES[key]; if (!t) return null;
   const v = {site:S.site.name, ...vars}, subject = fill(t.subject, v), text = fill(t.body, v);
   const own = t.html !== undefined ? t.html : DEFAULT_TEMPLATES[key]?.html;
-  const html = own ? fillHtml(own, {...v, ...emailPalette(S), year:new Date().getFullYear()}) : emailLayout(S, key, subject, text, v);
+  const pal = emailPalette(S), icons = {iconWelcome:emailIconUrl('welcome', pal.brand), iconUser:emailIconUrl('user', pal.brand), iconClock:emailIconUrl('clock', pal.brand), iconHeader:emailIconUrl(HEADER_ICON[key] || 'header-mail', pal.brand)};
+  const html = own ? fillHtml(own, {...v, ...pal, ...icons, year:new Date().getFullYear()}) : emailLayout(S, key, subject, text, v);
   return {subject, text, html};
 }
 function notifyT(S, env, key, userId, vars, go, gid) {
@@ -1537,5 +1533,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
   gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

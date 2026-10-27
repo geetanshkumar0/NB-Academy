@@ -86,6 +86,8 @@ function medal(b, size = '') {
 /* ---------- Backends ---------- */
 const SERVER = document.querySelector('meta[name="nb-mode"]')?.content === 'server';
 class ApiError extends Error { constructor(m, s) { super(m); this.status = s; } }
+/* In the browser-only preview there is no server to fetch email icons from, so emails carry them inline */
+function inlineEmailIcons() { const memo = {}; C.setEmailIconUrl((n, hex) => { if (!memo[n + hex]) { const b = C.emailIcon(n, hex); let t = ''; for (let i = 0; i < b.length; i += 8192) t += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); memo[n + hex] = 'data:image/png;base64,' + btoa(t); } return memo[n + hex]; }); }
 const ServerBackend = {
   server:true,
   async req(method, url, body, headers = {}) {
@@ -194,6 +196,7 @@ async function previewScormLaunch(dataUrl) {
   return {name:href, html:'data:text/html;charset=utf-8,' + encodeURIComponent(new TextDecoder().decode(files[href]))};
 }
 const B = SERVER ? ServerBackend : LocalBackend;
+if (!SERVER) inlineEmailIcons();
 
 /* ---------- State ---------- */
 let S = null, h = null;

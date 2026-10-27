@@ -190,7 +190,9 @@ Every new account starts with the password **`Welcome@1`** and must choose its o
 ## Email design
 
 - Every email is sent as **HTML with a plain-text version**, in one shared design: a coloured header with the subject, the message, a button for the main link, and a footer.
-- The **welcome email** uses its own designed template ("Welcome Aboard!", login details, Set Your Password button, 7-day notice).
+- The **welcome email** uses its own designed template: an icon header with "Welcome Aboard!", a login details box with a person icon, a **Set Your Password →** button, and a 7-day notice with a clock icon.
+- Other emails get the same header, with an icon that suits each one (bell, lock, award, key, book, calendar, check, mail).
+- The icons are PNG images that NB Academy draws itself in the email colour, because mail apps don't show SVG. They are served publicly from `/email-assets/` and cached, and emails link to them by the site address.
 - The colour (default `#FB3753`) is set once in Site administration › Notifications and terms › **Email design**, and every email follows it.
 - Each template's subject, plain text and optional designed HTML can be edited and **previewed** there. Its HTML can use `{brand}`, `{brandSoft}` and `{brandLine}`. "Restore default" brings back the original.
 - The Email log can show any sent email as it was sent.

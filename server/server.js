@@ -18,6 +18,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const Core = require('../public/core.js');
 const Store = require('./store.js');
 const {sendMail} = require('./mailer.js');
@@ -74,7 +75,7 @@ const siteUrl = () => (process.env.NB_PUBLIC_URL || S.site.url || '').replace(/\
    until one is set, use the address people reach this server at. */
 let seenOrigin = '';
 const publicBase = () => siteUrl() || seenOrigin;
-const absolutize = (text, base) => base ? String(text).replace(/(^|[\s(<"'])\/(\?go=|cert\/)/g, `$1${base}/$2`) : text;
+const absolutize = (text, base) => base ? String(text).replace(/(^|[\s(<"'])\/(\?go=|cert\/|email-assets\/)/g, `$1${base}/$2`) : text;
 
 /* ---------- Built-in site administrators (server/site-admins.js and NB_SITE_ADMINS) ---------- */
 function ensureSiteAdmins() {
@@ -206,6 +207,7 @@ function ensureScorm(m) {
 }
 const SCORM_TYPES = {'.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.xml':'application/xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml', '.webp':'image/webp', '.mp4':'video/mp4', '.webm':'video/webm', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.pdf':'application/pdf', '.vtt':'text/vtt', '.swf':'application/x-shockwave-flash', '.mjs':'text/javascript', '.txt':'text/plain; charset=utf-8', '.xsd':'application/xml', '.dtd':'application/xml-dtd', '.ico':'image/x-icon', '.bmp':'image/bmp', '.otf':'font/otf', '.eot':'application/vnd.ms-fontobject', '.m4a':'audio/mp4', '.m4v':'video/mp4', '.ogg':'audio/ogg', '.oga':'audio/ogg', '.ogv':'video/ogg', '.aac':'audio/aac', '.wasm':'application/wasm', '.csv':'text/csv', '.webmanifest':'application/manifest+json', '.map':'application/json'};
 
+const EMAIL_ICON_CACHE = new Map();
 /* ---------- HTTP helpers ---------- */
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; frame-src 'self' blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'";
 const SEC_HEADERS = {'Content-Security-Policy':CSP, 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'SAMEORIGIN', 'Referrer-Policy':'same-origin'};
@@ -327,6 +329,13 @@ async function handle(req, res) {
       const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
       if (range && inline) { const start = range[1] ? Number(range[1]) : 0, end = range[2] ? Math.min(Number(range[2]), data.length - 1) : data.length - 1; if (start <= end) return send(res, 206, data.subarray(start, end + 1), {...base, 'Content-Range':`bytes ${start}-${end}/${data.length}`}); }
       return send(res, 200, data, base);
+    }
+    // Email icons: public (mail apps fetch them without signing in), drawn once per colour and cached
+    if (req.method === 'GET' && p.startsWith('/email-assets/')) {
+      const mm = /^\/email-assets\/([a-z-]+)-([0-9A-Fa-f]{6})\.png$/.exec(p); if (!mm) return sendErr(res, 404, 'Not found.');
+      const key = mm[1] + '-' + mm[2].toUpperCase(); let png = EMAIL_ICON_CACHE.get(key);
+      if (!png) { const b = Core.emailIcon(mm[1], '#' + mm[2], x => zlib.deflateSync(x, {level:9})); if (!b) return sendErr(res, 404, 'Not found.'); png = Buffer.from(b); if (EMAIL_ICON_CACHE.size > 200) EMAIL_ICON_CACHE.clear(); EMAIL_ICON_CACHE.set(key, png); }
+      return send(res, 200, png, {'Content-Type':'image/png', 'Cache-Control':'public, max-age=31536000, immutable', 'Cross-Origin-Resource-Policy':'cross-origin'});
     }
     if (req.method === 'GET' && p.startsWith('/scorm/')) {
       const me = currentUser(req); if (!me) return sendErr(res, 401, 'Please log in.');

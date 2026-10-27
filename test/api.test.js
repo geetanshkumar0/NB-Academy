@@ -288,6 +288,14 @@ test('emails: welcome uses the designed template, every email shares the theme c
   assert.equal(r.status, 200, r.text);
   let mail = getState().outbox.filter(m => m.to === 'meena@example.com' && m.key === 'welcome').pop();
   assert.ok(mail.html.includes('Welcome Aboard!') && mail.html.includes('#FB3753') && mail.html.includes('meena.rao') && mail.html.includes('Set Your Password'));
+  for (const icon of ['welcome-FB3753', 'user-FB3753', 'clock-FB3753']) assert.ok(mail.html.includes(`/email-assets/${icon}.png`), icon);
+  // The icons are served publicly as real PNGs (mail apps load them without signing in)
+  for (const icon of ['welcome-FB3753', 'user-FB3753', 'clock-FB3753', 'header-bell-0E6175']) {
+    const res = await fetch(`${base}/email-assets/${icon}.png`); assert.equal(res.status, 200, icon); assert.equal(res.headers.get('content-type'), 'image/png');
+    const b = Buffer.from(await res.arrayBuffer()); assert.equal(b.subarray(1, 4).toString(), 'PNG'); assert.ok(b.length > 300 && b.length < 20000, `${icon} is ${b.length} bytes`);
+  }
+  assert.equal((await fetch(`${base}/email-assets/../../etc-FB3753.png`)).status, 404);
+  assert.equal((await fetch(`${base}/email-assets/unknown-FB3753.png`)).status, 404);
   assert.ok(mail.html.includes('?go=setpassword&amp;id='), 'the set-password link is in the button');
   assert.match(mail.body, /Username: meena\.rao/, 'plain-text version too');
   // Another email uses the same design and colour, with a button for its link
@@ -328,6 +336,7 @@ test('email is delivered over SMTP', async () => {
   const decoded = got.map(g => [...g.matchAll(/Content-Transfer-Encoding: base64\n\n([A-Za-z0-9+\/=\n]+)/g)].map(x => Buffer.from(x[1].replace(/\s/g, ''), 'base64').toString('utf8')).join('\n')).join('\n');
   assert.ok(decoded.includes(base + '/?go='), 'the delivered message carries the absolute link');
   assert.ok(got.some(g => /multipart\/alternative/.test(g) && /text\/html/.test(g) && /text\/plain/.test(g)), 'HTML and plain text are both sent');
+  assert.ok(!/src="\/email-assets\//.test(decoded) && decoded.includes(base + '/email-assets/'), 'icon addresses are absolute when sent');
   S.site.email.enabled = false;
 });
 test('SMTP settings: spaces are trimmed, app-password groups joined, and Google refusals explained', async () => {
