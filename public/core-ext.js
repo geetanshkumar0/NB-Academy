@@ -103,7 +103,9 @@ op('saveTeams', (S, h, p, env) => {
   need(h.has('site:config'), 'You cannot change the team list.');
   const list = [...new Map((Array.isArray(p.teams) ? p.teams : String(p.teams || '').split('\n')).map(x => str(x, 120).trim()).filter(Boolean).map(x => [x.toLowerCase(), x])).values()];
   need(list.length, 'Add at least one team.', 400);
-  S.site.teams = list; audit(S, env, h.meId, 'Team list changed', 'Site', `${list.length} teams`);
+  // Remember standard teams an administrator removed, so start-up does not add them back
+  S.site.teams = list; S.site.teamsRemoved = Core.TEAMS.filter(t => !list.some(x => x.toLowerCase() === t.toLowerCase()));
+  audit(S, env, h.meId, 'Team list changed', 'Site', `${list.length} teams`);
 });
 op('saveEmailTheme', (S, h, p, env) => {
   need(h.has('site:config'), 'You cannot change these settings.');

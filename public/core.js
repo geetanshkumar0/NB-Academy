@@ -516,7 +516,7 @@ const DEFAULT_TEMPLATES = {
 };
 const TEMPLATE_VARS = '{firstname} {lastname} {username} {site} {course} {item} {due} {days} {progress} {link} {sender} {learner} {reason} {remarks} {grade} {code} {expires} {when} {where}';
 /* Teams people belong to (stored on the user as "department"; shown as "Team"). Administrators can edit the list. */
-const TEAMS = ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal', 'Seller Servicing', 'Owner Servicing', 'Buyer Acquisition and Property Sales', 'PnM Sales', 'PnM Servicing', 'Investment Advisory', 'Loan Sales', 'Loan Servicing', 'CPMS Tenant Search', 'CPMS Servicing', 'PMS Servicing', 'PMS Sales', 'Owner/Seller Sales', 'Tenant/Buyer Sales', 'CPMS Sales', 'NRI Sales', 'Commercial Sales', 'Outbound', 'Hood'];
+const TEAMS = ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal', 'Seller Servicing', 'Owner Servicing', 'Buyer Acquisition and Property Sales', 'PnM Sales', 'PnM Servicing', 'Investment Advisory', 'Loan Sales', 'Loan Servicing', 'CPMS Tenant Search', 'CPMS Servicing', 'PMS Servicing', 'PMS Sales', 'Owner/Seller Sales', 'Tenant/Buyer Sales', 'CPMS Sales', 'NRI Sales', 'Commercial Sales', 'Outbound', 'Hood', 'Training Team', 'Human Resources'];
 const teamsOf = S => Array.isArray(S.site.teams) && S.site.teams.length ? S.site.teams : TEAMS;
 /* A team name from the list (matched without regard to case or spacing), '' for none; anything else is refused */
 function normTeam(S, v) { const x = String(v ?? '').trim(); if (!x) return ''; const key = t => t.toLowerCase().replace(/\s+/g, ' '); const hit = teamsOf(S).find(t => key(t) === key(x)); if (!hit) throw new OpError(`"${x}" is not one of the teams. Choose a team from the list.`, 400); return hit; }

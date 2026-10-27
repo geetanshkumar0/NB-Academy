@@ -618,8 +618,8 @@ test('teams: users get a team from the list, company is no longer asked for, and
   assert.equal((await op(a, 'newUser', {firstname:'No', lastname:'Team', username:'no.team', email:'no.team@example.com', welcome:false, personas:['learner']})).status, 200, 'team is optional');
   r = await op(a, 'updateProfile', {id, firstname:'Neha', lastname:'G', email:'neha.g@example.com', team:'Hood'}); assert.equal(r.status, 200, r.text);
   assert.equal(getState().users.find(u => u.id === id).department, 'Hood');
-  assert.deepEqual(getState().site.teams.slice(0, 3), ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal']); assert.equal(require('../public/core.js').TEAMS.length, 22); assert.ok(require('../public/core.js').TEAMS.every(t => getState().site.teams.includes(t)));
-  assert.deepEqual(require('../public/core.js').emptyState().site.teams, require('../public/core.js').TEAMS, 'a real (non-demo) site starts with exactly the 22 teams');
+  assert.deepEqual(getState().site.teams.slice(0, 3), ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal']); assert.equal(require('../public/core.js').TEAMS.length, 24); assert.ok(['Training Team', 'Human Resources'].every(t => getState().site.teams.includes(t))); assert.ok(require('../public/core.js').TEAMS.every(t => getState().site.teams.includes(t)));
+  assert.deepEqual(require('../public/core.js').emptyState().site.teams, require('../public/core.js').TEAMS, 'a real (non-demo) site starts with exactly the standard teams');
   // CSV upload checks the team column
   const csv = 'username,firstname,lastname,email,team\nt.one,T,One,t.one@example.com,PnM Sales\nt.two,T,Two,t.two@example.com,Unknown Team';
   r = await op(a, 'uploadUsers', {csv, updateExisting:false}); assert.equal(r.status, 200, r.text);
@@ -628,6 +628,15 @@ test('teams: users get a team from the list, company is no longer asked for, and
   assert.equal((await op(await login('rohan'), 'saveTeams', {teams:'A\nB'})).status, 403);
   assert.equal((await op(a, 'saveTeams', {teams:[...getState().site.teams, 'Customer Success'].join('\n')})).status, 200);
   assert.equal((await op(a, 'updateProfile', {id, firstname:'Neha', lastname:'G', email:'neha.g@example.com', team:'Customer Success'})).status, 200);
+});
+
+test('standard teams added later join a saved list, but not ones an administrator removed', async () => {
+  const Store = require('../server/store.js'), Core = require('../public/core.js');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-teams-')); let st = new Store(d), S = Core.emptyState();
+  S.site.teams = Core.TEAMS.filter(t => t !== 'Training Team' && t !== 'Human Resources'); S.site.teamsRemoved = ['Hood']; S.site.teams = S.site.teams.filter(t => t !== 'Hood');
+  st.save(S); st = new Store(d); const L = st.load();
+  assert.ok(L.site.teams.includes('Training Team') && L.site.teams.includes('Human Resources'), 'new standard teams are added');
+  assert.ok(!L.site.teams.includes('Hood'), 'a removed team stays removed');
 });
 
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {

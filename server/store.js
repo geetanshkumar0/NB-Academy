@@ -54,6 +54,8 @@ class Store {
     for (const [k, v] of Object.entries(def)) { if (S.site[k] === undefined) S.site[k] = v; else if (v && typeof v === 'object' && !Array.isArray(v)) S.site[k] = {...v, ...S.site[k]}; }
     for (const [k, t] of Object.entries(Core.DEFAULT_TEMPLATES)) if (!S.site.templates[k]) S.site.templates[k] = Core.clone(t);
     for (const r of Core.BUILTIN_ROLES) if (!S.roles.some(x => x.id === r.id)) S.roles.push(Core.clone(r));
+    // Standard teams added in later versions join the saved list, unless an administrator removed them
+    if (Array.isArray(S.site.teams)) { const removed = new Set((S.site.teamsRemoved || []).map(t => t.toLowerCase())); for (const t of Core.TEAMS) if (!removed.has(t.toLowerCase()) && !S.site.teams.some(x => x.toLowerCase() === t.toLowerCase())) S.site.teams.push(t); }
     for (const k of Core.ARRAYS) S[k].sort((a, b) => (a._o ?? 0) - (b._o ?? 0));
     this.seq = Core.ARRAYS.reduce((mx, k) => S[k].reduce((m, r) => Math.max(m, r._o || 0), mx), 0);
     S.version = Core.VERSION;
