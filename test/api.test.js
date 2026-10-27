@@ -648,6 +648,15 @@ test('every page the interface links to exists (catches a screen going missing, 
   for (const fn of ['submitAttempt', 'tick', 'qnavButtons', 'backLink', 'pushNav']) assert.match(src, new RegExp(`function ${fn}\\(`), `${fn} is defined`);
 });
 
+test('large uploads are streamed to disk and the interface shows upload progress', async () => {
+  const a = await login('admin');
+  const big = Buffer.alloc(30 * 1024 * 1024, 65); // 30 MB, above the old 25 MB limit
+  const r = await call('POST', '/api/upload?name=handbook.pdf', big, a, {'Content-Type':'application/pdf'});
+  assert.equal(r.status, 200, r.text); assert.equal(r.json.result.size, big.length);
+  const dir = path.join(__dirname, '..', 'public', 'js'), src = fs.readdirSync(dir).map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+  assert.match(src, /x\.upload\.onprogress/, 'uploads report progress'); assert.match(src, /className = ['"]upbar['"]/, 'a progress bar is shown'); assert.match(src, /Waiting for upload/, 'saving waits for the upload');
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

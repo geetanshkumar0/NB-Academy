@@ -11,7 +11,7 @@ function modForm(type, cid, sid, m) {
   f.push(`<div class="field full"><label for="mf-intro">${type === 'label' ? 'Text' : 'Description'}</label><textarea id="mf-intro" name="intro" rows="${type === 'label' ? 5 : 3}" ${type === 'label' ? 'required' : ''}>${esc(v.intro || '')}</textarea><span class="hint">Formatting: **bold**, *italic*, - bullet, ## heading, [link](https://…)</span></div>`);
   if (type === 'page') f.push(`<div class="field full"><label for="mf-content">Page content</label><textarea id="mf-content" name="content" rows="10" required>${esc(v.content || '')}</textarea></div>`);
   if (type === 'url') f.push(`<div class="field full"><label for="mf-url">External URL</label><input id="mf-url" name="url" type="url" placeholder="https://" value="${esc(v.url || '')}" required></div>`);
-  if (type === 'file') { const cur = v.fileId && fileOf(v.fileId); f.push(`<div class="field full"><label for="mf-file">File</label><input type="hidden" name="fileId" id="mf-fileid" value="${esc(v.fileId || '')}"><input id="mf-file" type="file" data-upload="mod"><span class="hint" id="mf-filename">${cur ? `Current file: ${esc(cur.name)} (${fmtSize(cur.size)})` : `Up to ${B.server ? '25' : '2'} MB`}</span></div>`); }
+  if (type === 'file') { const cur = v.fileId && fileOf(v.fileId); f.push(`<div class="field full"><label for="mf-file">File</label><input type="hidden" name="fileId" id="mf-fileid" value="${esc(v.fileId || '')}"><input id="mf-file" type="file" data-upload="mod"><span class="hint" id="mf-filename">${cur ? `Current file: ${esc(cur.name)} (${fmtSize(cur.size)})` : `Up to ${B.server ? '1 GB' : '3 MB'}`}</span></div>`); }
   if (type === 'assign') { const rub = (v.rubric?.criteria || []).map(c2 => [c2.text, ...c2.levels.map(l => `${l.text}:${l.points}`)].join(' | ')).join('\n');
     f.push(dt('mf-due', 'due', 'Due date', v.due ?? now() + 7 * D), num('mf-max', 'maxgrade', 'Maximum grade', v.maxgrade ?? 100, 'min="1" required'), chk('allowFiles', 'Allow file submissions', v.allowFiles ?? true),
       `<div class="field full"><label for="mf-rub">Rubric (optional)</label><textarea id="mf-rub" name="rubric" rows="4" class="mono" style="font-size:.84rem" placeholder="Criterion | Level description:points | Level description:points">${esc(rub)}</textarea><span class="hint">One criterion per line, then its levels separated by |, each ending with :points. Example: Explanation | Unclear:0 | Clear:5 | Clear with examples:10</span></div>`); }
@@ -219,7 +219,9 @@ const F = {
     if (d.type === 'assign') { const lines = (d.rubric || '').split('\n').map(x => x.trim()).filter(Boolean);
       fields.rubric = lines.length ? {criteria:lines.map(l => { const [t, ...lv] = l.split('|').map(x => x.trim()); return {text:t, levels:lv.map(x => { const i = x.lastIndexOf(':'); return {text:i > 0 ? x.slice(0, i).trim() : x, points:i > 0 ? Number(x.slice(i + 1)) : 0}; })}; })} : null; }
     if (d.type === 'feedback') fields.questions = (d.fquestions || '').split('\n').map(x => x.trim()).filter(Boolean).map(l => { const opt = l.startsWith('?'); const m = l.replace(/^\?/, '').match(/^(rating|choice|text)\s*:\s*(.*)$/i); const [t, ...o] = (m ? m[2] : l).split('|').map(x => x.trim()); return {type:m ? m[1].toLowerCase() : 'text', text:t, options:o, required:!opt}; });
+    const sb = f.querySelector('[type=submit]'), label = sb?.textContent; if (d.type === 'scorm' && B.server && sb) { sb.dataset.busy = '1'; sb.disabled = true; sb.textContent = 'Unpacking the package…'; }
     const r = await act('saveMod', {cid:d.cid, mid:d.mid || null, type:d.type, sid:d.sid, name:d.name, intro:d.intro, visible:checked(f, 'visible'), fields}, d.mid ? 'Changes saved' : `${C.TYPES[d.type].label} added`, {silent:true, errEl:'moderr'});
+    if (sb?.isConnected) { delete sb.dataset.busy; sb.disabled = false; sb.textContent = label; }
     if (r !== FAIL) { closeModal(); render(); }
   },
   section: async d => { if (await act('editSection', d, 'Section updated', {silent:true}) !== FAIL) { closeModal(); render(); } },
@@ -269,8 +271,8 @@ document.addEventListener('click', e => {
 });
 function submitForm(f, submitter) {
   const fn = F[f.dataset.form]; if (!fn) return;
-  const btn = f.querySelector('[type=submit]'); if (btn?.disabled) return;
-  if (btn) { btn.disabled = true; setTimeout(() => { if (btn.isConnected) btn.disabled = false; }, 1500); }
+  const btn = f.querySelector('[type=submit]'); if (btn?.disabled) { if (btn.dataset.busy && ui.uploading) toast('Please wait for the upload to finish.'); return; }
+  if (btn) { btn.disabled = true; setTimeout(() => { if (btn.isConnected && !btn.dataset.busy) btn.disabled = false; }, 1500); }
   let fd; try { fd = new FormData(f, submitter || undefined); } catch (x) { fd = new FormData(f); if (submitter?.name) fd.append(submitter.name, submitter.value); }
   fn(Object.fromEntries(fd), f);
 }
@@ -293,18 +295,38 @@ document.addEventListener('submit', e => { const f = e.target; if (!f.dataset.fo
 async function uploadFiles(input) {
   const files = [...input.files]; if (!files.length) return;
   const kind = input.dataset.upload; input.disabled = true;
+  // Progress bar under the file box; saving the form waits until the upload is done
+  const form = input.form, saveBtns = form ? [...form.querySelectorAll('button[type=submit]')] : [];
+  saveBtns.forEach(b => { b.disabled = true; b.dataset.busy = '1'; b.dataset.label = b.textContent; b.textContent = 'Waiting for upload…'; });
+  const bar = document.createElement('div'); bar.className = 'upbar'; bar.setAttribute('role', 'status'); input.insertAdjacentElement('afterend', bar);
+  const ctl = new AbortController(); ui.uploading = ctl;
+  bar.addEventListener('click', e => { if (e.target.closest('[data-cancel]')) ctl.abort(); });
+  const total = files.reduce((n, f) => n + f.size, 0); let doneBytes = 0; const t0 = Date.now();
+  const show = (file, loaded, i) => {
+    if (!input.isConnected) { ctl.abort(); return; } // the form was closed: stop uploading
+    const all = doneBytes + loaded, pct = total ? Math.min(100, Math.floor(all / total * 100)) : 100, secs = (Date.now() - t0) / 1000, speed = secs > 0.5 ? all / secs : 0, left = speed ? (total - all) / speed : null;
+    bar.innerHTML = `<div class="upbar-top"><span class="upbar-name">${files.length > 1 ? `File ${i + 1} of ${files.length}: ` : ''}${esc(file.name)}</span>${pct < 100 ? '<button type="button" class="link small" data-cancel>Cancel</button>' : ''}</div>
+      <div class="upbar-track" aria-hidden="true"><i style="width:${pct}%"></i></div>
+      <div class="upbar-meta"><b>${pct < 100 ? pct + '%' : 'Finishing…'}</b><span>${fmtSize(all)} of ${fmtSize(total)}</span>${speed && pct < 100 ? `<span>${fmtSize(speed)}/s</span>` : ''}${left != null && pct < 100 && secs > 2 ? `<span>${left < 60 ? 'less than a minute' : 'about ' + Math.round(left / 60) + ' min'} left</span>` : ''}</div>`;
+    bar.setAttribute('aria-label', `Uploading ${file.name}: ${pct}%`);
+  };
   try {
-    for (const file of files) {
-      const r = await B.upload(file); setState(r.state);
+    for (const [i, file] of files.entries()) {
+      show(file, 0, i);
+      const r = await B.upload(file, {onProgress:(loaded) => show(file, loaded, i), signal:ctl.signal}); doneBytes += file.size; setState(r.state);
       if (kind === 'sub') { ui.upload.sub = [...(ui.upload.sub || []), r.result.id].slice(0, 10); const el = document.getElementById('subfiles'); if (el) el.innerHTML = ui.upload.sub.map(id => fileChip(id, 'unattach')).join(''); }
-      if (kind === 'mod') { document.getElementById('mf-fileid').value = r.result.id; document.getElementById('mf-filename').textContent = `Uploaded: ${r.result.name} (${fmtSize(r.result.size)})`; const n = document.getElementById('mf-name'); if (n && !n.value) n.value = r.result.name.replace(/\.[^.]+$/, ''); }
-      if (kind === 'captions') { document.getElementById('mf-capid').value = r.result.id; document.getElementById('mf-capname').textContent = `Uploaded: ${r.result.name}`; }
-      if (kind === 'scorm') { document.getElementById('mf-pkgid').value = r.result.id; if (r.result.launchFileId) document.getElementById('mf-launch').value = r.result.launchFileId; document.getElementById('mf-pkgname').textContent = `Uploaded: ${r.result.name} (${fmtSize(r.result.size)})${!B.server && !r.result.launchFileId ? '. This package has several files, so it will only play on the server edition.' : ''}`; const n = document.getElementById('mf-name'); if (n && !n.value) n.value = r.result.name.replace(/\.[^.]+$/, ''); }
-      if (kind === 'logo') { document.getElementById('blogoid').value = r.result.id; document.getElementById('blogoname').textContent = `Uploaded: ${r.result.name}. Save to apply.`; }
-      if (kind === 'rec') { document.getElementById('recfid').value = r.result.id; document.getElementById('recname').textContent = `Uploaded: ${r.result.name}. Save to attach it.`; }
+      if (kind === 'mod') { if (!document.getElementById('mf-fileid')) continue; document.getElementById('mf-fileid').value = r.result.id; document.getElementById('mf-filename').textContent = `Uploaded: ${r.result.name} (${fmtSize(r.result.size)})`; const n = document.getElementById('mf-name'); if (n && !n.value) n.value = r.result.name.replace(/\.[^.]+$/, ''); }
+      if (kind === 'captions' && document.getElementById('mf-capid')) { document.getElementById('mf-capid').value = r.result.id; document.getElementById('mf-capname').textContent = `Uploaded: ${r.result.name}`; }
+      if (kind === 'scorm' && document.getElementById('mf-pkgid')) { document.getElementById('mf-pkgid').value = r.result.id; if (r.result.launchFileId) document.getElementById('mf-launch').value = r.result.launchFileId; document.getElementById('mf-pkgname').textContent = `Uploaded: ${r.result.name} (${fmtSize(r.result.size)})${!B.server && !r.result.launchFileId ? '. This package has several files, so it will only play on the server edition.' : ''}`; const n = document.getElementById('mf-name'); if (n && !n.value) n.value = r.result.name.replace(/\.[^.]+$/, ''); }
+      if (kind === 'logo' && document.getElementById('blogoid')) { document.getElementById('blogoid').value = r.result.id; document.getElementById('blogoname').textContent = `Uploaded: ${r.result.name}. Save to apply.`; }
+      if (kind === 'rec' && document.getElementById('recfid')) { document.getElementById('recfid').value = r.result.id; document.getElementById('recname').textContent = `Uploaded: ${r.result.name}. Save to attach it.`; }
     }
     toast(files.length > 1 ? `${files.length} files uploaded` : 'File uploaded');
-  } catch (e) { toast(e.message, true); }
+    bar.innerHTML = `<div class="upbar-track done" aria-hidden="true"><i style="width:100%"></i></div><div class="upbar-meta"><b>Uploaded</b><span>${fmtSize(total)}</span></div>`;
+    setTimeout(() => bar.remove(), 2500);
+  } catch (e) { bar.remove(); if (!e.cancelled) toast(e.message, true); else if (input.isConnected) toast('Upload cancelled'); }
+  if (ui.uploading === ctl) ui.uploading = null;
+  saveBtns.forEach(b => { delete b.dataset.busy; b.disabled = false; if (b.dataset.label) { b.textContent = b.dataset.label; delete b.dataset.label; } });
   input.disabled = false; input.value = '';
 }
 function readText(input, targetId) { const file = input.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => { const t = document.getElementById(targetId); if (t) t.value = r.result; }; r.readAsText(file); }

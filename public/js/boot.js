@@ -6,6 +6,7 @@ async function refresh() {
   const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
   try { const st = await B.init(); if (!st) { setState(null); ui.loginErr = 'You were signed out after a period of inactivity.'; render(); return; } const y = window.scrollY; setState(st); render(); window.scrollTo(0, y); } catch (e) {}
 }
+window.addEventListener('beforeunload', e => { if (ui.uploading) { e.preventDefault(); e.returnValue = ''; } });
 /* Time spent learning: counted while the learner is active in a course page */
 ['mousemove', 'keydown', 'scroll', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ui.lastActive = Date.now(); }, {passive:true}));
 function heartbeat() {

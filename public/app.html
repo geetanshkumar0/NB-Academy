@@ -462,6 +462,15 @@ html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition
 .backbar{margin:0 0 6px}
 .backbar .btn{padding-left:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .backbar .btn span{font-size:1.05em}
+.upbar{margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);display:grid;gap:6px;font-size:.84rem}
+.upbar-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.upbar-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.upbar-track{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.upbar-track i{display:block;height:100%;background:var(--brand);border-radius:99px;transition:width .2s ease}
+.upbar-track.done i{background:var(--ok, #21795f)}
+.upbar-meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted)}
+.upbar-meta b{color:var(--ink)}
+@media (prefers-reduced-motion: reduce){.upbar-track i{transition:none}}
 </style>
 <div id="app"><p style="padding:40px;text-align:center;color:#566573">Loading NB Academy…</p></div>
 <div id="modal"></div>

@@ -13,7 +13,7 @@ const fmtTime = t => new Date(t).toLocaleTimeString('en-IN', {hour:'numeric', mi
 const fmtG = v => v == null ? '–' : (Math.round(v * 100) / 100).toFixed(2);
 const fmtPct = v => v == null ? '–' : `${Math.round(v)}%`;
 const fmtH = v => v == null ? '–' : v < 1 ? `${Math.round(v * 60)} min` : `${v.toFixed(1)} h`;
-const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+const fmtSize = n => { n = Math.max(0, Math.round(n || 0)); return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`; };
 const toInput = t => { if (!t) return ''; const d = new Date(t); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 const toDateInput = t => toInput(t).slice(0, 10);
 const fromInput = s => s ? new Date(s).getTime() : null;
@@ -104,7 +104,23 @@ const ServerBackend = {
   async logout() { await this.req('POST', '/api/logout', {}); },
   async op(name, payload) { return this.req('POST', '/api/op', {op:name, payload}); },
   async loginAs(id) { return (await this.req('POST', '/api/loginas', {id})).state; },
-  async upload(file) { return this.req('POST', '/api/upload?name=' + encodeURIComponent(file.name), file, {'Content-Type':file.type || 'application/octet-stream'}); },
+  /* Upload with progress: fetch() cannot report upload progress, so this uses XMLHttpRequest */
+  upload(file, {onProgress, signal} = {}) {
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest(); x.open('POST', '/api/upload?name=' + encodeURIComponent(file.name)); x.withCredentials = true;
+      x.setRequestHeader('X-NB-Request', '1'); x.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      if (onProgress) x.upload.onprogress = e => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+      if (signal) signal.addEventListener('abort', () => x.abort());
+      x.onload = () => { let data = {}; try { data = JSON.parse(x.responseText || '{}'); } catch (e) {}
+        if (x.status >= 200 && x.status < 300) return resolve(data);
+        if (x.status === 413 && !data.error) return reject(new ApiError('This file is larger than the web server in front of NB Academy allows. Ask whoever runs the server to raise the upload limit (for nginx: client_max_body_size 1g;) and try again.', 413));
+        if ((x.status === 502 || x.status === 504) && !data.error) return reject(new ApiError('The server took too long to answer. For large uploads, ask whoever runs the server to raise the proxy timeouts (for nginx: proxy_read_timeout and client_body_timeout 600s;).', x.status));
+        reject(new ApiError(data.error || `Upload failed (${x.status})`, x.status)); };
+      x.onerror = () => reject(new ApiError('The upload stopped: the connection to the server was lost. Check your internet connection and try again.', 0));
+      x.onabort = () => reject(Object.assign(new ApiError('Upload cancelled.', 0), {cancelled:true}));
+      x.send(file);
+    });
+  },
   async forgot(login) { return this.req('POST', '/api/forgot', {login}); },
   async tokenInfo(t) { return this.req('GET', '/api/token?t=' + encodeURIComponent(t)); },
   async tokenPassword(token, password) { return this.req('POST', '/api/token-password', {token, password}); },
@@ -155,7 +171,7 @@ const LocalBackend = (() => {
       catch (e) { DB = JSON.parse(snap); throw new ApiError(e.message, e.status || 500); }
     },
     async loginAs(uid) { await this.op('loginAsCheck', {id:uid}); C._.audit(DB, env, SID, 'Logged in as another user', DB.users.find(u => u.id === uid).username); SID = uid; persist(); return view(); },
-    async upload(file) {
+    async upload(file, {onProgress} = {}) { onProgress?.(file.size, file.size);
       if (file.size > 3 * 1048576) throw new ApiError('In the preview, files are limited to 3 MB. The server edition accepts up to 1 GB.', 413);
       const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new ApiError('Could not read the file.', 400)); r.readAsDataURL(file); });
       const fid = 'f_' + Math.random().toString(36).slice(2, 12);
