@@ -88,6 +88,8 @@ function modRow(m, c, ed) {
   if (m.type === 'label') return `<li class="mod label-mod ${m.visible ? '' : 'is-hidden'}"><div class="prose">${md(m.intro)}</div>${!m.visible ? '<span class="chip">Hidden from students</span>' : ''}${ed ? `<div style="margin-top:8px">${modTools(m)}</div>` : ''}</li>`;
   let meta = '';
   if (m.type === 'forum') { const n = S.posts.filter(p => p.cmid === m.id && !p.parent).length; meta = `<div class="mod-d">${n} discussion${n === 1 ? '' : 's'}</div>`; }
+  if (m.type === 'quiz' && !(m.questions || []).length && h.canEdit(c.id)) meta += `<div class="mod-d"><span class="chip warn">No questions yet</span> <button class="link small" data-go="mod" data-id="${m.id}">Add questions</button></div>`;
+  if (m.type === 'lesson' && !(m.pages || []).length && h.canEdit(c.id)) meta += `<div class="mod-d"><span class="chip warn">No pages yet</span> <button class="link small" data-go="mod" data-id="${m.id}">Add pages</button></div>`;
   if (m.type === 'workshop') meta = `<div class="mod-d">Phase: ${C.WS_PHASES[m.phase || 1]}</div>`;
   if (m.type === 'file') { const f = fileOf(m.fileId); if (f) meta = `<div class="mod-d">${esc(f.name)} · ${fmtSize(f.size)}</div>`; }
   if (h.has('grade:edit', c.id) && m.type === 'assign') { const n = h.needsGrading(m); if (n) meta += `<div><span class="chip warn">${n} need${n === 1 ? 's' : ''} grading</span></div>`; }

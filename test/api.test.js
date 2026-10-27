@@ -657,6 +657,14 @@ test('large uploads are streamed to disk and the interface shows upload progress
   assert.match(src, /x\.upload\.onprogress/, 'uploads report progress'); assert.match(src, /className = ['"]upbar['"]/, 'a progress bar is shown'); assert.match(src, /Waiting for upload/, 'saving waits for the upload');
 });
 
+test('forms keep the clicked button (e.g. "Save and add another") and hide fields for other question types', () => {
+  const read = f => fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8');
+  const act = read('js/actions.js'), i = act.indexOf('function submitForm'), body = act.slice(i, act.indexOf('\n}\n', i));
+  assert.ok(body.indexOf('new FormData(f, submitter') < body.indexOf('.disabled = true'), 'form values are read before buttons are disabled');
+  assert.match(act, /name="next" value="1">Save and add another/);
+  assert.match(read('app.html'), /\[data-for\]\[hidden\]\{display:none!important\}/);
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

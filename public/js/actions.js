@@ -43,12 +43,13 @@ function modForm(type, cid, sid, m) {
   f.push(`<div class="field"><label for="mf-sec">Section</label><select id="mf-sec" name="sid">${c.sections.map(s => `<option value="${s.id}" ${s.id === sid ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`);
   f.push(`<label class="check" style="align-self:end;padding-bottom:10px"><input type="checkbox" name="visible" ${v.visible === false ? '' : 'checked'}> Visible to students</label>`);
   openModal(`${m ? 'Edit' : 'Add'} ${C.TYPES[type].label.toLowerCase()}`, `<form data-form="modSettings" class="stack"><input type="hidden" name="cid" value="${cid}"><input type="hidden" name="type" value="${type}"><input type="hidden" name="mid" value="${v.id || ''}">
-    <div class="fgrid">${f.join('')}</div><p class="err" id="moderr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save and return</button></div></form>`, true);
+    ${type === 'quiz' ? `<p class="muted small" style="margin:0">${m ? `This quiz has ${(m.questions || []).length} question${(m.questions || []).length === 1 ? '' : 's'}. Add and edit them on the quiz page.` : 'After you save, the quiz page opens so you can add its questions.'}</p>` : ''}
+    <div class="fgrid">${f.join('')}</div><p class="err" id="moderr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">${!m && type === 'quiz' ? 'Save and add questions' : !m && type === 'lesson' ? 'Save and add pages' : 'Save and return'}</button></div></form>`, true);
 }
 function questionForm(m, q) {
   const v = q || {type:'mc', mark:1};
   const opts = v.type === 'mc' ? (v.options || []).map(o => (o.correct ? '*' : '') + o.text).join('\n') : '';
-  openModal(q ? 'Edit question' : 'Add a question', `<form data-form="question" class="stack"><input type="hidden" name="mid" value="${m.id}"><input type="hidden" name="qid" value="${v.id || ''}">
+  openModal(q ? 'Edit question' : `Add a question to ${m.name}${(m.questions || []).length ? ` (question ${(m.questions || []).length + 1})` : ''}`, `<form data-form="question" class="stack"><input type="hidden" name="mid" value="${m.id}"><input type="hidden" name="qid" value="${v.id || ''}">
     <div class="fgrid"><div class="field"><label for="qtype">Question type</label><select id="qtype" name="type">${Object.entries(C.QTYPES).map(([k, l]) => `<option value="${k}" ${k === v.type ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label for="qmark">Default mark</label><input id="qmark" name="mark" type="number" min="0.5" step="0.5" value="${v.mark}" required></div>
     <div class="field full"><label for="qtext">Question text</label><textarea id="qtext" name="text" rows="3" required>${esc(v.text || '')}</textarea></div>
@@ -58,7 +59,7 @@ function questionForm(m, q) {
     <div class="field" data-for="num"><label for="qnum">Answer</label><input id="qnum" name="num" type="number" step="any" value="${v.type === 'num' ? v.answer : ''}"></div>
     <div class="field" data-for="num"><label for="qtol">Error accepted (±)</label><input id="qtol" name="tol" type="number" step="any" min="0" value="${v.type === 'num' ? (v.tol || 0) : 0}"></div></div>
     <p class="err" id="qerr" hidden></p>
-    <div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save changes</button></div></form>`, true);
+    <div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button>${q ? '' : '<button class="btn" type="submit" name="next" value="1">Save and add another</button>'}<button class="btn primary" type="submit">${q ? 'Save changes' : 'Save question'}</button></div></form>`, true);
 }
 function toggleQFields() { const t = document.getElementById('qtype').value; document.querySelectorAll('[data-for]').forEach(el => el.hidden = el.dataset.for !== t); }
 function lessonPageForm(m, pg, kind) {
@@ -222,7 +223,13 @@ const F = {
     const sb = f.querySelector('[type=submit]'), label = sb?.textContent; if (d.type === 'scorm' && B.server && sb) { sb.dataset.busy = '1'; sb.disabled = true; sb.textContent = 'Unpacking the package…'; }
     const r = await act('saveMod', {cid:d.cid, mid:d.mid || null, type:d.type, sid:d.sid, name:d.name, intro:d.intro, visible:checked(f, 'visible'), fields}, d.mid ? 'Changes saved' : `${C.TYPES[d.type].label} added`, {silent:true, errEl:'moderr'});
     if (sb?.isConnected) { delete sb.dataset.busy; sb.disabled = false; sb.textContent = label; }
-    if (r !== FAIL) { closeModal(); render(); }
+    if (r === FAIL) return;
+    if (!d.mid && r?.id && (d.type === 'quiz' || d.type === 'lesson')) {
+      closeModal(); go('mod', {id:r.id});
+      if (d.type === 'quiz') { questionForm(S.mods[r.id], null); toast('Quiz added. Now add its first question.'); } else toast('Lesson added. Now add its pages.');
+      return;
+    }
+    closeModal(); render();
   },
   section: async d => { if (await act('editSection', d, 'Section updated', {silent:true}) !== FAIL) { closeModal(); render(); } },
   submission: async d => { if (await act('submit', {mid:d.mid, text:d.text, files:ui.upload.sub || []}, 'Submission saved', {silent:true, errEl:'suberr'}) !== FAIL) { ui.upload = {}; go('mod', {id:d.mid}); } },
@@ -272,9 +279,12 @@ document.addEventListener('click', e => {
 function submitForm(f, submitter) {
   const fn = F[f.dataset.form]; if (!fn) return;
   const btn = f.querySelector('[type=submit]'); if (btn?.disabled) { if (btn.dataset.busy && ui.uploading) toast('Please wait for the upload to finish.'); return; }
-  if (btn) { btn.disabled = true; setTimeout(() => { if (btn.isConnected && !btn.dataset.busy) btn.disabled = false; }, 1500); }
+  // Read the values before disabling anything: a disabled button is left out of the form's data
   let fd; try { fd = new FormData(f, submitter || undefined); } catch (x) { fd = new FormData(f); if (submitter?.name) fd.append(submitter.name, submitter.value); }
-  fn(Object.fromEntries(fd), f);
+  const data = Object.fromEntries(fd);
+  const btns = [...f.querySelectorAll('[type=submit]')].filter(b => !b.disabled); btns.forEach(b => b.disabled = true);
+  setTimeout(() => btns.forEach(b => { if (b.isConnected && !b.dataset.busy) b.disabled = false; }), 1500);
+  fn(data, f);
 }
 /* Forms are submitted by the app itself, not by the browser. Pages shown inside a sandboxed frame
    (such as the hosted preview) are not allowed to submit forms, so relying on the browser's submit

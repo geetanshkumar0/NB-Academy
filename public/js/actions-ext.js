@@ -234,3 +234,9 @@ document.addEventListener('change', e => {
   if (e.target.name !== 'personas') return; const f = e.target.form; if (!f) return;
   const on = new Set(picked(f, 'personas')); f.querySelectorAll('[data-pfor]').forEach(el => { el.hidden = !on.has(el.dataset.pfor); });
 });
+
+// "Save and add another": after a question is saved, open a fresh question form for the same quiz
+{ const _saveQ = F.question;
+  F.question = async (d, f) => { const m0 = S.mods[d.mid], before = (m0?.questions || []).length; await _saveQ(d, f);
+    const m = S.mods[d.mid]; if (d.next && m && (m.questions || []).length > before) { questionForm(m, null); const t = document.getElementById('qtext'); t?.focus(); } };
+}
