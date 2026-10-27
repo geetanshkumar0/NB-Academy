@@ -126,6 +126,8 @@ function H(S, meId) {
     return c.visible || h.has('course:viewhidden', cid);
   };
   h.canEdit = cid => h.has('course:manageactivities', cid);
+  /* People who can edit a course are never held back by its learner locks (step-by-step order, overdue lockout, path order), even when also enrolled as a learner */
+  h.editsCourse = (cid, uid = meId) => h.has('course:manageactivities', cid, uid);
   h.isLearner = (cid, uid = meId) => { const e = h.enrolOf(cid, uid); return !!e && !!h.role(e.role)?.caps?.['mod:submit']; };
   h.enrolled = cid => S.enrol.filter(e => e.courseId === cid).map(e => ({e, u:h.user(e.userId)})).filter(x => x.u);
   h.students = cid => h.enrolled(cid).filter(x => h.role(x.e.role)?.caps?.['mod:submit']).map(x => x.u).sort((a, b) => a.firstname.localeCompare(b.firstname));
@@ -196,7 +198,7 @@ function H(S, meId) {
   };
   /* Step-by-step unlocking: returns why an activity is locked for this learner, or null */
   h.modLock = (m, uid = meId) => {
-    if (!h.isLearner(m.courseId, uid)) return null;
+    if (!h.isLearner(m.courseId, uid) || h.editsCourse(m.courseId, uid)) return null;
     const c = h.course(m.courseId); const why = [];
     if (c.sequential && h.trackable(m)) {
       const order = h.courseMods(c.id).filter(h.trackable); const i = order.findIndex(x => x.id === m.id);
@@ -214,9 +216,9 @@ function H(S, meId) {
     if (e.startedAt || h.progress(cid, uid) > 0) return 'inprogress';
     return 'notstarted';
   };
-  h.isLocked = (cid, uid = meId) => h.isLearner(cid, uid) && h.status(cid, uid) === 'overdue';
+  h.isLocked = (cid, uid = meId) => h.isLearner(cid, uid) && !h.editsCourse(cid, uid) && h.status(cid, uid) === 'overdue';
   h.pathLock = (cid, uid = meId) => {
-    const e = h.enrolOf(cid, uid); if (!e?.pathId) return null; const p = S.paths.find(x => x.id === e.pathId); if (!p || !p.sequential) return null;
+    const e = h.enrolOf(cid, uid); if (!e?.pathId || h.editsCourse(cid, uid)) return null; const p = S.paths.find(x => x.id === e.pathId); if (!p || !p.sequential) return null;
     const i = p.courses.indexOf(cid); const prev = p.courses.slice(0, Math.max(0, i)).map(h.course).find(c => c && h.enrolOf(c.id, uid) && h.status(c.id, uid) !== 'completed');
     return prev ? `Complete ${prev.fullname} first. It comes earlier in the learning path ${p.name}.` : null;
   };

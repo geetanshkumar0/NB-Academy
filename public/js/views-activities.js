@@ -43,7 +43,7 @@ VIEWS.course = (p) => {
   const c = h.course(p.id); if (!c) return notFound();
   if (!h.canView(c.id)) return viewEnrolPage(c);
   const st = h.isLearner(c.id), e = h.enrolOf(c.id), status = st ? h.status(c.id) : null;
-  if (st && status === 'overdue') return courseShell(c, 'course', lockScreen(c), false);
+  if (st && h.isLocked(c.id)) return courseShell(c, 'course', lockScreen(c), false);
   const pl = st && h.pathLock(c.id); if (pl) return courseShell(c, 'course', `<div class="card stack" style="max-width:720px"><h2>${lockIcon()} Not unlocked yet</h2><p>${esc(pl)}</p></div>`, false);
   touch(c.id);
   const ed = h.canEdit(c.id) && ui.editing;

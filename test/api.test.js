@@ -679,6 +679,19 @@ test('quiz questions: duplicates go below the original, questions can be reorder
   assert.equal((await op(a, 'deleteQuestion', {mid, qid:dup})).status, 200);
 });
 
+test('people who can edit a course are not held back by learner locks, even when enrolled as a learner', async () => {
+  const S = getState(), Core = require('../public/core.js');
+  // The admin is enrolled as a learner in the step-by-step safety course
+  if (!S.enrol.some(e => e.courseId === 'c6' && e.userId === 'u1')) S.enrol.push({id:'e-admin-c6', courseId:'c6', userId:'u1', role:'student', time:Date.now()});
+  const final = Object.values(S.mods).find(m => m.courseId === 'c6' && m.type === 'quiz' && !m.pretest);
+  assert.ok(Core.H(S, 'u1').isLearner('c6'));
+  assert.equal(Core.H(S, 'u1').modLock(final), null, 'no step-by-step lock for an editor');
+  assert.ok(Core.H(S, 'u12').modLock(final), 'a real learner is still locked');
+  const a = await login('admin');
+  const r = await op(a, 'startQuiz', {mid:final.id}); assert.equal(r.status, 200, r.text);
+  S.enrol = S.enrol.filter(e => e.id !== 'e-admin-c6');
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

@@ -58,6 +58,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 
 - **Teams:** a user's team is stored in `user.department` and must be one of `S.site.teams` (default `TEAMS` in core.js, editable via `saveTeams`); `normTeam` validates it. The Company field is no longer asked for.
 
+- **Locks** (step-by-step order `modLock`, overdue lockout `isLocked`, learning-path order `pathLock`) apply only to learners who cannot edit the course: `h.editsCourse(cid)` exempts editors and admins even when they are also enrolled as learners.
+
 `h.personas(uid)` drives the view switcher (`modes()` in base.js).
 
 ## Fixing an issue
