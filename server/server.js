@@ -23,7 +23,7 @@ const Store = require('./store.js');
 const {sendMail} = require('./mailer.js');
 const ldap = require('./ldap.js');
 const oidc = require('./oidc.js');
-const {unzip, scormLaunch} = require('./unzip.js');
+const {unzip, scormLaunch, resolvePackage} = require('./unzip.js');
 const {certificatePdf} = require('./pdf.js');
 
 const ROOT = path.join(__dirname, '..');
@@ -179,7 +179,7 @@ async function deliverMail() {
 function extractScorm(fileId, cmid) {
   const fp = store.filePath(fileId); if (!fs.existsSync(fp)) throw new Core.OpError('The package file is missing.', 400);
   let files, info;
-  try { files = unzip(fs.readFileSync(fp)); info = scormLaunch(files); } catch (e) { throw new Core.OpError(`This SCORM package cannot be used: ${e.message}`, 400); }
+  try { files = resolvePackage(unzip(fs.readFileSync(fp))).filter(f => !/(^|\/)__MACOSX\//.test(f.name)); info = scormLaunch(files); } catch (e) { throw new Core.OpError(`This SCORM package cannot be used: ${e.message}`, 400); }
   const dir = store.scormDir(cmid); fs.rmSync(dir, {recursive:true, force:true});
   for (const f of files) { const out = path.join(dir, f.name); if (!out.startsWith(dir + path.sep)) continue; fs.mkdirSync(path.dirname(out), {recursive:true}); fs.writeFileSync(out, f.data); }
   fs.writeFileSync(path.join(dir, '.package'), fileId);

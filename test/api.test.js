@@ -170,6 +170,24 @@ test('SCORM 2004 packages zipped one folder deep: found, served, streamed and re
   assert.equal(r2.status, 400); assert.match(r2.json.error, /launch file "scormdriver\/indexAPI.html".*not in the package/);
 });
 
+test('SCORM packages inside folders, inside another zip, or made on a Mac are found; bundles are refused clearly', async () => {
+  const admin = await login('admin'), asha = await login('asha'), sid = getState().courses.find(c => c.id === 'c1').sections[0].id;
+  const MAN = name => `<manifest identifier="x"><metadata><schemaversion>1.2</schemaversion></metadata><organizations default="O"><organization identifier="O"><title>${name}</title><item identifier="i" identifierref="r"/></organization></organizations><resources><resource identifier="r" adlcp:scormtype="sco" href="index_lms.html"/></resources></manifest>`;
+  const add = async (zip, name) => { const up = await call('POST', `/api/upload?name=${encodeURIComponent(name)}.zip`, zip, admin, {'Content-Type':'application/zip'}); return op(admin, 'saveMod', {cid:'c1', type:'scorm', sid, name, visible:true, fields:{packageId:up.json.result.id}}); };
+  const cases = [
+    ['two folders deep', makeZip([['Exports/NoBroker Introduction - SCORM/imsmanifest.xml', MAN('Intro')], ['Exports/NoBroker Introduction - SCORM/index_lms.html', 'intro page']]), 'Exports/NoBroker Introduction - SCORM/index_lms.html'],
+    ['zip inside a zip', makeZip([['NoBroker Story.zip', makeZip([['imsmanifest.xml', MAN('Story')], ['index_lms.html', 'story page']])], ['readme.txt', 'upload this']]), 'index_lms.html'],
+    ['made on a Mac', makeZip([['Story/imsmanifest.xml', MAN('Mac')], ['Story/index_lms.html', 'mac page'], ['__MACOSX/Story/._imsmanifest.xml', 'junk'], ['__MACOSX/Story/._index_lms.html', 'junk']]), 'Story/index_lms.html'],
+  ];
+  for (const [label, zip, launch] of cases) {
+    const r = await add(zip, label); assert.equal(r.status, 200, `${label}: ${r.text}`);
+    const m = getState().mods[r.json.result.id]; assert.equal(m.launch, launch, label);
+    const page = await call('GET', `/scorm/${m.id}/${launch.split('/').map(encodeURIComponent).join('/')}`, null, asha); assert.equal(page.status, 200, label); assert.match(page.text, /page/, label);
+  }
+  const bundle = makeZip([['Intro/imsmanifest.xml', MAN('Intro')], ['Intro/index_lms.html', 'a'], ['Story/imsmanifest.xml', MAN('Story')], ['Story/index_lms.html', 'b']]);
+  const r = await add(bundle, 'bundle'); assert.equal(r.status, 400); assert.match(r.json.error, /holds 2 SCORM packages \(Intro, Story\)/);
+});
+
 test('essay questions wait for a trainer, then count', async () => {
   const dev = await login('dev');
   const s = await op(dev, 'startQuiz', {mid:'m21'}); assert.equal(s.status, 200);

@@ -27,8 +27,25 @@ function unzip(buf, {maxFiles = 50000, maxBytes = 4 * 1024 * 1024 * 1024} = {}) 
 /* Read imsmanifest.xml the way the SCORM standard describes: the default organization's first item that
    points at a resource, then that resource's href, with xml:base on <resources>/<resource> applied.
    Works for SCORM 1.2 and SCORM 2004 (2nd, 3rd and 4th editions), including packages zipped one folder deep. */
+/* Accept the ways packages are commonly handed over:
+   - the package itself (imsmanifest.xml at the top);
+   - the package inside one or more folders (handled by scormLaunch, which finds the manifest at any depth);
+   - a zip that contains the package's .zip (it is unpacked from inside).
+   A zip holding several packages is refused with their names, so each can be uploaded as its own activity. */
+function resolvePackage(files, depth = 0) {
+  const manifests = files.filter(f => /(^|\/)imsmanifest\.xml$/i.test(f.name) && !/(^|\/)__MACOSX\//.test(f.name));
+  if (manifests.length > 1) {
+    const roots = [...new Set(manifests.map(m => m.name.slice(0, m.name.lastIndexOf('/') + 1)))];
+    const nested = roots.filter(r => roots.some(o => o !== r && r.startsWith(o)));
+    if (roots.length - nested.length > 1) throw new Error(`This zip holds ${roots.length - nested.length} SCORM packages (${roots.filter(r => !nested.includes(r)).map(r => r.replace(/\/$/, '') || 'top level').join(', ')}). Upload each one as its own SCORM activity.`);
+  }
+  if (manifests.length || depth > 1) return files;
+  const inner = files.filter(f => /\.zip$/i.test(f.name) && !/(^|\/)__MACOSX\//.test(f.name));
+  for (const z of inner) { let sub; try { sub = unzip(z.data); } catch (e) { continue; } if (sub.some(f => /(^|\/)imsmanifest\.xml$/i.test(f.name))) { if (inner.length > 1) { const pk = inner.filter(x => { try { return unzip(x.data).some(f => /(^|\/)imsmanifest\.xml$/i.test(f.name)); } catch (e) { return false; } }); if (pk.length > 1) throw new Error(`This zip holds ${pk.length} SCORM packages (${pk.map(x => x.name).join(', ')}). Upload each one as its own SCORM activity.`); } return resolvePackage(sub, depth + 1); } }
+  return files;
+}
 function scormLaunch(files) {
-  const mans = files.filter(f => /(^|\/)imsmanifest\.xml$/i.test(f.name)).sort((a, b) => a.name.split('/').length - b.name.split('/').length);
+  const mans = files.filter(f => /(^|\/)imsmanifest\.xml$/i.test(f.name) && !/(^|\/)__MACOSX\//.test(f.name)).sort((a, b) => a.name.split('/').length - b.name.split('/').length);
   const man = mans[0]; if (!man) throw new Error('No imsmanifest.xml found. Export the course as a SCORM package (a .zip with imsmanifest.xml), not as a web or video export.');
   const xml = man.data.toString('utf8').replace(/^﻿/, ''); const base = man.name.includes('/') ? man.name.slice(0, man.name.lastIndexOf('/') + 1) : '';
   const attr = (tag, a) => { const m = tag.match(new RegExp(`\\b${a}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i')); return m ? (m[2] ?? m[3]) : ''; };
@@ -55,4 +72,4 @@ function scormLaunch(files) {
   const title = ((org && (org[2].match(/<(?:\w+:)?title>([^<]+)<\/(?:\w+:)?title>/i) || [])[1]) || '').trim();
   return {launch:exact + (query ? '?' + query : ''), title, single:files.length <= 2, version, files:files.length};
 }
-module.exports = {unzip, scormLaunch};
+module.exports = {unzip, scormLaunch, resolvePackage};

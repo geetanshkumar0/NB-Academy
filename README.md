@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (47 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (48 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -206,7 +206,7 @@ The course's trainers and administrators can read every chat in the course, and 
 ## SCORM packages
 
 - **SCORM 1.2 and SCORM 2004** (2nd, 3rd and 4th editions) both work. This covers exports from Articulate Storyline and Rise, iSpring, Adobe Captivate and similar tools.
-- Upload the **.zip exactly as exported**. It must contain `imsmanifest.xml`; a package zipped one folder deep also works.
+- Upload the **.zip exactly as exported**. It must contain `imsmanifest.xml` somewhere inside. These all work: the manifest at the top, inside one or more folders, a zip that contains the package's .zip, and zips made on a Mac (the hidden `__MACOSX` folder is ignored). A zip holding several packages is refused with their names, so each can be uploaded as its own activity.
 - The start page is found the way the standard describes: the first item of the default organisation, its launch parameters, and `xml:base`.
 - Packages up to 1 GB are accepted. Audio and video inside them stream and can be skipped through.
 - Trainers and admins see the detected SCORM version and start page on the activity page.
