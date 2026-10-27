@@ -49,7 +49,7 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 - **Learner:** a `student` enrolment in a course, or `user.personas` contains `learner`.
 - **Trainer:** a `trainer`, `editingteacher` or `teacher` enrolment, a trainer of a cohort, or `user.personas` contains `trainer`.
 - **Team Lead:** the site role `teamlead` in `S.sysroles`, plus cohort `leads`.
-- **Administrator:** `user.admin`, or the site role `manager`. Built-in admins have `builtinAdmin: true`. They are the **super administrators** (`h.isSuperAdmin()`): only they can remove admin access (`removeAdmin`), suspend or delete other admins, and they cannot themselves be deleted, suspended or demoted in the app.
+- **Administrator:** `user.admin`, or the site role `manager`. Built-in admins have `builtinAdmin: true`. They are the **super administrators** (`h.isSuperAdmin()`). They hold every persona (`h.personas` returns all four; Trainer and Team Lead views show every course and cohort), and only they can remove admin access (`removeAdmin`), suspend or delete other admins, and they cannot themselves be deleted, suspended or demoted in the app.
 - **Course group chats** (`S.chats`, `S.chatMessages`; ops `createChat`, `updateChat`, `deleteChat`, `sendChatMessage`, `readChat` in core-ext.js): created by the course's trainers or by admins (`h.canManageChats`). `mode: 'course'` means everyone enrolled in the course is a member.
 
 `h.personas(uid)` drives the view switcher (`modes()` in base.js).

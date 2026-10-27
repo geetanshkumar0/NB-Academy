@@ -379,7 +379,8 @@ test('built-in site administrators are created at start-up and cannot be removed
   }
   const g = st.users.find(x => x.email === 'geetansh.kumar@nobroker.in'); assert.equal(g.username, 'geetansh.kumar');
   assert.equal((await op(a, 'deleteUser', {id:g.id})).status, 400);
-  assert.equal((await op(a, 'setPersonas', {userId:g.id, personas:['learner']})).status, 400);
+  assert.equal((await op(a, 'setPersonas', {userId:g.id, personas:['learner']})).status, 200);
+  assert.ok(getState().users.find(u => u.id === g.id).admin, 'the super administrator keeps administrator access');
   assert.equal((await op(a, 'updateProfile', {id:g.id, firstname:'G', lastname:'K', email:'other@example.com'})).status, 400);
   assert.equal((await op(a, 'suspendUser', {id:g.id, on:true})).status, 400);
   assert.equal((await op(a, 'setPersonas', {userId:g.id, personas:['admin', 'learner']})).status, 200);
@@ -429,6 +430,23 @@ test('only the super administrator can remove, suspend or delete other administr
   assert.equal((await op(g, 'removeAdmin', {id:me.id})).status, 400, 'cannot remove own access');
   // give the demo admin its access back for the remaining tests
   assert.equal((await op(g, 'setPersonas', {userId:'u1', personas:['admin']})).status, 200);
+});
+
+test('the super administrator holds every persona and can be assigned training', async () => {
+  const g = (await call('POST', '/api/login', {username:'geetansh.kumar', password:'Super@2026x'})).cookie; assert.ok(g);
+  let st = (await call('GET', '/api/state', null, g)).json.state;
+  const me = st.users.find(u => u.id === st.me), H = require('../public/core.js').H(getState(), me.id);
+  assert.deepEqual(H.personas(), ['learner', 'trainer', 'teamlead', 'admin']);
+  assert.ok(H.isTrainer() && H.isTeamLead() && H.learnerPersona());
+  assert.equal(H.cohortsLed().length, getState().cohorts.length, 'sees every cohort as team lead');
+  // unticking personas does not take them away
+  assert.equal((await op(g, 'setPersonas', {userId:me.id, personas:['admin']})).status, 200);
+  assert.deepEqual(require('../public/core.js').H(getState(), me.id).personas(), ['learner', 'trainer', 'teamlead', 'admin']);
+  // can be assigned a course like any learner
+  const a = await login('admin');
+  const r = await op(a, 'assign', {kind:'course', id:'c1', users:[me.id], due:Date.now() + 7 * 864e5, mandatory:true});
+  assert.equal(r.status, 200, r.text);
+  assert.ok(getState().enrol.some(e => e.courseId === 'c1' && e.userId === me.id && e.role === 'student'));
 });
 
 test('course group chats: trainers and admins create them; only members (and course managers) see them', async () => {

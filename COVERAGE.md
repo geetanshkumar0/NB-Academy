@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (45 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (46 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -71,6 +71,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | Requirement | Where |
 |---|---|
 | Super administrator can remove other administrators | Users list: Remove admin access and Delete, for super administrators only (server/site-admins.js). Tested. |
+| Super administrator holds every role (Learner, Trainer, Team Lead, Admin) | View switcher; Trainer and Team Lead workspaces show everything. Tested. |
 | Group chat when a course is created, for trainers and admins | New course form option; course Group chats tab; Messages. Tested. |
 
 ## Limits and decisions

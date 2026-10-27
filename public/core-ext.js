@@ -110,6 +110,7 @@ const uids = (S, a) => [...new Set((Array.isArray(a) ? a : []).filter(id => S.us
 /* ---------------- Personas: what a person does on the site (learner, trainer, team lead, administrator) ---------------- */
 function applyPersonas(S, h, env, u, p) {
   const want = new Set((Array.isArray(p.personas) ? p.personas : []).filter(x => ['learner', 'trainer', 'teamlead', 'admin'].includes(x)));
+  if (u.builtinAdmin) ['learner', 'trainer', 'teamlead', 'admin'].forEach(x => want.add(x)); // the super administrator always holds every persona
   need(want.size, 'Choose at least one persona.', 400);
   if (want.has('admin') !== !!u.admin) { need(h.isAdmin(), 'Only site administrators can grant or remove administrator access.'); need(!(u.id === h.meId && !want.has('admin')), 'You cannot remove your own administrator access.', 400); need(!(u.builtinAdmin && !want.has('admin')), 'This is a built-in site administrator set in the server configuration, so administrator access cannot be removed here.', 400); need(!(u.admin && !want.has('admin')) || h.isSuperAdmin(), 'Only the super administrator can remove administrator access.'); u.admin = want.has('admin'); }
   u.personas = ['learner', 'trainer'].filter(x => want.has(x));
@@ -254,7 +255,7 @@ op('assign', (S, h, p, env) => {
   const scope = h.trainerScope();
   let targets = uids(S, p.users);
   for (const cid of p.cohorts || []) { const co = S.cohorts.find(x => x.id === cid); need(co, 'Cohort not found.', 404); need(global || co.trainers.includes(h.meId), `The cohort ${co.name} is not mapped to you.`); targets.push(...co.members); }
-  targets = [...new Set(targets)].filter(id => { const u = S.users.find(x => x.id === id); return u && (!u.admin || u.personas?.includes('learner')); });
+  targets = [...new Set(targets)].filter(id => { const u = S.users.find(x => x.id === id); return u && (!u.admin || u.builtinAdmin || u.personas?.includes('learner')); });
   need(targets.length, 'Choose at least one learner or cohort.', 400);
   if (!global) need(targets.every(id => scope.has(id)), 'You can only assign learners in the cohorts or courses tagged to you.');
   const due = p.due ? Number(p.due) : p.dueDays ? env.now() + Number(p.dueDays) * D : null;

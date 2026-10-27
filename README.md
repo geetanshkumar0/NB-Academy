@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (45 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (46 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -188,6 +188,7 @@ The accounts listed under `admins` in `server/site-admins.js` (today geetansh.ku
 - Only a super administrator can take administrator access away from other administrators, suspend them or delete them. The Users list shows them **Remove admin access** and **Delete** buttons on administrator rows.
 - Removing access keeps the account, with the person's learner, trainer or team lead personas. The person is notified, and the change is recorded in the audit log.
 - Other administrators can still create administrators. They cannot remove or demote one.
+- A super administrator holds **every role** (Learner, Trainer, Team Lead and Administrator) and switches between them with the view switcher. As Trainer they see every active course and cohort, as Team Lead every cohort, and as Learner their own assigned training; anyone who assigns training can assign it to them. These roles cannot be taken away in the app.
 
 ## Course group chats
 

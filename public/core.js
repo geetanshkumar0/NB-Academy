@@ -222,17 +222,18 @@ function H(S, meId) {
   };
   h.requestOf = (cid, uid = meId) => S.accessRequests.filter(r => r.courseId === cid && r.userId === uid).sort((a, b) => b.time - a.time)[0] || null;
   /* Cohort scope */
-  h.cohortsLed = (uid = meId) => S.cohorts.filter(c => c.leads.includes(uid));
+  h.cohortsLed = (uid = meId) => h.user(uid)?.builtinAdmin ? S.cohorts : S.cohorts.filter(c => c.leads.includes(uid));
   h.cohortsTrained = (uid = meId) => S.cohorts.filter(c => c.trainers.includes(uid));
   h.teamMembers = (uid = meId) => [...new Set(h.cohortsLed(uid).flatMap(c => c.members))];
   h.trainerScope = (uid = meId) => new Set([...h.cohortsTrained(uid).flatMap(c => c.members), ...S.enrol.filter(e => h.has('course:assign', e.courseId, uid)).flatMap(e => h.students(e.courseId).map(u => u.id))]);
   h.sysrole = (roleId, uid = meId) => S.sysroles.some(r => r.userId === uid && r.roleId === roleId);
-  h.isTeamLead = (uid = meId) => h.has('team:view', null, uid) && (h.sysrole('teamlead', uid) || h.cohortsLed(uid).length > 0);
-  h.isTrainer = (uid = meId) => !!h.user(uid)?.personas?.includes('trainer') || h.cohortsTrained(uid).length > 0 || S.enrol.some(e => e.userId === uid && ['trainer', 'editingteacher', 'teacher'].includes(e.role));
+  h.isTeamLead = (uid = meId) => !!h.user(uid)?.builtinAdmin || h.has('team:view', null, uid) && (h.sysrole('teamlead', uid) || h.cohortsLed(uid).length > 0);
+  h.isTrainer = (uid = meId) => !!h.user(uid)?.builtinAdmin || !!h.user(uid)?.personas?.includes('trainer') || h.cohortsTrained(uid).length > 0 || S.enrol.some(e => e.userId === uid && ['trainer', 'editingteacher', 'teacher'].includes(e.role));
   h.learnsAnything = (uid = meId) => S.enrol.some(e => e.userId === uid && h.role(e.role)?.caps?.['mod:submit']);
-  h.learnerPersona = (uid = meId) => !!h.user(uid)?.personas?.includes('learner') || h.learnsAnything(uid);
+  h.learnerPersona = (uid = meId) => !!h.user(uid)?.builtinAdmin || !!h.user(uid)?.personas?.includes('learner') || h.learnsAnything(uid);
   /* Personas a person can switch between: learner, trainer, team lead, administrator */
-  h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; const out = [];
+  /* The super administrator (built-in admin) holds every persona */
+  h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; if (u.builtinAdmin) return ['learner', 'trainer', 'teamlead', 'admin']; const out = [];
     if (h.learnerPersona(uid) || (!u.admin && !h.sysrole('manager', uid) && !h.isTrainer(uid) && !h.isTeamLead(uid))) out.push('learner');
     if (h.isTrainer(uid)) out.push('trainer'); if (h.isTeamLead(uid)) out.push('teamlead');
     if (u.admin || h.sysrole('manager', uid)) out.push('admin'); return out; };
