@@ -36,7 +36,7 @@ const TYPES = {
   label:       {label:'Text and media area', p:'other', desc:'Text shown directly on the course page between activities.'}
 };
 const MANUAL = new Set(['page', 'url', 'file', 'forum', 'glossary']);
-const QTYPES = {mc:'Multiple choice', tf:'True/False', short:'Short answer', num:'Numerical', essay:'Essay (graded by trainer)'};
+const QTYPES = {mc:'Multiple choice', tf:'True / False', short:'Short answer', num:'Number', essay:'Paragraph (graded by a trainer)'};
 const WS_PHASES = {1:'Setup', 2:'Submission', 3:'Assessment', 4:'Grading evaluation', 5:'Closed'};
 
 /* ---------------- Capabilities and roles ---------------- */
@@ -1217,7 +1217,7 @@ op('grade', (S, h, p, env) => {
 /* Quiz */
 op('saveQuestion', (S, h, p) => {
   const m = modOf(S, p.mid); need(h.canEdit(m.courseId), 'You cannot edit this quiz.'); need(m.type === 'quiz', 'Not a quiz.', 400);
-  const q = {id:p.q?.id || 'q' + Math.random().toString(36).slice(2, 8), type:p.q?.type, text:req(p.q?.text, 'Question text', 4000), mark:Math.max(0.5, Number(p.q?.mark) || 1)};
+  const q = {id:/^[a-z0-9_]{2,40}$/i.test(String(p.q?.id || '')) ? p.q.id : 'q' + Math.random().toString(36).slice(2, 8), type:p.q?.type, text:req(p.q?.text, 'Question text', 4000), mark:Math.max(0.5, Number(p.q?.mark) || 1)};
   need(QTYPES[q.type], 'Unknown question type.', 400);
   if (q.type === 'mc') { q.options = (p.q.options || []).map(o => ({text:str(o.text, 500).trim(), correct:!!o.correct})).filter(o => o.text); need(q.options.length >= 2, 'Add at least two choices, one per line.', 400); need(q.options.filter(o => o.correct).length === 1, 'Mark exactly one choice as correct by putting * in front of it.', 400); q.options.forEach(o => { if (!o.correct) delete o.correct; }); }
   if (q.type === 'tf') q.answer = !!p.q.answer;
@@ -1225,8 +1225,16 @@ op('saveQuestion', (S, h, p) => {
   if (q.type === 'num') { need(p.q.answer !== '' && !isNaN(Number(p.q.answer)), 'Enter the correct numerical answer.', 400); q.answer = Number(p.q.answer); q.tol = Math.abs(Number(p.q.tol) || 0); }
   if (q.type === 'essay') q.guidance = str(p.q.guidance, 2000);
   if (p.q.bankId) q.bankId = p.q.bankId;
-  m.questions ||= []; const i = m.questions.findIndex(x => x.id === q.id); if (i >= 0) m.questions[i] = q; else m.questions.push(q);
+  m.questions ||= []; const i = m.questions.findIndex(x => x.id === q.id);
+  if (i >= 0) m.questions[i] = q;
+  else { const at = p.after ? m.questions.findIndex(x => x.id === p.after) : -1; if (at >= 0) m.questions.splice(at + 1, 0, q); else m.questions.push(q); } // a duplicate goes right below its original
   return {id:q.id};
+});
+op('moveQuestion', (S, h, p) => {
+  const m = modOf(S, p.mid); need(h.canEdit(m.courseId), 'You cannot edit this quiz.'); const qs = m.questions || [];
+  const i = qs.findIndex(q => q.id === p.qid); need(i >= 0, 'Question not found.', 404);
+  const j = Math.max(0, Math.min(qs.length - 1, p.to !== undefined ? Number(p.to) : i + (Number(p.dir) < 0 ? -1 : 1)));
+  const [q] = qs.splice(i, 1); qs.splice(j, 0, q);
 });
 op('deleteQuestion', (S, h, p) => { const m = modOf(S, p.mid); need(h.canEdit(m.courseId), 'You cannot edit this quiz.'); m.questions = (m.questions || []).filter(q => q.id !== p.qid); });
 op('startQuiz', (S, h, p, env) => {

@@ -472,6 +472,50 @@ html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition
 .upbar-meta b{color:var(--ink)}
 @media (prefers-reduced-motion: reduce){.upbar-track i{transition:none}}
 [data-for][hidden]{display:none!important}
+.qb-list{display:grid;gap:14px}
+.qb-card{background:var(--surface);border:1px solid var(--line);border-left:6px solid transparent;border-radius:12px;padding:18px 20px 12px;display:grid;gap:12px;transition:border-color .15s, box-shadow .15s}
+.qb-card.active{border-left-color:var(--brand);box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.qb-head{display:grid;grid-template-columns:auto 1fr minmax(170px,230px);gap:12px;align-items:start}
+.qb-num-badge{width:28px;height:28px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;font-weight:700;font-size:.85rem;color:var(--muted);margin-top:6px}
+.qb-card textarea.qb-text{font-size:1.05rem;border:0;box-shadow:none;border-bottom:1px solid var(--line);border-radius:0;background:var(--surface-2);padding:10px 12px;resize:none;overflow:hidden;min-height:44px;line-height:1.4}
+.qb-card textarea.qb-text:focus{border-bottom:2px solid var(--brand);outline:none;box-shadow:none}
+.qb-type{height:44px}
+.qb-opts{display:grid;gap:4px;margin-left:40px}
+.qb-opt{display:flex;align-items:center;gap:10px;min-height:40px}
+.qb-card input.qb-opt-text,.qb-card input.qb-alt{flex:1;border:0;border-bottom:1px solid transparent;border-radius:0;background:transparent;padding:6px 2px;box-shadow:none}
+.qb-card input.qb-opt-text:hover,.qb-card input.qb-alt:hover{border-bottom-color:var(--line)}
+.qb-card input.qb-opt-text:focus,.qb-card input.qb-alt:focus{border-bottom:2px solid var(--brand);outline:none;box-shadow:none}
+.qb-opt-static{flex:1;padding:6px 2px}
+.qb-pick{width:22px;height:22px;border-radius:50%;border:2px solid var(--muted);background:transparent;padding:0;display:grid;place-items:center;cursor:pointer;flex:none}
+.qb-pick span{width:10px;height:10px;border-radius:50%;background:transparent}
+.qb-pick.on{border-color:var(--ok, #21795f)}
+.qb-pick.on span{background:var(--ok, #21795f)}
+.qb-pick.ghost{border-style:dashed;opacity:.5;cursor:default}
+.qb-check{width:22px;text-align:center;color:var(--ok, #21795f);font-weight:700;flex:none}
+.qb-check.ghost{opacity:.35}
+.qb-x{border:0;background:transparent;font-size:1.3rem;line-height:1;color:var(--muted);width:32px;height:32px;border-radius:50%;cursor:pointer}
+.qb-x:hover:not(:disabled){background:var(--surface-2)}
+.qb-x:disabled{opacity:.25;cursor:default}
+.qb-addopt .link{padding:6px 2px}
+.qb-hint{margin:2px 0 0 40px;font-size:.8rem;color:var(--muted)}
+.qb-row{display:flex;flex-wrap:wrap;gap:12px;margin-left:40px}
+.qb-field{display:grid;gap:4px;font-size:.82rem;color:var(--muted);min-width:160px}
+.qb-guide{margin-left:40px;width:calc(100% - 40px)}
+.qb-foot{display:flex;align-items:center;gap:6px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap}
+.qb-status{flex:1;font-size:.8rem;color:var(--muted);min-width:120px}
+.qb-status.ok{color:var(--ok, #21795f)}
+.qb-status.warn{color:var(--warn, #9a6b00)}
+.qb-status.bad{color:var(--bad)}
+.qb-points{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+.qb-points input{width:70px;padding:6px 8px}
+.qb-sep{width:1px;height:24px;background:var(--line);margin:0 4px}
+.qb-icon{width:36px;height:36px;border-radius:50%;border:0;background:transparent;font-size:1.05rem;cursor:pointer;color:var(--ink)}
+.qb-icon:hover:not(:disabled){background:var(--surface-2)}
+.qb-icon:disabled{opacity:.3;cursor:default}
+.qb-icon.danger:hover{background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.qb-add{margin-top:14px;width:100%;padding:16px;border:2px dashed var(--line);border-radius:12px;background:transparent;font-weight:650;color:var(--brand);cursor:pointer;font-size:.95rem}
+.qb-add:hover{border-color:var(--brand);background:var(--brand-soft)}
+@media (max-width:640px){.qb-head{grid-template-columns:auto 1fr}.qb-type{grid-column:1 / -1}.qb-opts,.qb-row,.qb-hint{margin-left:0}.qb-guide{margin-left:0;width:100%}.qb-card{padding:14px}}
 </style>
 <div id="app"><p style="padding:40px;text-align:center;color:#566573">Loading NB Academy…</p></div>
 <div id="modal"></div>

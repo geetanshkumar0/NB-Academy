@@ -226,7 +226,7 @@ const F = {
     if (r === FAIL) return;
     if (!d.mid && r?.id && (d.type === 'quiz' || d.type === 'lesson')) {
       closeModal(); go('mod', {id:r.id});
-      if (d.type === 'quiz') { questionForm(S.mods[r.id], null); toast('Quiz added. Now add its first question.'); } else toast('Lesson added. Now add its pages.');
+      if (d.type === 'quiz') { A.qbAdd({mid:r.id}); toast('Quiz added. Type your first question.'); } else toast('Lesson added. Now add its pages.');
       return;
     }
     closeModal(); render();

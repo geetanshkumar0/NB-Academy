@@ -665,6 +665,20 @@ test('forms keep the clicked button (e.g. "Save and add another") and hide field
   assert.match(read('app.html'), /\[data-for\]\[hidden\]\{display:none!important\}/);
 });
 
+test('quiz questions: duplicates go below the original, questions can be reordered, and incomplete ones are refused', async () => {
+  const a = await login('admin'), mid = Object.values(getState().mods).find(m => m.type === 'quiz' && m.courseId === 'c1').id;
+  const ids = () => getState().mods[mid].questions.map(q => q.id);
+  const first = ids()[0];
+  let r = await op(a, 'saveQuestion', {mid, q:{type:'tf', text:'Copy of the first', mark:1, answer:true}, after:first}); assert.equal(r.status, 200, r.text);
+  assert.equal(ids()[1], r.json.result.id, 'the duplicate sits right below');
+  const dup = r.json.result.id;
+  assert.equal((await op(a, 'moveQuestion', {mid, qid:dup, dir:-1})).status, 200); assert.equal(ids()[0], dup);
+  assert.equal((await op(a, 'moveQuestion', {mid, qid:dup, to:99})).status, 200); assert.equal(ids()[ids().length - 1], dup);
+  assert.equal((await op(await login('asha'), 'moveQuestion', {mid, qid:dup, dir:1})).status, 403, 'learners cannot reorder');
+  assert.equal((await op(a, 'saveQuestion', {mid, q:{type:'mc', text:'No correct answer', options:[{text:'A'}, {text:'B'}]}})).status, 400);
+  assert.equal((await op(a, 'deleteQuestion', {mid, qid:dup})).status, 200);
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

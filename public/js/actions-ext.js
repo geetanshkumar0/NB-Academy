@@ -240,3 +240,79 @@ document.addEventListener('change', e => {
   F.question = async (d, f) => { const m0 = S.mods[d.mid], before = (m0?.questions || []).length; await _saveQ(d, f);
     const m = S.mods[d.mid]; if (d.next && m && (m.questions || []).length > before) { questionForm(m, null); const t = document.getElementById('qtext'); t?.focus(); } };
 }
+
+/* ---------- Quiz question editor (cards that save themselves) ---------- */
+const qbTimers = new Map();
+function qbRead(card) {
+  const key = card.dataset.qcard, mid = card.dataset.mid, type = card.querySelector('.qb-type').value, old = (S.mods[mid]?.questions || []).find(x => x.id === key);
+  const q = {type, text:card.querySelector('.qb-text').value.trim(), mark:card.querySelector('.qb-mark').value, bankId:old?.bankId};
+  if (type === 'mc') q.options = [...card.querySelectorAll('.qb-opt')].filter(r => r.querySelector('.qb-opt-text')).map(r => ({text:r.querySelector('.qb-opt-text').value, correct:r.querySelector('.qb-pick').classList.contains('on')}));
+  if (type === 'tf') q.answer = card.querySelector('.qb-pick.on')?.dataset.v !== 'false';
+  if (type === 'short') q.answer = [...card.querySelectorAll('.qb-alt')].map(x => x.value.trim()).filter(Boolean).join('|');
+  if (type === 'num') { q.answer = card.querySelector('.qb-num').value; q.tol = card.querySelector('.qb-tol').value; }
+  if (type === 'essay') q.guidance = card.querySelector('.qb-guide').value;
+  return q;
+}
+function qbProblem(q) {
+  if (!q.text) return 'Type the question to save it.';
+  if (q.type === 'mc') { const opts = (q.options || []).filter(o => o.text.trim()); if (opts.length < 2) return 'Add at least two options.'; if (!opts.some(o => o.correct)) return 'Click the circle next to the correct answer.'; }
+  if (q.type === 'short' && !q.answer) return 'Enter the correct answer.';
+  if (q.type === 'num' && (q.answer === '' || isNaN(Number(q.answer)))) return 'Enter the correct number.';
+  return '';
+}
+function qbStatus(card, text, kind) { const el = card.querySelector('.qb-status'); if (el) { el.textContent = text; el.className = 'qb-status' + (kind ? ' ' + kind : ''); } }
+function qbRerender(card, q) {
+  const key = card.dataset.qcard, mid = card.dataset.mid, m = S.mods[mid], cards = [...document.querySelectorAll('.qb-card')], i = cards.indexOf(card);
+  const tmp = document.createElement('div'); tmp.innerHTML = qbCard(m, q, key, i, cards.length, card.dataset.draft === '1'); tmp.firstElementChild._chain = card._chain; const fresh = tmp.firstElementChild; card.replaceWith(fresh); fresh.classList.add('active'); qbAutosize(fresh); return fresh;
+}
+function qbAutosize(card) { card.querySelectorAll('textarea.qb-text').forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }); }
+/* Saves of one card run one after another, and every card already has its final id, so a question is never created twice */
+function qbSaveNow(card) {
+  qbTimers.delete(card);
+  card._chain = (card._chain || Promise.resolve()).then(async () => {
+    const live = document.querySelector(`.qb-card[data-qcard="${card.dataset.qcard}"]`) || card; // the card may have been redrawn
+    const key = live.dataset.qcard, mid = live.dataset.mid, q = qbRead(live), draft = live.dataset.draft === '1';
+    if (draft && ui.qbDraft?.id === key) ui.qbDraft.q = q;
+    const problem = qbProblem(q); if (problem) { qbStatus(live, 'Not saved: ' + problem, 'warn'); return; }
+    qbStatus(live, 'Saving…');
+    try {
+      const out = await B.op('saveQuestion', {mid, q:{...q, id:key, options:q.options?.filter(o => o.text.trim())}});
+      setState(out.state); // no page redraw, so typing is not interrupted
+      const now = document.querySelector(`.qb-card[data-qcard="${key}"]`) || live;
+      if (draft) { delete now.dataset.draft; if (ui.qbDraft?.id === key) ui.qbDraft = null; now.querySelectorAll('.qb-icon[data-act=qbDup], .qb-icon[data-act=qbMove]').forEach(b => { b.disabled = false; }); }
+      if (!qbTimers.has(now)) qbStatus(now, 'Saved', 'ok');
+    } catch (e) { qbStatus(live, e.message, 'bad'); }
+  });
+  return card._chain;
+}
+function qbSchedule(card, delay = 700) { clearTimeout(qbTimers.get(card)); qbStatus(card, 'Editing…'); qbTimers.set(card, setTimeout(() => qbSaveNow(card), delay)); }
+// Before anything that redraws the page, finish pending saves
+async function qbFlush() { const cards = [...qbTimers.keys()]; cards.forEach(c => clearTimeout(qbTimers.get(c))); await Promise.all(cards.map(c => qbSaveNow(c))); await Promise.all([...document.querySelectorAll('.qb-card')].map(c => c._chain).filter(Boolean)); }
+const qbCardOf = el => el?.closest('.qb-card');
+Object.assign(A, {
+  qbAdd: async d => { await qbFlush(); const open = ui.qbDraft?.mid === d.mid && document.querySelector(`.qb-card[data-qcard="${ui.qbDraft.id}"][data-draft]`);
+    if (open) { open.querySelector('.qb-text')?.focus(); open.scrollIntoView({block:'center'}); toast('Finish this question first: it saves once it has a question, options and a correct answer.'); return; }
+    ui.qbDraft = {mid:d.mid, id:'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), q:qbBlank('mc')}; render(); const c = document.querySelector(`.qb-card[data-qcard="${ui.qbDraft.id}"]`); if (c) { c.classList.add('active'); c.scrollIntoView({block:'center', behavior:'smooth'}); c.querySelector('.qb-text').focus(); } },
+  qbCorrect: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.options.forEach((o, k) => { o.correct = k === Number(d.k); }); qbSchedule(qbRerender(card, q), 0); },
+  qbTF: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.answer = d.v === 'true'; qbSchedule(qbRerender(card, q), 0); },
+  qbAddOpt: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.options.push({text:'', correct:false}); const c = qbRerender(card, q); const ins = c.querySelectorAll('.qb-opt-text'); ins[ins.length - 1]?.focus(); },
+  qbRemoveOpt: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.options.splice(Number(d.k), 1); qbSchedule(qbRerender(card, q), 0); },
+  qbAddAlt: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.answer = (q.answer ? q.answer + '|' : '') + ' '; const c = qbRerender(card, q); const ins = c.querySelectorAll('.qb-alt'); const last = ins[ins.length - 1]; if (last) { last.value = ''; last.focus(); } },
+  qbRemoveAlt: (d, el) => { const card = qbCardOf(el), q = qbRead(card), alts = [...card.querySelectorAll('.qb-alt')].map(x => x.value.trim()); alts.splice(Number(d.k), 1); q.answer = alts.filter(Boolean).join('|'); qbSchedule(qbRerender(card, q), 0); },
+  qbDup: async (d, el) => { await qbFlush(); const card = document.querySelector(`.qb-card[data-qcard="${qbCardOf(el).dataset.qcard}"]`), q = qbRead(card), key = card.dataset.qcard; if (qbProblem(q)) return toast('Finish this question before duplicating it.', true);
+    const r = await act('saveQuestion', {mid:card.dataset.mid, q:{...q, id:undefined, bankId:undefined}, after:key}, 'Question duplicated', {silent:true}); if (r === FAIL) return; render();
+    document.querySelector(`.qb-card[data-qcard="${r.id}"]`)?.classList.add('active'); document.querySelector(`.qb-card[data-qcard="${r.id}"] .qb-text`)?.focus(); },
+  qbDel: (d, el) => { const card = qbCardOf(el), key = card.dataset.qcard, mid = card.dataset.mid;
+    if (card.dataset.draft === '1') { ui.qbDraft = null; render(); return; }
+    confirmBox('Delete question', 'Delete this question? Answers already given to it stay in past attempts.', () => act('deleteQuestion', {mid, qid:key}, 'Question deleted'), 'Delete'); },
+  qbMove: async (d, el) => { const key = qbCardOf(el).dataset.qcard, mid = qbCardOf(el).dataset.mid; await qbFlush(); const card = document.querySelector(`.qb-card[data-qcard="${key}"]`); if (await act('moveQuestion', {mid, qid:key, dir:Number(d.dir)}, null, {silent:true}) === FAIL) return; render();
+    const c = document.querySelector(`.qb-card[data-qcard="${key}"]`); if (c) { c.classList.add('active'); c.scrollIntoView({block:'center'}); } },
+});
+document.addEventListener('input', e => { const card = qbCardOf(e.target); if (!card) return; if (e.target.classList.contains('qb-text')) qbAutosize(card); if (!e.target.classList.contains('qb-type')) qbSchedule(card); });
+document.addEventListener('change', e => { if (!e.target.classList.contains('qb-type')) return; const card = qbCardOf(e.target), old = qbRead(card), nq = {...qbBlank(e.target.value), text:old.text, mark:old.mark};
+  if (e.target.value === 'mc' && old.type === 'short' && old.answer) nq.options = [{text:old.answer.split('|')[0], correct:true}, {text:'', correct:false}];
+  const c = qbRerender(card, nq); c.querySelector('.qb-type').focus(); qbSchedule(c, 0); });
+document.addEventListener('keydown', e => { if (e.key !== 'Enter' || !e.target.classList?.contains('qb-opt-text') || e.isComposing) return; e.preventDefault(); const card = qbCardOf(e.target), q = qbRead(card), k = [...card.querySelectorAll('.qb-opt-text')].indexOf(e.target);
+  q.options.splice(k + 1, 0, {text:'', correct:false}); const c = qbRerender(card, q); c.querySelectorAll('.qb-opt-text')[k + 1]?.focus(); });
+document.addEventListener('focusin', e => { const card = qbCardOf(e.target); document.querySelectorAll('.qb-card.active').forEach(c => { if (c !== card) c.classList.remove('active'); }); card?.classList.add('active'); });
+document.addEventListener('focusout', e => { const card = qbCardOf(e.target); if (!card || card.contains(e.relatedTarget)) return; if (qbTimers.has(card)) { clearTimeout(qbTimers.get(card)); qbSaveNow(card); } });

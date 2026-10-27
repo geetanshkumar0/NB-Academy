@@ -238,10 +238,7 @@ BODIES.quiz = (m, c) => {
     ${at.map((a, i) => `<tr><td class="num">${i + 1}${a.preview ? ' <span class="chip">Preview</span>' : ''}</td><td>Finished${a.pending ? ' <span class="chip warn">Essay being graded</span>' : ''}<br><span class="muted small">Submitted ${fmtDate(a.finish)}</span></td><td class="n">${a.score.toFixed(2)} / ${a.max.toFixed(2)}</td><td class="n">${fmtG(a.score / a.max * m.maxgrade)}</td><td><button class="btn sm" data-go="review" data-id="${a.id}">Review</button></td></tr>`).join('')}</tbody></table></div>
     ${learner && best != null ? `<p style="margin-bottom:14px;text-align:center">Highest grade: <b class="num">${fmtG(best)} / ${fmtG(m.maxgrade)}</b>${m.gradepass && !m.pretest ? ` · ${bestPct >= m.gradepass ? '<span class="chip ok">Passed</span>' : '<span class="chip bad">Not passed yet</span>'}` : ''}</p>` : ''}`;
   html += `<div style="text-align:center;margin-bottom:22px">${can ? `<button class="btn primary" data-act="startAttempt" data-id="${m.id}">${open ? 'Continue the last attempt' : !learner ? 'Preview quiz' : at.length ? 'Re-attempt quiz' : 'Attempt quiz'}</button>` : `<p class="muted">${!qs.length ? 'No questions have been added yet.' : closed ? 'This quiz is closed.' : learner ? 'No more attempts are allowed. Ask your trainer if you need another attempt.' : ''}</p>`}</div>`;
-  if (ed) html += `<section class="stack" style="margin-bottom:22px"><div class="spread"><h2>Questions</h2><div class="row">${S.qbank.length ? `<button class="btn sm" data-act="bankPick" data-id="${m.id}">Add from question bank</button>` : ''}<button class="btn sm primary" data-act="editQuestion" data-id="${m.id}">+ Add question</button></div></div>
-      <div class="tw"><table><thead><tr><th>#</th><th>Question</th><th>Type</th><th>Answer</th><th class="n">Mark</th><th></th></tr></thead><tbody>
-      ${qs.map((q, i) => `<tr><td class="num">${i + 1}</td><td>${esc(q.text)}${q.bankId ? ' <span class="chip">Bank</span>' : ''}</td><td class="small">${C.QTYPES[q.type]}</td><td class="small">${esc(C.correctText(q) ?? '')}</td><td class="n">${q.mark}</td><td><div class="tools"><button class="btn sm ghost" data-act="editQuestion" data-id="${m.id}" data-q="${q.id}">Edit</button><button class="btn sm ghost danger" data-act="deleteQuestion" data-id="${m.id}" data-q="${q.id}">Delete</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="empty">No questions yet. Add the first one.</td></tr>'}
-      </tbody></table></div><p class="muted small">Questions marked Bank stay in sync when the central question bank is edited.</p></section>`;
+  if (ed) html += qbBuilder(m);
   if (h.has('grade:viewall', c.id)) { const st = h.students(c.id), manage = h.has('attempts:manage', c.id);
     html += `<section class="stack" style="margin-bottom:22px"><h2>Results</h2><div class="tw"><table><thead><tr><th>Learner</th><th class="n">Attempts</th><th>Last attempt</th><th class="n">Best</th><th>Result</th>${manage ? '<th></th>' : ''}</tr></thead><tbody>
       ${st.map(s => { const a = h.attemptsOf(m.id, s.id); const pct = h.quizPercent(m, s.id); const extra = Number(S.extraAttempts[s.id + ':' + m.id]) || 0; const pend = a.some(x => x.pending);
@@ -640,4 +637,42 @@ function mountPlayers() {
     scormAPI = window.API;
     if (!B.server) { const data = B.fileData?.(m.launchFileId); if (data) { try { f.srcdoc = decodeURIComponent(data.slice(data.indexOf(',') + 1)); } catch (e) {} } }
   }
+}
+
+/* ---------- Quiz question editor: one card per question, saved automatically (like Google Forms) ---------- */
+const QB_TYPES = [['mc', 'Multiple choice'], ['tf', 'True / False'], ['short', 'Short answer'], ['num', 'Number'], ['essay', 'Paragraph (graded by a trainer)']];
+function qbBlank(type = 'mc') { return {type, text:'', mark:1, options:type === 'mc' ? [{text:'Option 1', correct:false}, {text:'Option 2', correct:false}] : undefined, answer:type === 'tf' ? true : type === 'short' ? '' : type === 'num' ? '' : undefined, tol:0, guidance:''}; }
+function qbCard(m, q, key, i, n, isDraft = false) {
+  const circle = (on, act, extra = '') => `<button type="button" class="qb-pick ${on ? 'on' : ''}" data-act="${act}" ${extra} aria-pressed="${on}" title="${on ? 'Correct answer' : 'Mark as the correct answer'}"><span></span></button>`;
+  let body = '';
+  if (q.type === 'mc') body = `<div class="qb-opts">${(q.options || []).map((o, k) => `<div class="qb-opt">${circle(o.correct, 'qbCorrect', `data-k="${k}"`)}<input class="qb-opt-text" type="text" value="${esc(o.text)}" placeholder="Option ${k + 1}" aria-label="Option ${k + 1}"><button type="button" class="qb-x" data-act="qbRemoveOpt" data-k="${k}" aria-label="Remove option ${k + 1}" ${(q.options || []).length <= 2 ? 'disabled' : ''}>×</button></div>`).join('')}
+      <div class="qb-opt qb-addopt"><span class="qb-pick ghost"><span></span></span><button type="button" class="link" data-act="qbAddOpt">Add option</button></div></div>
+      <p class="qb-hint">Click the circle next to the correct answer.</p>`;
+  else if (q.type === 'tf') body = `<div class="qb-opts">${[[true, 'True'], [false, 'False']].map(([v, l]) => `<div class="qb-opt">${circle(q.answer === v, 'qbTF', `data-v="${v}"`)}<span class="qb-opt-static">${l}</span></div>`).join('')}</div><p class="qb-hint">Click the circle next to the correct answer.</p>`;
+  else if (q.type === 'short') { const alts = String(q.answer ?? '').split('|').map(x => x.trim()); if (!alts.length) alts.push('');
+    body = `<div class="qb-opts">${alts.map((a, k) => `<div class="qb-opt"><span class="qb-check" aria-hidden="true">✓</span><input class="qb-alt" type="text" value="${esc(a)}" placeholder="${k ? 'Another accepted answer' : 'Correct answer'}" aria-label="Accepted answer ${k + 1}">${k ? `<button type="button" class="qb-x" data-act="qbRemoveAlt" data-k="${k}" aria-label="Remove accepted answer">×</button>` : ''}</div>`).join('')}
+      <div class="qb-opt qb-addopt"><span class="qb-check ghost" aria-hidden="true">✓</span><button type="button" class="link" data-act="qbAddAlt">Add another accepted answer</button></div></div><p class="qb-hint">Answers are not case-sensitive.</p>`; }
+  else if (q.type === 'num') body = `<div class="qb-row"><label class="qb-field">Correct answer<input class="qb-num" type="number" step="any" value="${esc(q.answer ?? '')}" placeholder="e.g. 42"></label><label class="qb-field">Allowed margin (±)<input class="qb-tol" type="number" step="any" min="0" value="${esc(q.tol ?? 0)}"></label></div>`;
+  else body = `<p class="qb-hint" style="margin-top:0">Learners write a longer answer. A trainer grades it in the quiz results.</p><textarea class="qb-guide" rows="2" placeholder="Marking guidance for trainers (optional)">${esc(q.guidance || '')}</textarea>`;
+  return `<article class="qb-card" data-qcard="${esc(key)}" data-mid="${m.id}" ${isDraft ? 'data-draft="1"' : ''}>
+    <div class="qb-head"><span class="qb-num-badge">${i + 1}</span><textarea class="qb-text" rows="1" placeholder="Question" aria-label="Question ${i + 1}">${esc(q.text || '')}</textarea>
+      <select class="qb-type" aria-label="Question type">${QB_TYPES.map(([k, l]) => `<option value="${k}" ${k === q.type ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    ${q.bankId ? '<p class="qb-hint"><span class="chip">Question bank</span> Edits to this question in the question bank update it here.</p>' : ''}
+    <div class="qb-body">${body}</div>
+    <div class="qb-foot"><span class="qb-status" aria-live="polite">${isDraft ? 'Not saved yet' : ''}</span>
+      <label class="qb-points">Points <input class="qb-mark" type="number" min="0.5" step="0.5" value="${esc(q.mark ?? 1)}" aria-label="Points"></label>
+      <span class="qb-sep"></span>
+      <button type="button" class="qb-icon" data-act="qbMove" data-dir="-1" ${i === 0 || isDraft ? 'disabled' : ''} title="Move up" aria-label="Move up">↑</button>
+      <button type="button" class="qb-icon" data-act="qbMove" data-dir="1" ${i >= n - 1 || isDraft ? 'disabled' : ''} title="Move down" aria-label="Move down">↓</button>
+      <button type="button" class="qb-icon" data-act="qbDup" ${isDraft ? 'disabled' : ''} title="Duplicate" aria-label="Duplicate">⧉</button>
+      <button type="button" class="qb-icon danger" data-act="qbDel" title="Delete" aria-label="Delete">🗑</button></div>
+  </article>`;
+}
+function qbBuilder(m) {
+  const qs = m.questions || [], dr = ui.qbDraft && ui.qbDraft.mid === m.id && !qs.some(q => q.id === ui.qbDraft.id) ? ui.qbDraft : null, draft = dr?.q, n = qs.length + (draft ? 1 : 0);
+  const total = qs.reduce((t, q) => t + (Number(q.mark) || 0), 0);
+  return `<section class="qb" style="margin-bottom:22px"><div class="spread" style="margin-bottom:12px"><div><h2>Questions</h2><p class="muted small" style="margin:2px 0 0">${qs.length} question${qs.length === 1 ? '' : 's'} · ${fmtG(total)} point${total === 1 ? '' : 's'} · changes save automatically</p></div>
+      <div class="row">${S.qbank.length ? `<button class="btn sm" data-act="bankPick" data-id="${m.id}">Add from question bank</button>` : ''}</div></div>
+    <div class="qb-list">${qs.map((q, i) => qbCard(m, q, q.id, i, n)).join('')}${draft ? qbCard(m, draft, dr.id, qs.length, n, true) : ''}</div>
+    <button type="button" class="qb-add" data-act="qbAdd" data-mid="${m.id}"><span aria-hidden="true">＋</span> Add question</button></section>`;
 }

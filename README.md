@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (55 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (56 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -225,6 +225,15 @@ The course's trainers and administrators can read every chat in the course, and 
 - Trainers and admins see the detected SCORM version and start page on the activity page.
 - A package with several SCOs plays its first SCO; SCORM 2004 sequencing rules between SCOs are not applied.
 - If the server sits behind nginx, raise its upload limit, or big packages fail with "too large". See Deploying.
+
+## Building quizzes
+
+Questions are edited directly on the quiz page, one card per question, much like Google Forms:
+- type the question, pick its type (Multiple choice, True / False, Short answer, Number, Paragraph), and click the circle next to the correct answer;
+- press Enter in an option to add the next one, or use "Add option"; short answers can have several accepted answers;
+- each card has points, move up and down, duplicate (the copy appears right below) and delete;
+- **changes save automatically**, and the card says "Saved", or what is still missing (for example "Click the circle next to the correct answer");
+- creating a new quiz takes you straight to an empty question card.
 
 ## Teams
 

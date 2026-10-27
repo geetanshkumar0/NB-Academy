@@ -342,6 +342,7 @@ function render() {
   afterRender();
 }
 function afterRender() {
+  if (typeof qbAutosize === 'function') document.querySelectorAll('.qb-card').forEach(qbAutosize);
   if (ui.view.name === 'attempt' && ui.attempt) { const q = S.mods[ui.attempt.cmid]; if (q?.timelimit && !ui.timer) { tick(); ui.timer = setInterval(tick, 1000); } }
   const qt = document.getElementById('qtype'); if (qt) toggleQFields();
   const tb = document.querySelector('.tbody'); if (tb) tb.scrollTop = tb.scrollHeight;
