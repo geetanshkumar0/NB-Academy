@@ -186,12 +186,14 @@ ADMIN.upload = () => {
         <label class="check"><input type="checkbox" name="welcome" checked> Send welcome emails to new users</label>
         <label class="check"><input type="checkbox" name="updateExisting"> Update existing users (name, email and password)</label><div class="row"><button class="btn primary" type="submit" ${ok ? '' : 'disabled'}>Upload ${ok} user${ok === 1 ? '' : 's'}</button><button class="btn" type="button" data-act="csvClear">Start again</button></div></form>`; }
   }
-  return `<div class="dash"><form data-form="csvPreview" class="card stack"><h2>Upload users from CSV</h2>
-      <div class="field"><label for="csvfile">CSV file</label><input id="csvfile" type="file" accept=".csv,text/csv" data-csv="1"></div>
-      <div class="field"><label for="csvtext">Or paste CSV</label><textarea id="csvtext" name="csv" rows="8" class="mono" style="font-size:.84rem">${esc(v?.text || '')}</textarea></div>
+  return `<div class="card spread" style="margin-bottom:16px;gap:12px;flex-wrap:wrap"><div><h2 style="margin:0">Start from the template</h2><p class="muted small" style="margin:4px 0 0">An Excel file with the right column headers, and dropdowns for team, course and role. Fill it in, save it, and choose it below.</p></div>
+      <div class="row"><button class="btn primary" data-act="xlsxTemplate">Download Excel template</button><button class="btn" data-act="csvTemplate">CSV template</button></div></div>
+    <div class="dash"><form data-form="csvPreview" class="card stack"><h2>Upload users</h2>
+      <div class="field"><label for="csvfile">Excel (.xlsx) or CSV file</label><input id="csvfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-csv="1"></div>
+      <div class="field"><label for="csvtext">Or paste from a spreadsheet (CSV)</label><textarea id="csvtext" name="csv" rows="8" class="mono" style="font-size:.84rem">${esc(v?.text || '')}</textarea></div>
       <div class="row"><button class="btn primary" type="submit">Preview</button><button class="btn" type="button" data-act="csvSample">Use sample data</button></div></form>
-    <aside class="block"><header><h3>File format</h3></header><div class="bb stack small" style="gap:8px"><p>First row is the header. Required: <code>username</code>, <code>firstname</code>, <code>lastname</code>, <code>email</code>.</p>
-      <p>Optional: <code>team</code> (one of the teams in Site administration › Users › Team list), <code>password</code>, and up to five enrolments as <code>course1</code> (short name), <code>role1</code> (role short name, default <code>student</code>) and <code>group1</code> (created if missing).</p>
+    <aside class="block"><header><h3>File format</h3></header><div class="bb stack small" style="gap:8px"><p>The easiest way is the Excel template above. First row is the header (capitals and spaces don't matter). Required: <code>username</code>, <code>firstname</code>, <code>lastname</code>, <code>email</code>.</p>
+      <p>Optional: <code>team</code> (one of the teams in Site administration › Users › Team list), <code>password</code>, and up to five enrolments as <code>course1</code> (short name), <code>role1</code> (Learner, Trainer, Course author or Non-editing teacher; default Learner) and <code>group1</code> (created if missing).</p>
       <pre class="code">${esc(SAMPLE_CSV.split('\n').slice(0, 2).join('\n'))}</pre></div></aside></div>${preview}`;
 };
 

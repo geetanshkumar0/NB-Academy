@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (57 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (58 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -225,6 +225,15 @@ The course's trainers and administrators can read every chat in the course, and 
 - Trainers and admins see the detected SCORM version and start page on the activity page.
 - A package with several SCOs plays its first SCO; SCORM 2004 sequencing rules between SCOs are not applied.
 - If the server sits behind nginx, raise its upload limit, or big packages fail with "too large". See Deploying.
+
+## Uploading users in bulk
+
+Site administration › **Upload users** offers a **Download Excel template** button. The template has:
+- a **Users** sheet with the column headers NB Academy expects: username, firstname, lastname, email, team, password, course1–3, role1–3, group1–3;
+- dropdowns for team, course and role, filled with this site's teams, active courses and roles;
+- an **Instructions** sheet with an example row.
+
+Fill it in and choose it in the same page. **Excel (.xlsx) and CSV files both work**, and pasting CSV is still possible. Header names are forgiving: "First Name", "first name" and "firstname" are all understood. A preview shows every row before anything is created. The .xlsx file is written and read by NB Academy itself, with no library.
 
 ## Building quizzes
 

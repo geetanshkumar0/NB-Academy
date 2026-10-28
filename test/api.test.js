@@ -692,6 +692,15 @@ test('people who can edit a course are not held back by learner locks, even when
   S.enrol = S.enrol.filter(e => e.id !== 'e-admin-c6');
 });
 
+test('user uploads accept friendly headers (as typed in Excel) and role names', () => {
+  const Core = require('../public/core.js'), S = getState();
+  const v = Core.validateUserRows(S, 'Username,First Name,Last Name,Email Address,Team,Course 1,Role 1\nfriendly.one,Friendly,One,friendly.one@example.com,Legal Sales,DA101,Trainer');
+  assert.deepEqual(v.errors, []); assert.equal(v.rows.length, 1); assert.deepEqual(v.rows[0].errors, []);
+  assert.equal(v.rows[0].firstname, 'Friendly'); assert.equal(v.rows[0].department, 'Legal Sales'); assert.equal(v.rows[0].enrols[0].role, 'trainer');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'actions-ext.js'), 'utf8');
+  assert.match(src, /xlsxTemplate:/); assert.match(src, /async function readXlsx/);
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);

@@ -316,3 +316,102 @@ document.addEventListener('keydown', e => { if (e.key !== 'Enter' || !e.target.c
   q.options.splice(k + 1, 0, {text:'', correct:false}); const c = qbRerender(card, q); c.querySelectorAll('.qb-opt-text')[k + 1]?.focus(); });
 document.addEventListener('focusin', e => { const card = qbCardOf(e.target); document.querySelectorAll('.qb-card.active').forEach(c => { if (c !== card) c.classList.remove('active'); }); card?.classList.add('active'); });
 document.addEventListener('focusout', e => { const card = qbCardOf(e.target); if (!card || card.contains(e.relatedTarget)) return; if (qbTimers.has(card)) { clearTimeout(qbTimers.get(card)); qbSaveNow(card); } });
+
+/* ---------- Excel (.xlsx) template for Upload users, and reading filled-in .xlsx files ----------
+   Written and read here without any library: an .xlsx file is a zip of XML files. */
+const XL = (() => {
+  let T; const crc32 = b => { if (!T) { T = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; T[n] = c >>> 0; } } let c = 0xFFFFFFFF; for (const x of b) c = T[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const enc = new TextEncoder(), x = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
+  function zip(files) { // stored (uncompressed) entries: every spreadsheet app reads these
+    const parts = [], central = []; let off = 0;
+    for (const [name, text] of files) {
+      const data = enc.encode(text), nm = enc.encode(name), crc = crc32(data), lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, nm.length, true);
+      const ch = new DataView(new ArrayBuffer(46)); ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+      parts.push(new Uint8Array(lh.buffer), nm, data); central.push(new Uint8Array(ch.buffer), nm); off += 30 + nm.length + data.length;
+    }
+    const cdLen = central.reduce((n, p) => n + p.length, 0), end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdLen, true); end.setUint32(16, off, true);
+    const all = [...parts, ...central, new Uint8Array(end.buffer)], out = new Uint8Array(all.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of all) { out.set(p, o); o += p.length; } return out;
+  }
+  const col = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const cell = (r, c, v, style) => `<c r="${col(c)}${r}" t="inlineStr"${style ? ` s="${style}"` : ''}><is><t xml:space="preserve">${x(v)}</t></is></c>`;
+  const sheet = (rows, {widths = [], freeze = false, validations = '', textCols = []} = {}) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+${freeze ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>' : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'}
+<sheetFormatPr defaultRowHeight="15"/>${widths.length ? `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"${textCols.includes(i) ? ' style="3"' : ''}/>`).join('')}</cols>` : ''}
+<sheetData>${rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => v == null || v === '' ? '' : cell(ri + 1, ci, typeof v === 'object' ? v.v : v, typeof v === 'object' ? v.s : 0)).join('')}</row>`).join('')}</sheetData>
+${validations}</worksheet>`;
+  // The template: a Users sheet to fill in, Instructions, and a hidden Lists sheet behind the dropdowns
+  function userTemplate() {
+    const teams = C.teamsOf(S), courses = S.courses.filter(c => c.status !== 'archived').map(c => c.shortname), roles = ['Learner', 'Trainer', 'Course author', 'Non-editing teacher'];
+    const COLS = [['username', 'Login name: letters, numbers, dot, dash, underscore', 22], ['firstname', 'First name', 16], ['lastname', 'Last name', 16], ['email', 'Work email address', 30], ['team', 'Pick from the list', 30], ['password', `Optional. Leave empty to use ${C.DEFAULT_PASSWORD}`, 20],
+      ['course1', 'Optional. Course short name (pick from the list)', 16], ['role1', 'Optional. Default Learner', 16], ['group1', 'Optional. Group in that course (created if missing)', 18],
+      ['course2', 'Optional', 14], ['role2', 'Optional', 14], ['group2', 'Optional', 14], ['course3', 'Optional', 14], ['role3', 'Optional', 14], ['group3', 'Optional', 14]];
+    const n = 2000, lastList = l => Math.max(2, l.length + 1);
+    const dv = (sq, ref, title, msg) => `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="${x(title)}" error="${x(msg)}" sqref="${sq}"><formula1>${ref}</formula1></dataValidation>`;
+    const validations = `<dataValidations count="7">${dv(`E2:E${n}`, `Lists!$A$2:$A$${lastList(teams)}`, 'Team', 'Choose a team from the list.')}${[['G', 'J', 'M'], ['H', 'K', 'N']].map((cs, k) => cs.map(c => k === 0 ? dv(`${c}2:${c}${n}`, `Lists!$B$2:$B$${lastList(courses)}`, 'Course', 'Choose a course short name from the list.') : dv(`${c}2:${c}${n}`, `Lists!$C$2:$C$${lastList(roles)}`, 'Role', 'Choose a role from the list.')).join('')).join('')}</dataValidations>`;
+    const users = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[2]), freeze:true, validations, textCols:[0, 5]});
+    const instr = sheet([[{v:'How to fill in the Users sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
+      ...COLS.slice(0, 9).map(([k, d], i) => [k, d + (i < 4 ? ' (required)' : ''), ['asha.verma', 'Asha', 'Verma', 'asha.verma@nobroker.in', teams[0] || '', '', courses[0] || '', 'Learner', 'Batch A'][i]]),
+      ['course2 … group3', 'Up to three courses per person, in the same way', ''], [''],
+      ['Notes', 'One person per row on the Users sheet. Keep the header row as it is.', ''],
+      ['', 'Team, course and role cells have dropdowns. Values not on the list are refused.', ''],
+      ['', 'New people must change the starting password at first sign-in.', ''],
+      ['', 'Save the file and choose it in Site administration › Upload users. Excel (.xlsx) and CSV both work.', '']], {widths:[18, 80, 26]});
+    const maxL = Math.max(teams.length, courses.length, roles.length);
+    const lists = sheet([[{v:'Teams', s:1}, {v:'Courses', s:1}, {v:'Roles', s:1}], ...Array.from({length:maxL}, (_, i) => [teams[i] || '', courses[i] || '', roles[i] || ''])], {widths:[34, 16, 20]});
+    return zip([
+      ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+      ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+      ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="Users" sheetId="1" r:id="rId1"/><sheet name="Instructions" sheetId="2" r:id="rId2"/><sheet name="Lists" sheetId="3" state="hidden" r:id="rId3"/></sheets></workbook>'],
+      ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+      ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0E6175"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
+      ['xl/worksheets/sheet1.xml', users], ['xl/worksheets/sheet2.xml', instr], ['xl/worksheets/sheet3.xml', lists],
+    ]);
+  }
+  // Reading a filled-in .xlsx: the Users sheet (or the first sheet) becomes CSV text for the usual preview
+  async function readXlsx(buf) {
+    const b = new Uint8Array(buf), dv = new DataView(b.buffer, b.byteOffset, b.byteLength), files = {};
+    let eocd = -1; for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error('This is not an Excel (.xlsx) file.');
+    let p = dv.getUint32(eocd + 16, true); const count = dv.getUint16(eocd + 10, true), dec = new TextDecoder();
+    for (let k = 0; k < count; k++) {
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), loff = dv.getUint32(p + 42, true);
+      const name = dec.decode(b.subarray(p + 46, p + 46 + nlen)); p += 46 + nlen + xlen + clen;
+      if (!/^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$/.test(name)) continue;
+      const start = loff + 30 + dv.getUint16(loff + 26, true) + dv.getUint16(loff + 28, true), raw = b.subarray(start, start + csize);
+      files[name] = method === 0 ? dec.decode(raw) : await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    }
+    const P = t => new DOMParser().parseFromString(t || '<x/>', 'application/xml'), all = (doc, tag) => [...doc.getElementsByTagNameNS('*', tag)];
+    const wb = P(files['xl/workbook.xml']), rels = P(files['xl/_rels/workbook.xml.rels']);
+    const sheets = all(wb, 'sheet').map(s => ({name:s.getAttribute('name'), rid:s.getAttribute('r:id') || s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')}));
+    const pick = sheets.find(s => /^users$/i.test(s.name)) || sheets[0]; if (!pick) throw new Error('The workbook has no sheets.');
+    const target = all(rels, 'Relationship').find(r => r.getAttribute('Id') === pick.rid)?.getAttribute('Target') || 'worksheets/sheet1.xml';
+    const ws = P(files['xl/' + target.replace(/^\/?xl\//, '').replace(/^\//, '')]);
+    const shared = all(P(files['xl/sharedStrings.xml']), 'si').map(si => all(si, 't').map(t => t.textContent).join(''));
+    const grid = [];
+    for (const row of all(ws, 'row')) { const out = []; let ci = 0;
+      for (const c of all(row, 'c')) {
+        const ref = c.getAttribute('r'); if (ref) { const L = ref.replace(/\d+/g, ''); ci = [...L].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1; }
+        const t = c.getAttribute('t'), v = all(c, 'v')[0]?.textContent ?? '';
+        out[ci] = t === 's' ? shared[Number(v)] ?? '' : t === 'inlineStr' ? all(c, 't').map(n => n.textContent).join('') : t === 'b' ? (v === '1' ? 'TRUE' : 'FALSE') : v; ci++;
+      }
+      grid[Number(row.getAttribute('r') || grid.length + 1) - 1] = out;
+    }
+    const q = v => { v = String(v ?? '').trim(); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+    return grid.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => Array.from({length:r.length}, (_, i) => q(r[i])).join(',')).join('\n');
+  }
+  return {userTemplate, readXlsx};
+})();
+Object.assign(A, {
+  xlsxTemplate: () => download('nb-academy-users-template.xlsx', XL.userTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+  csvTemplate: () => download('nb-academy-users-template.csv', 'username,firstname,lastname,email,team,password,course1,role1,group1\n'),
+});
+// Choosing an .xlsx in Upload users: read it here and show the preview straight away
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset?.csv || !t.files?.[0] || !/\.xlsx$/i.test(t.files[0].name)) return;
+  e.stopImmediatePropagation();
+  try { const text = await XL.readXlsx(await t.files[0].arrayBuffer()); const ta = document.getElementById('csvtext'); if (ta) ta.value = text; ui.csv = {...C.validateUserRows(S, text), text}; render(); toast('Excel file read. Check the preview below.'); }
+  catch (er) { toast(`This Excel file could not be read: ${er.message}`, true); }
+}, true);

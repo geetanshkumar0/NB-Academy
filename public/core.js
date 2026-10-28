@@ -854,7 +854,9 @@ function parseCSV(text) {
   if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
   const clean = rows.filter(r => r.some(x => x.trim() !== ''));
   if (!clean.length) return {headers:[], rows:[]};
-  const headers = clean[0].map(h => h.trim().toLowerCase());
+  // Headers are forgiving: "First name", "First Name" and "firstname" all mean firstname
+  const ALIAS = {emailaddress:'email', mail:'email', firstname:'firstname', givenname:'firstname', lastname:'lastname', surname:'lastname', familyname:'lastname', user:'username', login:'username', loginname:'username', department:'team'};
+  const headers = clean[0].map(h => { const k = h.trim().toLowerCase().replace(/[\s_\-]+/g, '').replace(/\(.*\)$/, ''); return ALIAS[k] || k; });
   return {headers, rows:clean.slice(1).map(r => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()])))};
 }
 function validateUserRows(S, csvText) {
