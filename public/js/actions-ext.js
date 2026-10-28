@@ -16,6 +16,8 @@ Object.assign(A, {
   copyText: async d => { const el = document.getElementById(d.t); const text = el?.value ?? el?.textContent ?? ''; try { await navigator.clipboard.writeText(text.replace(/\s+/g, d.t === 'mfakey' ? '' : ' ').trim() || text); toast('Copied'); } catch (e) { if (el?.select) el.select(); toast('Press Ctrl+C (or Cmd+C) to copy'); } },
   mfaSetup: async () => { const r = await act('mfaSetup', {}, null, {silent:true}); if (r !== FAIL) { ui.mfaSetup = r; render(); } },
   mfaOff: d => confirmBox('Turn off two-step sign-in', `Turn off two-step sign-in for ${esc(fullname(d.u))}? Do this only if they lost their phone.`, () => act('mfaDisable', {id:d.u}, 'Two-step sign-in turned off'), 'Turn off'),
+  vResume: () => { const v = document.getElementById('vplayer'); if (v) v.play().catch(() => {}); },
+  vRestart: () => { const v = document.getElementById('vplayer'); if (!v) return; v.currentTime = 0; v.play().catch(() => {}); },
   seek: d => { const v = document.getElementById('vplayer'); if (!v) return; const [mm, ss] = d.t.split(':').slice(-2).map(parseFloat); v.currentTime = (mm || 0) * 60 + (ss || 0); v.play().catch(() => {}); },
   assignModal: d => assignForm(d.kind, d.id),
   nudge: d => act('nudge', {cid:d.c, users:[d.u]}, 'Reminder sent'),

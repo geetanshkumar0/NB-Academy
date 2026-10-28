@@ -724,6 +724,15 @@ test('Company is gone: not stored, not shown, not used by rules; old values and 
   assert.ok(getState().users.every(u => !('company' in u)) && getState().cohorts.every(c => !('company' in c)), 'start-up cleaned the demo data too');
 });
 
+test('videos resume where the learner stopped (also once watched); switching tabs pauses and offers to resume', async () => {
+  const c = await login('asha');
+  let r = await op(c, 'saveProgress', {mid:'m42', position:175, duration:180}); assert.equal(r.status, 200, r.text); assert.equal(r.json.result.completed, true);
+  r = await op(c, 'saveProgress', {mid:'m42', position:40, duration:180}); assert.equal(r.status, 200);
+  const x = (await state(c)).resume['u4:m42']; assert.equal(x.position, 40, 'the latest position is kept, so a rewatch resumes there'); assert.ok(x.completed, 'and the video stays completed');
+  // The page pauses the video when the tab is hidden, saves on the way out, offers "Resume from", and reopens the same page after a reload
+  const page = ['base', 'views-activities', 'actions-ext', 'boot'].map(f => fs.readFileSync(path.join(__dirname, '../public/js', f + '.js'), 'utf8')).join('\n');
+  for (const s of ["addEventListener('visibilitychange'", "addEventListener('pagehide'", 'vResume:', 'vRestart:', 'keepalive:!!opts.keepalive', 'Resume from', 'navTarget(st)']) assert.ok(page.includes(s), s);
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

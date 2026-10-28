@@ -27,7 +27,11 @@ function heartbeat() {
   catch (e) { app.innerHTML = `<div class="page"><div class="card stack" style="max-width:560px;margin:40px auto"><h2>NB Academy could not start</h2><p class="muted">${esc(e.message)}</p><div><button class="btn" data-act="reload">Try again</button></div></div></div>`; return; }
   if (S && ui.loginView === 'token') { await B.logout().catch(() => {}); setState(null); }
   if (S && ui.deepLink) { const dl = ui.deepLink; ui.deepLink = null; ui.view = {name:dl.go, p:{id:dl.id}}; }
-  else if (S) ui.view = {name:homeFor(currentMode()), p:{}};
+  else if (S) {
+    // The browser reloaded this tab (for example a background tab it had put to sleep): reopen the same page
+    const st = history.state; let back = null; try { back = st?.nb && st.uid === S.me && st.view?.name && VIEWS[st.view.name] ? navTarget(st) : null; } catch (e) {}
+    ui.view = back || {name:homeFor(currentMode()), p:{}};
+  }
   render(); replaceNav();
   setInterval(heartbeat, 60e3);
   if (B.server) setInterval(refresh, 45e3);

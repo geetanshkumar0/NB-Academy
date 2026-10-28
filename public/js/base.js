@@ -108,8 +108,8 @@ function xhrPost(url, body, headers, {onProgress, signal} = {}) {
 }
 const ServerBackend = {
   server:true,
-  async req(method, url, body, headers = {}) {
-    const r = await fetch(url, {method, credentials:'same-origin', headers:{'X-NB-Request':'1', ...(body && !(body instanceof Blob) ? {'Content-Type':'application/json'} : {}), ...headers}, body:body instanceof Blob ? body : body ? JSON.stringify(body) : undefined});
+  async req(method, url, body, headers = {}, opts = {}) {
+    const r = await fetch(url, {method, credentials:'same-origin', keepalive:!!opts.keepalive, headers:{'X-NB-Request':'1', ...(body && !(body instanceof Blob) ? {'Content-Type':'application/json'} : {}), ...headers}, body:body instanceof Blob ? body : body ? JSON.stringify(body) : undefined});
     let data = {}; try { data = await r.json(); } catch (e) {}
     if (!r.ok && r.status === 413 && !data.error) throw new ApiError('This file is larger than the web server in front of NB Academy allows. Ask whoever runs the server to raise the upload limit (for nginx: client_max_body_size 1g;) and try again.', 413);
     if (!r.ok && (r.status === 502 || r.status === 504) && !data.error) throw new ApiError('The server took too long to answer. For large uploads, ask whoever runs the server to raise the proxy timeouts (for nginx: proxy_read_timeout and client_body_timeout 600s;).', r.status);
@@ -120,7 +120,7 @@ const ServerBackend = {
   async login(username, password) { return this.req('POST', '/api/login', {username, password}); },
   async loginMfa(ticket, code) { return this.req('POST', '/api/login/mfa', {ticket, code}); },
   async logout() { await this.req('POST', '/api/logout', {}); },
-  async op(name, payload) { return this.req('POST', '/api/op', {op:name, payload}); },
+  async op(name, payload, opts) { return this.req('POST', '/api/op', {op:name, payload}, {}, opts || {}); }, // opts.keepalive: still sent if the page is closing
   async loginAs(id) { return (await this.req('POST', '/api/loginas', {id})).state; },
   /* Upload with progress. Files over 16 MB go in 8 MB pieces, 4 at a time, each on its own connection:
      the server can be far away (high latency), where one connection is slow but several together are fast. */
@@ -335,21 +335,27 @@ function go(name, p = {}, fromHistory = false) {
   // Leaving a quiz: save the latest answers now rather than after the usual short delay
   if (name !== 'attempt' && ui.attempt) { if (ui.saveT) { clearTimeout(ui.saveT); ui.saveT = null; } const A0 = ui.attempt; B.op('saveQuizAnswers', {aid:A0.aid, answers:A0.answers}).catch(() => {}); }
   if (name !== 'attempt') ui.attempt = null;
+  // Leaving a video: save the exact position now (normally saved every few seconds)
+  if (typeof videoAway === 'function') videoAway('page');
   if (name !== 'lessonplay') ui.lesson = null;
   ui.view = {name, p}; ui.replyTo = null;
   closeModal(); render(); window.scrollTo(0, 0);
   if (!fromHistory) pushNav();
 }
 /* Browser history: each page is a history entry, so the browser's Back button (and the back gesture on phones) moves through NB Academy */
-function navState() { return {nb:1, view:ui.view, cmid:ui.attempt?.cmid || ui.lesson?.cmid || null}; }
+function navState() { return {nb:1, uid:S?.me || null, view:ui.view, cmid:ui.attempt?.cmid || ui.lesson?.cmid || null}; }
+/* The page to show for a saved history entry. A quiz or lesson that is no longer open returns to its activity page. */
+function navTarget(st) {
+  let {name, p} = st.view || {name:'dashboard', p:{}};
+  if ((name === 'attempt' && !ui.attempt) || (name === 'lessonplay' && !ui.lesson)) { if (st.cmid && S.mods[st.cmid]) { name = 'mod'; p = {id:st.cmid}; } else { name = homeFor(currentMode()); p = {}; } }
+  return {name, p:p || {}};
+}
 function pushNav() { try { history.pushState(navState(), ''); } catch (e) {} }
 function replaceNav() { try { history.replaceState(navState(), ''); } catch (e) {} }
 window.addEventListener('popstate', e => {
   const st = e.state; if (!st || !st.nb || !S) return;
-  let {name, p} = st.view || {name:'dashboard', p:{}};
-  // A quiz or lesson that is no longer open returns to its activity page
-  if ((name === 'attempt' && !ui.attempt) || (name === 'lessonplay' && !ui.lesson)) { if (st.cmid && S.mods[st.cmid]) { name = 'mod'; p = {id:st.cmid}; } else { name = homeFor(currentMode()); p = {}; } }
-  go(name, p || {}, true);
+  const {name, p} = navTarget(st);
+  go(name, p, true);
 });
 /* "Back to …" link at the top of activity pages: where it goes, and what it says */
 function backLink() {

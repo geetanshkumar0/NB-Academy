@@ -481,8 +481,8 @@ BODIES.video = (m, c) => {
   const f = fileOf(m.fileId); if (!f) return '<div class="card err">The video file is missing.</div>';
   const cap = m.captionsId && fileOf(m.captionsId), r = h.resume(m.id, S.me), learner = h.isLearner(c.id);
   const capOn = (me().prefs || {}).captions !== false;
-  let html = `<div class="card stack"><video id="vplayer" data-mid="${m.id}" controls preload="metadata" playsinline style="width:100%;max-height:70vh;background:#000;border-radius:6px" src="${esc(B.fileUrl(f))}">${cap ? `<track kind="captions" srclang="en" label="English" src="${esc(B.fileUrl(cap))}" ${capOn ? 'default' : ''}>` : ''}</video>
-    ${learner ? `<div class="spread small"><span class="muted" id="vstatus">${r?.completed ? 'Watched' : r?.position ? `You stopped at ${Math.floor(r.position / 60)}:${String(Math.floor(r.position % 60)).padStart(2, '0')}. The video resumes from there.` : `Watch at least ${m.completePct || 90}% to complete this activity.`}</span>${r?.duration ? `<span class="num">${Math.round(Math.min(100, (r.watched || 0) / r.duration * 100))}% watched</span>` : ''}</div>` : ''}
+  let html = `<div class="card stack"><div class="vresume" id="vresume" role="status" hidden><span id="vresumemsg"></span><span class="row"><button class="btn primary sm" data-act="vResume" id="vresumebtn">Resume</button><button class="btn ghost sm" data-act="vRestart">Start over</button></span></div><video id="vplayer" data-mid="${m.id}" controls preload="metadata" playsinline style="width:100%;max-height:70vh;background:#000;border-radius:6px" src="${esc(B.fileUrl(f))}">${cap ? `<track kind="captions" srclang="en" label="English" src="${esc(B.fileUrl(cap))}" ${capOn ? 'default' : ''}>` : ''}</video>
+    ${learner ? `<div class="spread small"><span class="muted" id="vstatus">${r?.completed ? 'Watched. This activity is complete.' : `Watch at least ${m.completePct || 90}% to complete this activity.`}</span>${r?.duration ? `<span class="num">${Math.round(Math.min(100, (r.watched || 0) / r.duration * 100))}% watched</span>` : ''}</div>` : ''}
     ${cap ? '<details><summary class="small"><b>Transcript</b></summary><div id="vtranscript" class="prose small" style="margin-top:8px">Loading…</div></details>' : ''}</div>`;
   if (h.has('grade:viewall', c.id)) html += `<section class="stack" style="margin-top:22px"><h2>Viewing</h2><div class="tw"><table><thead><tr><th>Learner</th><th class="n">Watched</th><th>Last viewed</th><th>Status</th></tr></thead><tbody>${h.students(c.id).map(s => { const x = h.resume(m.id, s.id); return `<tr><td>${esc(fullname(s))}</td><td class="n">${x?.duration ? fmtPct(Math.min(100, (x.watched || 0) / x.duration * 100)) : '–'}</td><td class="small">${x ? ago(x.updated) : '–'}</td><td>${x?.completed ? '<span class="chip ok">Completed</span>' : x ? '<span class="chip brand">Started</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div></section>`;
   return html;
@@ -547,16 +547,39 @@ BODIES.feedback = (m, c) => {
 };
 
 /* ---------- Players: mount after render ---------- */
+const fmtClock = s => { s = Math.max(0, Math.floor(s)); const hh = Math.floor(s / 3600), mm = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, '0'); return hh ? `${hh}:${String(mm).padStart(2, '0')}:${ss}` : `${mm}:${ss}`; };
+/* "Resume from m:ss" bar under the video: shown when the learner comes back to a video, or to the tab after it was paused */
+function videoResumeBar(at, msg) {
+  const bar = document.getElementById('vresume'); if (!bar) return;
+  document.getElementById('vresumemsg').textContent = msg; document.getElementById('vresumebtn').textContent = `▶ Resume from ${fmtClock(at)}`; bar.hidden = false;
+}
+/* Leaving the tab pauses the video and saves the exact position; coming back offers to resume from there */
+function videoAway(leaving) {
+  const v = document.getElementById('vplayer'); if (!v) return;
+  if (leaving === 'page') { v._nbSave?.(true, true); return; }
+  if (leaving === 'hidden') { if (!v.paused && !v.ended && document.pictureInPictureElement !== v) { v.dataset.autoPaused = '1'; v.pause(); } else v._nbSave?.(true, true); return; }
+  if (v.dataset.autoPaused) { delete v.dataset.autoPaused; videoResumeBar(v.currentTime, 'Paused while you were away.'); }
+}
+document.addEventListener('visibilitychange', () => videoAway(document.hidden ? 'hidden' : 'back'));
+window.addEventListener('pagehide', () => videoAway('page'));
 let scormAPI = null;
 function mountPlayers() {
   const v = document.getElementById('vplayer');
   if (v && !v.dataset.mounted) {
     v.dataset.mounted = '1'; const mid = v.dataset.mid, m = S.mods[mid], learner = h.isLearner(m.courseId), r = h.resume(mid, S.me);
-    let last = 0, done = !!r?.completed;
-    v.addEventListener('loadedmetadata', () => { if (r?.position && r.position < v.duration - 2 && !r.completed) v.currentTime = r.position; });
-    const save = async force => { if (!learner || !v.duration) return; if (!force && Math.abs(v.currentTime - last) < 8) return; last = v.currentTime;
-      try { const out = await B.op('saveProgress', {mid, position:v.currentTime, duration:v.duration}); if (out.result?.completed && !done) { done = true; const st = document.getElementById('vstatus'); if (st) st.textContent = 'Watched. This activity is complete.'; toast('Video completed'); setState(await B.init()); } } catch (e) {} };
+    // Start where the learner stopped, also for a video already watched, unless they stopped right at the end
+    const start = r?.position > 1 && !(r.duration && r.position >= r.duration - 2) ? r.position : 0;
+    let last = start, done = !!r?.completed;
+    const seekStart = () => { if (start && v.currentTime < 1) v.currentTime = start; };
+    if (v.readyState >= 1) seekStart(); else v.addEventListener('loadedmetadata', seekStart, {once:true});
+    if (start) videoResumeBar(start, 'You stopped here last time.');
+    v.addEventListener('play', () => { const bar = document.getElementById('vresume'); if (bar) bar.hidden = true; delete v.dataset.autoPaused; });
+    const save = async (force, keepalive) => { if (!learner || !v.duration || !isFinite(v.duration)) return; if (!force && Math.abs(v.currentTime - last) < 8) return; last = v.currentTime;
+      // Keep this page's copy current too, so coming back to the video starts where the learner really is
+      const k = S.me + ':' + mid, cur = S.resume[k] || (S.resume[k] = {}); Object.assign(cur, {position:v.currentTime, duration:v.duration, watched:Math.max(cur.watched || 0, v.currentTime)});
+      try { const out = await B.op('saveProgress', {mid, position:v.currentTime, duration:v.duration}, keepalive ? {keepalive:true} : undefined); if (out.result?.completed && !done) { done = true; const st = document.getElementById('vstatus'); if (st) st.textContent = 'Watched. This activity is complete.'; toast('Video completed'); setState(await B.init()); } } catch (e) {} };
     v.addEventListener('timeupdate', () => save(false)); v.addEventListener('pause', () => save(true)); v.addEventListener('ended', () => save(true));
+    v._nbSave = save; // used when leaving the page or the tab (see videoAway)
     const tr = document.getElementById('vtranscript'), cap = m.captionsId && fileOf(m.captionsId);
     if (tr && cap) B.fileText(cap).then(t => { const cues = t.split(/\r?\n\r?\n/).map(b => b.split(/\r?\n/)).filter(l => l.some(x => x.includes('-->'))).map(l => { const i = l.findIndex(x => x.includes('-->')); return {at:l[i].split('-->')[0].trim(), text:l.slice(i + 1).join(' ')}; });
       tr.innerHTML = cues.map(c2 => `<p><button class="link mono small" data-act="seek" data-t="${esc(c2.at)}">${esc(c2.at.replace(/\.\d+$/, ''))}</button> ${esc(c2.text)}</p>`).join('') || 'No transcript.'; }).catch(() => { tr.textContent = 'Transcript not available.'; });
@@ -575,7 +598,7 @@ function mountPlayers() {
     const status12 = () => st.success === 'passed' ? 'passed' : st.success === 'failed' ? 'failed' : st.status;
     const commit = finish => { if (!learner || (!dirty && !finish)) return Promise.resolve(); dirty = false;
       const payload = {mid, cmi:{'cmi.core.lesson_location':st.location, 'cmi.suspend_data':st.suspend, 'cmi.core.lesson_status':status12(), 'cmi.core.score.raw':percent() === '' ? '' : String(percent())}, finish};
-      saving = B.op('scormCommit', payload).then(out => { const el = document.getElementById('scormstatus'); if (el) el.textContent = `Saved ${new Date().toLocaleTimeString('en-IN', {hour:'numeric', minute:'2-digit'})}`;
+      saving = B.op('scormCommit', payload).then(out => { const k = S.me + ':' + mid; S.resume[k] = Object.assign(S.resume[k] || {}, {location:st.location, suspend:st.suspend, status:status12(), score:percent()}); const el = document.getElementById('scormstatus'); if (el) el.textContent = `Saved ${new Date().toLocaleTimeString('en-IN', {hour:'numeric', minute:'2-digit'})}`;
         if (out.result?.completed && !r.completed) { r.completed = true; toast('Module completed'); setTimeout(async () => setState(await B.init()), 0); } }).catch(() => { dirty = true; });
       return saving; };
     const countOf = (k, prefix) => { const n = new Set(Object.keys(extra).filter(x => x.startsWith(prefix)).map(x => x.slice(prefix.length).split('.')[0])); return String(n.size); };

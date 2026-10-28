@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (61 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (62 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -11,7 +11,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | First login: set password, accept terms, accessibility | Onboarding screens | Forced password change (policy enforced), terms with versioning, contrast, text size, captions, reduced motion. |
 | Dashboard tabs: Assigned, In progress, Completed (scores, certificates), Overdue (locked), Course library | Dashboard tiles, My learning | Completed tab lists grades and certificate PDFs. |
 | Auto-move to In progress | Opening a course | Recorded on first visit. |
-| Resume where you left off | Dashboard and course "Resume", video, SCORM | Video timestamp and SCORM slide/suspend data saved across sessions. |
+| Resume where you left off | Dashboard and course "Resume", video, SCORM | Video timestamp and SCORM slide/suspend data saved across sessions. Switching tabs pauses a video and offers "Resume from m:ss"; a reloaded tab reopens the same page. Tested. |
 | Pre-tests and step-by-step unlocking | Quiz "Pre-test" option; course "Step-by-step" setting; "Only available after" on any activity | Final assessments unlock after earlier modules. |
 | Timed quizzes, attempt limits, instant MC grading, written work to trainer | Quiz, Assignment, Essay questions | Essays and assignments go to the trainer's grading queue. |
 | Mandatory feedback before certificate | Feedback survey activity; certificate "requires feedback" | |
