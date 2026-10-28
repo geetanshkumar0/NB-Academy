@@ -208,6 +208,9 @@ function ensureScorm(m) {
 const SCORM_TYPES = {'.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.xml':'application/xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml', '.webp':'image/webp', '.mp4':'video/mp4', '.webm':'video/webm', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.pdf':'application/pdf', '.vtt':'text/vtt', '.swf':'application/x-shockwave-flash', '.mjs':'text/javascript', '.txt':'text/plain; charset=utf-8', '.xsd':'application/xml', '.dtd':'application/xml-dtd', '.ico':'image/x-icon', '.bmp':'image/bmp', '.otf':'font/otf', '.eot':'application/vnd.ms-fontobject', '.m4a':'audio/mp4', '.m4v':'video/mp4', '.ogg':'audio/ogg', '.oga':'audio/ogg', '.ogv':'video/ogg', '.aac':'audio/aac', '.wasm':'application/wasm', '.csv':'text/csv', '.webmanifest':'application/manifest+json', '.map':'application/json'};
 
 const EMAIL_ICON_CACHE = new Map();
+const UPLOADS = new Map(), CHUNK_MAX = 16 * 1024 * 1024;
+const uploadTmp = id => path.join(DATA, 'uploads', id + '.part');
+function cleanUploads() { const old = Date.now() - 24 * 3600e3; for (const [id, u] of UPLOADS) if (u.touched < old) { UPLOADS.delete(id); fs.rmSync(uploadTmp(id), {force:true}); } }
 /* ---------- HTTP helpers ---------- */
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; frame-src 'self' blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'";
 const SEC_HEADERS = {'Content-Security-Policy':CSP, 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'SAMEORIGIN', 'Referrer-Policy':'same-origin'};
@@ -441,6 +444,38 @@ async function handle(req, res) {
       store.dropSession(me.token);
       const token = crypto.randomBytes(32).toString('hex'); store.createSession(token, r.id, 4 * 3600e3, me.uid);
       return send(res, 200, {state:Core.view(S, r.id)}, {'Set-Cookie':sessionCookie(req, token, 4 * 3600e3)});
+    }
+    /* Uploads in pieces: start, send each piece, finish. Each piece is small (well under the 1 MB default
+       limit of nginx and similar proxies), so large SCORM packages and videos get through without changing
+       the web server in front of NB Academy. */
+    if (p === '/api/upload/start') {
+      const b = await readJSON(req), size = Number(b.size) || 0;
+      if (size <= 0) return sendErr(res, 400, 'The file is empty.');
+      if (size > MAX_UPLOAD) return sendErr(res, 413, `The file is larger than ${Math.round(MAX_UPLOAD / 1048576)} MB.`);
+      cleanUploads();
+      const id = 'up_' + crypto.randomBytes(12).toString('hex');
+      UPLOADS.set(id, {uid:me.uid, name:String(b.name || 'file').slice(0, 200), type:String(b.type || 'application/octet-stream').split(';')[0].slice(0, 100), size, received:0, touched:Date.now()});
+      fs.mkdirSync(path.join(DATA, 'uploads'), {recursive:true}); fs.writeFileSync(uploadTmp(id), '');
+      return send(res, 200, {id, received:0});
+    }
+    if (p === '/api/upload/chunk' || p === '/api/upload/finish' || p === '/api/upload/abort') {
+      const id = String(url.searchParams.get('id') || ''), u = /^up_[a-f0-9]{24}$/.test(id) && UPLOADS.get(id);
+      if (!u || u.uid !== me.uid) return sendErr(res, 404, 'This upload was not found. Start again.');
+      u.touched = Date.now();
+      if (p === '/api/upload/abort') { UPLOADS.delete(id); fs.rmSync(uploadTmp(id), {force:true}); return send(res, 200, {ok:true}); }
+      if (p === '/api/upload/chunk') {
+        const offset = Number(url.searchParams.get('offset')), body = await readBody(req, CHUNK_MAX);
+        if (offset + body.length <= u.received) return send(res, 200, {received:u.received}); // a piece sent twice (retry): already have it
+        if (offset !== u.received) return sendErr(res, 409, `Expected the piece at ${u.received}.`);
+        if (u.received + body.length > u.size) return sendErr(res, 400, 'More data than the file size.');
+        fs.appendFileSync(uploadTmp(id), body); u.received += body.length;
+        return send(res, 200, {received:u.received});
+      }
+      if (u.received !== u.size) return sendErr(res, 400, `The upload is incomplete (${u.received} of ${u.size} bytes).`);
+      const fid = 'f_' + crypto.randomBytes(10).toString('hex');
+      fs.renameSync(uploadTmp(id), store.filePath(fid)); UPLOADS.delete(id);
+      const f = runOp(me.uid, 'registerFile', {id:fid, name:u.name, type:u.type, size:u.size});
+      return send(res, 200, {result:f, state:Core.view(S, me.uid)});
     }
     if (p === '/api/upload') {
       const name = String(url.searchParams.get('name') || 'file').slice(0, 200);
