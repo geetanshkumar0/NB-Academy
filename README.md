@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (58 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (59 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -221,6 +221,7 @@ The course's trainers and administrators can read every chat in the course, and 
 - Upload the **.zip exactly as exported**. It must contain `imsmanifest.xml` somewhere inside. These all work: the manifest at the top, inside one or more folders, a zip that contains the package's .zip, and zips made on a Mac (the hidden `__MACOSX` folder is ignored). A zip holding several packages is refused with their names, so each can be uploaded as its own activity.
 - The start page is found the way the standard describes: the first item of the default organisation, its launch parameters, and `xml:base`.
 - Packages up to 1 GB are accepted. Audio and video inside them stream and can be skipped through.
+- Files over 16 MB upload in **8 MB pieces, 4 at a time**, each on its own connection, and are joined on the server. Over a long-distance link (the server is in Helsinki, about 170 ms from Bengaluru), one connection is slow, but several together use the full internet speed. A failed piece is retried up to 3 times, and an upload in progress survives a server restart. Files of 16 MB or less use a single upload.
 - While a file uploads, a progress bar shows the percentage, size, speed and time left, with a Cancel button. Saving waits until the upload has finished, and SCORM packages show "Unpacking the package…" while the server opens them.
 - Trainers and admins see the detected SCORM version and start page on the activity page.
 - A package with several SCOs plays its first SCO; SCORM 2004 sequencing rules between SCOs are not applied.

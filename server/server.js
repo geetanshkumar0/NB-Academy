@@ -208,6 +208,19 @@ function ensureScorm(m) {
 const SCORM_TYPES = {'.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.xml':'application/xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml', '.webp':'image/webp', '.mp4':'video/mp4', '.webm':'video/webm', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.pdf':'application/pdf', '.vtt':'text/vtt', '.swf':'application/x-shockwave-flash', '.mjs':'text/javascript', '.txt':'text/plain; charset=utf-8', '.xsd':'application/xml', '.dtd':'application/xml-dtd', '.ico':'image/x-icon', '.bmp':'image/bmp', '.otf':'font/otf', '.eot':'application/vnd.ms-fontobject', '.m4a':'audio/mp4', '.m4v':'video/mp4', '.ogg':'audio/ogg', '.oga':'audio/ogg', '.ogv':'video/ogg', '.aac':'audio/aac', '.wasm':'application/wasm', '.csv':'text/csv', '.webmanifest':'application/manifest+json', '.map':'application/json'};
 
 const EMAIL_ICON_CACHE = new Map();
+/* Uploads in pieces (for files over 16 MB). The server is far from many users (high latency), and one
+   connection over a long distance is slow, so the browser sends 8 MB pieces on several connections at once.
+   Each piece is written straight into its place in the file, so pieces may arrive in any order. Progress is
+   kept on disk next to the file, so an upload survives a server restart. */
+const PIECE_MAX = 16 * 1024 * 1024;
+const upDir = () => path.join(DATA, 'uploads');
+const upPart = id => path.join(upDir(), id + '.part'), upMeta = id => path.join(upDir(), id + '.json');
+const upRead = id => { if (!/^up_[a-f0-9]{24}$/.test(id)) return null; try { return JSON.parse(fs.readFileSync(upMeta(id), 'utf8')); } catch (e) { return null; } };
+const upWrite = (id, u) => fs.writeFileSync(upMeta(id), JSON.stringify(u));
+const upDrop = id => { fs.rmSync(upPart(id), {force:true}); fs.rmSync(upMeta(id), {force:true}); };
+function upClean() { // forget pieced uploads untouched for a day
+  try { const old = Date.now() - 24 * 3600e3; for (const f of fs.readdirSync(upDir())) if (f.endsWith('.json')) { const id = f.slice(0, -5), u = upRead(id); if (!u || u.touched < old) upDrop(id); } } catch (e) {}
+}
 /* ---------- HTTP helpers ---------- */
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; frame-src 'self' blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'";
 const SEC_HEADERS = {'Content-Security-Policy':CSP, 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'SAMEORIGIN', 'Referrer-Policy':'same-origin'};
@@ -441,6 +454,37 @@ async function handle(req, res) {
       store.dropSession(me.token);
       const token = crypto.randomBytes(32).toString('hex'); store.createSession(token, r.id, 4 * 3600e3, me.uid);
       return send(res, 200, {state:Core.view(S, r.id)}, {'Set-Cookie':sessionCookie(req, token, 4 * 3600e3)});
+    }
+    if (p === '/api/upload/start') {
+      const b = await readJSON(req), size = Math.floor(Number(b.size) || 0), piece = Math.floor(Number(b.piece) || 8 * 1024 * 1024);
+      if (size <= 0) return sendErr(res, 400, 'The file is empty.');
+      if (size > MAX_UPLOAD) return sendErr(res, 413, `The file is larger than ${Math.round(MAX_UPLOAD / 1048576)} MB.`);
+      if (piece < 256 * 1024 || piece > PIECE_MAX) return sendErr(res, 400, 'Bad piece size.');
+      upClean(); fs.mkdirSync(upDir(), {recursive:true});
+      const id = 'up_' + crypto.randomBytes(12).toString('hex'), pieces = Math.ceil(size / piece);
+      const fd = fs.openSync(upPart(id), 'w'); fs.ftruncateSync(fd, size); fs.closeSync(fd);
+      upWrite(id, {uid:me.uid, name:String(b.name || 'file').slice(0, 200), type:String(b.type || 'application/octet-stream').split(';')[0].slice(0, 100), size, piece, pieces, got:[], touched:Date.now()});
+      return send(res, 200, {id, piece, pieces});
+    }
+    if (p === '/api/upload/piece' || p === '/api/upload/finish' || p === '/api/upload/abort') {
+      const id = String(url.searchParams.get('id') || ''), u = upRead(id);
+      if (!u || u.uid !== me.uid) return sendErr(res, 404, 'This upload was not found. Please choose the file again.');
+      if (p === '/api/upload/abort') { upDrop(id); return send(res, 200, {ok:true}); }
+      if (p === '/api/upload/piece') {
+        const i = Number(url.searchParams.get('index'));
+        if (!Number.isInteger(i) || i < 0 || i >= u.pieces) return sendErr(res, 400, 'Bad piece number.');
+        const want = i === u.pieces - 1 ? u.size - i * u.piece : u.piece, body = await readBody(req, PIECE_MAX);
+        if (body.length !== want) return sendErr(res, 400, `Piece ${i + 1} has ${body.length} bytes; expected ${want}.`);
+        const fd = fs.openSync(upPart(id), 'r+'); try { fs.writeSync(fd, body, 0, body.length, i * u.piece); } finally { fs.closeSync(fd); }
+        const now = upRead(id) || u; if (!now.got.includes(i)) now.got.push(i); now.touched = Date.now(); upWrite(id, now); // read again: other pieces may have landed meanwhile
+        return send(res, 200, {received:now.got.length, pieces:now.pieces});
+      }
+      const missing = []; for (let i = 0; i < u.pieces; i++) if (!u.got.includes(i)) missing.push(i + 1);
+      if (missing.length) return sendErr(res, 400, `The upload is missing ${missing.length} piece${missing.length === 1 ? '' : 's'}.`);
+      const fid = 'f_' + crypto.randomBytes(10).toString('hex');
+      fs.renameSync(upPart(id), store.filePath(fid)); fs.rmSync(upMeta(id), {force:true});
+      const f = runOp(me.uid, 'registerFile', {id:fid, name:u.name, type:u.type, size:u.size});
+      return send(res, 200, {result:f, state:Core.view(S, me.uid)});
     }
     if (p === '/api/upload') {
       const name = String(url.searchParams.get('name') || 'file').slice(0, 200);

@@ -88,6 +88,24 @@ const SERVER = document.querySelector('meta[name="nb-mode"]')?.content === 'serv
 class ApiError extends Error { constructor(m, s) { super(m); this.status = s; } }
 /* In the browser-only preview there is no server to fetch email icons from, so emails carry them inline */
 function inlineEmailIcons() { const memo = {}; C.setEmailIconUrl((n, hex) => { if (!memo[n + hex]) { const b = C.emailIcon(n, hex); let t = ''; for (let i = 0; i < b.length; i += 8192) t += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); memo[n + hex] = 'data:image/png;base64,' + btoa(t); } return memo[n + hex]; }); }
+const UPLOAD_SINGLE_MAX = 16 * 1024 * 1024, UPLOAD_PIECE = 8 * 1024 * 1024, UPLOAD_PARALLEL = 4;
+/* One POST with upload progress (fetch() cannot report upload progress) */
+function xhrPost(url, body, headers, {onProgress, signal} = {}) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest(); x.open('POST', url); x.withCredentials = true; x.setRequestHeader('X-NB-Request', '1');
+    for (const [k, v] of Object.entries(headers || {})) x.setRequestHeader(k, v);
+    if (onProgress) x.upload.onprogress = e => onProgress(e.loaded);
+    if (signal) { if (signal.aborted) return reject(Object.assign(new ApiError('Upload cancelled.', 0), {cancelled:true})); signal.addEventListener('abort', () => x.abort(), {once:true}); }
+    x.onload = () => { let data = {}; try { data = JSON.parse(x.responseText || '{}'); } catch (e) {}
+      if (x.status >= 200 && x.status < 300) return resolve(data);
+      if (x.status === 413 && !data.error) return reject(new ApiError('This file is larger than the web server in front of NB Academy allows. Ask whoever runs the server to raise the upload limit (for nginx: client_max_body_size 1g;) and try again.', 413));
+      if ((x.status === 502 || x.status === 504) && !data.error) return reject(new ApiError('The server took too long to answer. Try again in a moment.', x.status));
+      reject(new ApiError(data.error || `Upload failed (${x.status})`, x.status)); };
+    x.onerror = () => reject(new ApiError('The upload stopped: the connection to the server was lost. Check your internet connection and try again.', 0));
+    x.onabort = () => reject(Object.assign(new ApiError('Upload cancelled.', 0), {cancelled:true}));
+    x.send(body);
+  });
+}
 const ServerBackend = {
   server:true,
   async req(method, url, body, headers = {}) {
@@ -104,23 +122,33 @@ const ServerBackend = {
   async logout() { await this.req('POST', '/api/logout', {}); },
   async op(name, payload) { return this.req('POST', '/api/op', {op:name, payload}); },
   async loginAs(id) { return (await this.req('POST', '/api/loginas', {id})).state; },
-  /* Upload with progress: fetch() cannot report upload progress, so this uses XMLHttpRequest */
-  upload(file, {onProgress, signal} = {}) {
-    return new Promise((resolve, reject) => {
-      const x = new XMLHttpRequest(); x.open('POST', '/api/upload?name=' + encodeURIComponent(file.name)); x.withCredentials = true;
-      x.setRequestHeader('X-NB-Request', '1'); x.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      if (onProgress) x.upload.onprogress = e => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
-      if (signal) signal.addEventListener('abort', () => x.abort());
-      x.onload = () => { let data = {}; try { data = JSON.parse(x.responseText || '{}'); } catch (e) {}
-        if (x.status >= 200 && x.status < 300) return resolve(data);
-        if (x.status === 413 && !data.error) return reject(new ApiError('This file is larger than the web server in front of NB Academy allows. Ask whoever runs the server to raise the upload limit (for nginx: client_max_body_size 1g;) and try again.', 413));
-        if ((x.status === 502 || x.status === 504) && !data.error) return reject(new ApiError('The server took too long to answer. For large uploads, ask whoever runs the server to raise the proxy timeouts (for nginx: proxy_read_timeout and client_body_timeout 600s;).', x.status));
-        reject(new ApiError(data.error || `Upload failed (${x.status})`, x.status)); };
-      x.onerror = () => reject(new ApiError('The upload stopped: the connection to the server was lost. Check your internet connection and try again.', 0));
-      x.onabort = () => reject(Object.assign(new ApiError('Upload cancelled.', 0), {cancelled:true}));
-      x.send(file);
-    });
+  /* Upload with progress. Files over 16 MB go in 8 MB pieces, 4 at a time, each on its own connection:
+     the server can be far away (high latency), where one connection is slow but several together are fast. */
+  async upload(file, {onProgress, signal} = {}) {
+    if (file.size <= UPLOAD_SINGLE_MAX) return xhrPost('/api/upload?name=' + encodeURIComponent(file.name), file, {'Content-Type':file.type || 'application/octet-stream'}, {onProgress:(l) => onProgress?.(l, file.size), signal});
+    const start = await this.req('POST', '/api/upload/start', {name:file.name, type:file.type || 'application/octet-stream', size:file.size, piece:UPLOAD_PIECE});
+    const {id, piece, pieces} = start, loaded = new Array(pieces).fill(0), report = () => onProgress?.(loaded.reduce((a, b) => a + b, 0), file.size);
+    const abortAll = new AbortController(); const stop = () => abortAll.abort(); signal?.addEventListener('abort', stop);
+    let next = 0, failure = null;
+    const sendPiece = async i => {
+      const blob = file.slice(i * piece, Math.min(file.size, (i + 1) * piece));
+      for (let attempt = 1; ; attempt++) {
+        try { await xhrPost(`/api/upload/piece?id=${id}&index=${i}`, blob, {'Content-Type':'application/octet-stream'}, {onProgress:l => { loaded[i] = l; report(); }, signal:abortAll.signal}); loaded[i] = blob.size; report(); return; }
+        catch (e) { loaded[i] = 0; report(); if (e.cancelled || abortAll.signal.aborted || (e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) || attempt >= 4) throw e; await new Promise(r => setTimeout(r, 800 * attempt)); }
+      }
+    };
+    const worker = async () => { while (!failure && next < pieces) { const i = next++; try { await sendPiece(i); } catch (e) { failure ||= e; abortAll.abort(); } } };
+    try {
+      await Promise.all(Array.from({length:Math.min(UPLOAD_PARALLEL, pieces)}, worker));
+      if (failure) throw failure;
+      return await this.req('POST', `/api/upload/finish?id=${id}`, {});
+    } catch (e) {
+      this.req('POST', `/api/upload/abort?id=${id}`, {}).catch(() => {});
+      if (signal?.aborted) throw Object.assign(new ApiError('Upload cancelled.', 0), {cancelled:true});
+      throw e;
+    } finally { signal?.removeEventListener('abort', stop); }
   },
+
   async forgot(login) { return this.req('POST', '/api/forgot', {login}); },
   async tokenInfo(t) { return this.req('GET', '/api/token?t=' + encodeURIComponent(t)); },
   async tokenPassword(token, password) { return this.req('POST', '/api/token-password', {token, password}); },

@@ -701,6 +701,29 @@ test('user uploads accept friendly headers (as typed in Excel) and role names', 
   assert.match(src, /xlsxTemplate:/); assert.match(src, /async function readXlsx/);
 });
 
+test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
+  const a = await login('admin'), piece = 256 * 1024;
+  const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
+  let r = await call('POST', '/api/upload/start', {name:'Big package.zip', type:'application/zip', size:data.length, piece}, a);
+  assert.equal(r.status, 200, r.text); const {id, pieces} = r.json; assert.equal(pieces, 3);
+  const put = (i, buf, who = a) => call('POST', `/api/upload/piece?id=${id}&index=${i}`, buf || data.subarray(i * piece, Math.min(data.length, (i + 1) * piece)), who, {'Content-Type':'application/octet-stream'});
+  assert.equal((await call('POST', `/api/upload/finish?id=${id}`, {}, a)).status, 400, 'cannot finish before all pieces arrive');
+  const rs = await Promise.all([put(2), put(0)]); rs.forEach(x => assert.equal(x.status, 200, x.text)); // out of order, at the same time
+  assert.equal((await put(0)).status, 200, 'a repeated piece (a retry) is fine');
+  assert.equal((await put(1, Buffer.alloc(10))).status, 400, 'a piece of the wrong size is refused');
+  assert.equal((await put(1, null, await login('asha'))).status, 404, 'another user cannot add to this upload');
+  r = await call('POST', `/api/upload/finish?id=${id}`, {}, a); assert.match(r.json.error, /missing 1 piece/);
+  assert.equal((await put(1)).status, 200);
+  r = await call('POST', `/api/upload/finish?id=${id}`, {}, a); assert.equal(r.status, 200, r.text);
+  const f = r.json.result; assert.equal(f.size, data.length); assert.equal(f.name, 'Big package.zip');
+  assert.ok(fs.readFileSync(_store().filePath(f.id)).equals(data), 'the joined file is identical');
+  // Cancelling removes the partial file
+  r = await call('POST', '/api/upload/start', {name:'x.bin', size:piece * 2, piece}, a); const id2 = r.json.id;
+  assert.equal((await call('POST', `/api/upload/abort?id=${id2}`, {}, a)).status, 200);
+  assert.equal((await call('POST', `/api/upload/piece?id=${id2}&index=0`, data.subarray(0, piece), a, {'Content-Type':'application/octet-stream'})).status, 404);
+  assert.equal((await call('POST', '/api/upload/start', {name:'huge', size:5e12, piece}, a)).status, 413);
+});
+
 test('accounts listed for removal are deleted at start-up, but never a built-in administrator', async () => {
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);
