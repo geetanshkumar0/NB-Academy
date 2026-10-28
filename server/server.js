@@ -94,7 +94,7 @@ function ensureSiteAdmins() {
     let un = base, i = 2; while (Core.findUser(S, un)) un = base + i++;
     const parts = local.split(/[._-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1));
     u = {id:env.uid('u'), username:un, email, firstname:parts[0] || un, lastname:parts.slice(1).join(' '), admin:true, builtinAdmin:true, created:Date.now(), mustChangePassword:true,
-      company:'', department:'', defaultPwSet:true, ...hashPassword(env.defaultPassword)};
+      department:'', defaultPwSet:true, ...hashPassword(env.defaultPassword)};
     S.users.push(u);
     const tok = Core._.makeToken(S, env, u.id, 'setpw', 7 * 24 * 3600e3);
     Core._.notifyT(S, env, 'welcome', u.id, {link:Core.linkTo(S, 'setpassword', tok)});
@@ -152,6 +152,8 @@ function removeDemoData() {
 const siteConfig = require('./site-admins');
 ensureSiteAdmins();
 removeDemoData();
+// Clean up data from older versions (Company field removed, "Training" renamed to "Training Team")
+{ const changes = Core.tidyData(S); if (changes.length) { for (const c of changes) { Core._.audit(S, env, null, 'Data clean-up', S.site.name, c); console.log('Data clean-up: ' + c); } store.save(S); } }
 // Demo mode keeps the demo accounts (including 'admin'); the remove list applies to the real site
 removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : DEMO ? [] : siteConfig.remove);
 

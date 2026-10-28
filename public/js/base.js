@@ -179,7 +179,7 @@ const LocalBackend = (() => {
     async init() {
       if (!DB) {
         try { const raw = get(KEY); DB = raw ? JSON.parse(raw) : null; FILES = JSON.parse(get(FKEY) || '{}'); } catch (e) { DB = null; }
-        if (!DB || DB.version !== C.VERSION) fresh();
+        if (!DB || DB.version !== C.VERSION) fresh(); else if (C.tidyData(DB).length) persist();
         SID = get(SKEY); if (SID && !DB.users.some(u => u.id === SID)) SID = null;
       }
       if (C.tick(DB, env)) persist();
@@ -245,7 +245,7 @@ if (!SERVER) inlineEmailIcons();
 /* ---------- State ---------- */
 let S = null, h = null;
 const ui = {editing:false, view:{name:'dashboard', p:{}}, cal:null, attempt:null, timer:null, confirmFn:null, loginErr:'', replyTo:null, lesson:null, msgWith:null, gloss:{letter:'', q:''}, grp:'', csv:null, upload:{}, saveT:null,
-  mode:null, mfaTicket:null, loginView:'login', token:null, lastActive:Date.now(), team:{cohort:'', filter:'all', course:''}, ana:{group:'company', company:'', department:'', course:''}};
+  mode:null, mfaTicket:null, loginView:'login', token:null, lastActive:Date.now(), team:{cohort:'', filter:'all', course:''}, ana:{group:'department', department:'', course:''}};
 function setState(st) { S = st; h = S ? C.H(S, S.me) : null; if (S) { applyBranding(); applyPrefs(); LOGO = logoHTML(); } }
 const FAIL = Symbol('fail');
 async function act(name, payload, okMsg, opts = {}) {

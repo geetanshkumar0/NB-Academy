@@ -233,7 +233,7 @@ op('saveCohort', (S, h, p, env) => {
   need(h.has('cohort:manage'), 'You cannot manage cohorts.');
   let c = p.id ? S.cohorts.find(x => x.id === p.id) : null; const before = c ? new Set(c.members) : new Set();
   if (!c) { c = {id:env.uid('co'), created:env.now()}; S.cohorts.push(c); }
-  Object.assign(c, {name:req(p.name, 'Cohort name', 120), company:str(p.company, 120), department:str(p.department, 120), members:uids(S, p.members), leads:uids(S, p.leads), trainers:uids(S, p.trainers), courses:(p.courses || []).filter(id => S.courses.some(x => x.id === id))});
+  Object.assign(c, {name:req(p.name, 'Cohort name', 120), department:str(p.department, 120), members:uids(S, p.members), leads:uids(S, p.leads), trainers:uids(S, p.trainers), courses:(p.courses || []).filter(id => S.courses.some(x => x.id === id))});
   for (const l of c.leads) if (!S.sysroles.some(r => r.userId === l && r.roleId === 'teamlead')) S.sysroles.push({id:env.uid('sr'), userId:l, roleId:'teamlead'});
   let assigned = 0; for (const m of c.members.filter(x => !before.has(x))) assigned += applyRules(S, env, m);
   audit(S, env, h.meId, p.id ? 'Cohort changed' : 'Cohort created', c.name, `${c.members.length} members, ${c.leads.length} team leads, ${c.trainers.length} trainers, ${c.courses.length} courses`);
@@ -252,7 +252,7 @@ op('deletePath', (S, h, p, env) => { need(h.has('path:manage'), 'You cannot mana
 op('saveRule', (S, h, p, env) => {
   need(h.has('path:manage'), 'You cannot manage assignment rules.');
   const kind = p.targetType === 'path' ? 'path' : 'course'; need(kind === 'path' ? S.paths.some(x => x.id === p.targetId) : S.courses.some(x => x.id === p.targetId), 'Choose what to assign.', 400);
-  const mt = ['all', 'department', 'company', 'cohort'].includes(p.matchType) ? p.matchType : 'all'; need(mt === 'all' || str(p.matchValue).trim(), 'Choose who the rule applies to.', 400);
+  const mt = p.matchType || 'all'; need(['all', 'department', 'cohort'].includes(mt), 'Rules can apply to everyone, a team or a cohort.', 400); need(mt === 'all' || str(p.matchValue).trim(), 'Choose who the rule applies to.', 400);
   let r = p.id ? S.rules.find(x => x.id === p.id) : null; if (!r) { r = {id:env.uid('ru'), created:env.now()}; S.rules.push(r); }
   Object.assign(r, {name:req(p.name, 'Rule name', 120), target:{type:kind, id:p.targetId}, match:{type:mt, value:mt === 'all' ? '' : str(p.matchValue, 120).trim()}, days:Math.max(0, Number(p.days) || 0), active:p.active !== false});
   audit(S, env, h.meId, p.id ? 'Assignment rule changed' : 'Assignment rule created', r.name, `${mt}${r.match.value ? ' = ' + r.match.value : ''} → ${kind} ${p.targetId}, ${r.days} days`);
@@ -545,7 +545,7 @@ function learnerRows(S, h, filter = {}) {
   for (const e of S.enrol) {
     const u = h.user(e.userId), c = h.course(e.courseId); if (!u || !c || u.admin || !h.role(e.role)?.caps?.['mod:submit']) continue;
     if (filter.users && !filter.users.has(u.id)) continue; if (filter.courses && !filter.courses.has(c.id)) continue;
-    if (filter.company && (u.company || '') !== filter.company) continue; if (filter.department && (u.department || '') !== filter.department) continue;
+    if (filter.department && (u.department || '') !== filter.department) continue;
     const status = h.status(c.id, u.id), prog = h.progress(c.id, u.id), total = h.courseTotal(c.id, u.id);
     const quizzes = h.courseMods(c.id).filter(m => m.type === 'quiz' && !m.pretest).map(m => ({m, p:h.quizPercent(m, u.id)})).filter(x => x.p != null);
     const lowQuiz = quizzes.find(x => x.p < (x.m.gradepass || 60));
@@ -583,9 +583,9 @@ SEED_HOOKS.push((S, env, files, ids) => {
   const pw = env.hash ? env.hash('demo') : {password:'demo'};
   const org = {u1:['NB Academy', 'IT'], u2:['NB Academy', 'Learning & Development'], u3:['NB Academy', 'Learning & Development'], u4:['NB Retail', 'Analytics'], u5:['NB Retail', 'Analytics'], u6:['NB Retail', 'Analytics'], u7:['NB Retail', 'Sales'], u8:['NB Retail', 'Sales'], u9:['NB Retail', 'Sales'], u10:['NB Academy', 'Quality']};
   const seen = {u1:0.1, u2:0.2, u3:1, u4:0.3, u5:2, u6:1.5, u7:4, u8:0.5, u9:41, u10:6};
-  for (const u of S.users) Object.assign(u, {company:org[u.id]?.[0] || '', department:org[u.id]?.[1] || '', lastLogin:day(-(seen[u.id] ?? 3)), termsAccepted:1, prefsSet:true, mustChangePassword:false});
-  S.users.push({id:'u11', firstname:'Vikram', lastname:'Rao', username:'vikram', email:'vikram@nbacademy.example', admin:false, company:'NB Retail', department:'Analytics', created:day(-200), lastLogin:day(-1), termsAccepted:1, prefsSet:true, ...pw});
-  S.users.push({id:'u12', firstname:'Nisha', lastname:'Rao', username:'nisha', email:'nisha@nbacademy.example', admin:false, company:'NB Retail', department:'Operations', created:day(-1), termsAccepted:0, prefsSet:false, mustChangePassword:true, ...pw});
+  for (const u of S.users) Object.assign(u, {department:org[u.id]?.[1] || '', lastLogin:day(-(seen[u.id] ?? 3)), termsAccepted:1, prefsSet:true, mustChangePassword:false});
+  S.users.push({id:'u11', firstname:'Vikram', lastname:'Rao', username:'vikram', email:'vikram@nbacademy.example', admin:false, department:'Analytics', created:day(-200), lastLogin:day(-1), termsAccepted:1, prefsSet:true, ...pw});
+  S.users.push({id:'u12', firstname:'Nisha', lastname:'Rao', username:'nisha', email:'nisha@nbacademy.example', admin:false, department:'Operations', created:day(-1), termsAccepted:0, prefsSet:false, mustChangePassword:true, ...pw});
   S.sysroles.push({id:'sr2', userId:'u11', roleId:'teamlead'});
   // Persona mapping from the lifecycle guide: administrators author content; trainers deliver
   S.enrol = S.enrol.filter(e => !(e.courseId === 'c1' && e.userId === 'u3'));
@@ -668,9 +668,9 @@ SEED_HOOKS.push((S, env, files, ids) => {
   S.attempts.push({id:'a_m41_u8', cmid:'m41', userId:'u8', state:'finished', preview:false, answers:{q1:'1', q2:'true', q3:'0'}, score:1, max:3, start:day(-3) - 2e5, finish:day(-3), review:Core.reviewOf(S.mods.m41, {q1:'1', q2:'true', q3:'0'})});
   S.feedbackResponses.push({id:'fr2', cmid:'m48', userId:'u6', answers:{f1:4, f2:'The XLOOKUP examples.'}, time:day(-1)});
   // Cohorts, path, rule, access request
-  S.cohorts.push({id:'co1', name:'Analytics Team · Mumbai', company:'NB Retail', department:'Analytics', members:['u4', 'u5', 'u6'], leads:['u11'], trainers:['u2'], courses:['c1', 'c3', 'c6'], created:day(-60)});
-  S.cohorts.push({id:'co2', name:'Sales Team · Pune', company:'NB Retail', department:'Sales', members:['u7', 'u8', 'u9'], leads:[], trainers:['u3'], courses:['c2', 'c4', 'c6'], created:day(-60)});
-  S.cohorts.push({id:'co3', name:'New hires · October 2026', company:'NB Retail', department:'', members:['u12'], leads:[], trainers:['u3'], courses:['c6'], created:day(-2)});
+  S.cohorts.push({id:'co1', name:'Analytics Team · Mumbai', department:'Analytics', members:['u4', 'u5', 'u6'], leads:['u11'], trainers:['u2'], courses:['c1', 'c3', 'c6'], created:day(-60)});
+  S.cohorts.push({id:'co2', name:'Sales Team · Pune', department:'Sales', members:['u7', 'u8', 'u9'], leads:[], trainers:['u3'], courses:['c2', 'c4', 'c6'], created:day(-60)});
+  S.cohorts.push({id:'co3', name:'New hires · October 2026', department:'', members:['u12'], leads:[], trainers:['u3'], courses:['c6'], created:day(-2)});
   S.paths.push({id:'lp1', name:'Analyst onboarding', description:'Start with safety, then build Excel and Python skills in order.', sequential:true, courses:['c6', 'c1', 'c3'], created:day(-90)});
   S.rules.push({id:'ru1', name:'New hires: Workplace Safety Essentials', target:{type:'course', id:'c6'}, match:{type:'all', value:''}, days:15, active:true, created:day(-200)});
   S.accessRequests.push({id:'ar1', courseId:'c3', userId:'u5', reason:'I was on approved leave for two weeks and missed the deadline. I need about five more days to finish the last topic.', time:day(-1), status:'pending'});

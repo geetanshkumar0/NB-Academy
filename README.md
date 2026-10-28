@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (60 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (61 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -247,7 +247,7 @@ Questions are edited directly on the quiz page, one card per question, much like
 
 ## Teams
 
-- Each person can belong to a **Team**, chosen from a dropdown when adding or editing them. There is no Company field.
+- Each person can belong to a **Team**, chosen from a dropdown when adding or editing them. There is no Company field anywhere, including Analytics and exports; company values saved by older versions are removed at start-up, and the old team name "Training" becomes "Training Team".
 - The list starts with 24 teams, from Legal Servicing to Human Resources. Standard teams added in later versions are added to an existing list automatically, unless an administrator removed them. Administrators can change it under Site administration › Users › **Team list**.
 - The server only accepts teams on the list, matching without regard to capitals or spacing. CSV uploads use a `team` column; `department` is also accepted.
 - Teams are stored as the user's `department`, so assignment rules ("Are in the team…"), cohorts and analytics (Group by Team) use them.

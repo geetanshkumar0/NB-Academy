@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (60 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (61 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -62,7 +62,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | Delete drafts, archive completed courses | Course settings. Tested. |
 | Automatic assignment rules | Admin › Learning paths and rules. Tested. |
 | Overdue approval queue | Approvals |
-| KPIs, active users, completion; drill-down by company, department, trainer, learner | Analytics, CSV export |
+| KPIs, active users, completion; drill-down by team, trainer, course, learner | Analytics, CSV export |
 | Immutable audit logs | Admin › Audit log: hash-chained, database refuses edits, integrity check. Tested. |
 | Preview / test mode | Quiz and lesson preview; "Log in as" |
 

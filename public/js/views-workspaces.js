@@ -117,15 +117,15 @@ VIEWS.approvals = (p) => {
 VIEWS.analytics = () => {
   if (!h.has('analytics:site') && !h.isAdmin()) return currentMode() === 'admin' && h.has('access:approve') ? VIEWS.approvals({}) : notFound();
   const a = ui.ana;
-  let rows = C.learnerRows(S, h, {company:a.company || null, department:a.department || null, courses:a.course ? new Set([a.course]) : null});
+  let rows = C.learnerRows(S, h, {department:a.department || null, courses:a.course ? new Set([a.course]) : null});
   const all = C.summarize(rows);
   const learners = S.users.filter(u => !u.admin);
   const active = learners.filter(u => u.lastLogin && now() - u.lastLogin < 30 * D).length;
   const certs = S.certIssued.filter(c => !c.expires || c.expires > now());
   const expiring = certs.filter(c => c.expires && c.expires > now() && c.expires - now() < 60 * D).length;
-  const companies = [...new Set(S.users.map(u => u.company).filter(Boolean))].sort(), depts = [...new Set(S.users.filter(u => !a.company || u.company === a.company).map(u => u.department).filter(Boolean))].sort();
-  const grp = a.group;
-  const keyOf = {company:r => r.u.company || '(none)', department:r => `${r.u.company || '—'} › ${r.u.department || '(none)'}`, course:r => `${r.c.shortname} · ${r.c.fullname}`, learner:r => fullname(r.u),
+  const depts = [...new Set(S.users.map(u => u.department).filter(Boolean))].sort();
+  const grp = ['department', 'trainer', 'course', 'learner'].includes(a.group) ? a.group : 'department';
+  const keyOf = {department:r => r.u.department || '(no team)', course:r => `${r.c.shortname} · ${r.c.fullname}`, learner:r => fullname(r.u),
     trainer:r => h.teachers(r.c.id).map(t => fullname(t)).join(', ') || '(no trainer)'}[grp];
   const groups = new Map(); for (const r of rows) { const k = keyOf(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
   const table = [...groups.entries()].map(([k, rr]) => ({k, s:C.summarize(rr)})).sort((x, y) => y.s.total - x.s.total);
@@ -133,12 +133,11 @@ VIEWS.analytics = () => {
     <div class="stats" style="margin-bottom:16px">${[['Users', learners.length], ['Active in last 30 days', active], ['Assignments', all.total], ['Completion rate', fmtPct(all.completionRate)], ['Overdue', all.overdue], ['Certificates valid', certs.length], ['Expiring in 60 days', expiring], ['Training hours', all.creditHours.toFixed(1)]].map(([l, v]) => `<div class="stat"><b>${v}</b><span class="muted small">${l}</span></div>`).join('')}</div>
     <div class="card" style="margin-bottom:20px">${distBar(all)}</div>
     <div class="spread" style="margin-bottom:12px"><div class="row">
-      <label class="row small">Group by <select id="anagroup" class="sel-sm">${[['company', 'Company'], ['department', 'Team'], ['trainer', 'Trainer'], ['course', 'Course'], ['learner', 'Individual learner']].map(([k, l]) => `<option value="${k}" ${grp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <select id="anacompany" class="sel-sm" aria-label="Company"><option value="">All companies</option>${companies.map(x => `<option ${a.company === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <label class="row small">Group by <select id="anagroup" class="sel-sm">${[['department', 'Team'], ['trainer', 'Trainer'], ['course', 'Course'], ['learner', 'Individual learner']].map(([k, l]) => `<option value="${k}" ${grp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <select id="anadept" class="sel-sm" aria-label="Team"><option value="">All teams</option>${depts.map(x => `<option ${a.department === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <select id="anacourse" class="sel-sm" aria-label="Course"><option value="">All courses</option>${S.courses.map(c => `<option value="${c.id}" ${a.course === c.id ? 'selected' : ''}>${esc(c.shortname)}</option>`).join('')}</select></div>
       <button class="btn sm" data-act="exportAnalytics">Export CSV</button></div>
-    <div class="tw" style="margin-bottom:24px"><table><thead><tr><th>${{company:'Company', department:'Team', trainer:'Trainer', course:'Course', learner:'Learner'}[grp]}</th><th class="n">Learners</th><th class="n">Assignments</th><th class="n">Completed</th><th class="n">In progress</th><th class="n">Not started</th><th class="n">Overdue</th><th>Completion</th><th class="n">Hours</th></tr></thead><tbody>
+    <div class="tw" style="margin-bottom:24px"><table><thead><tr><th>${{department:'Team', trainer:'Trainer', course:'Course', learner:'Learner'}[grp]}</th><th class="n">Learners</th><th class="n">Assignments</th><th class="n">Completed</th><th class="n">In progress</th><th class="n">Not started</th><th class="n">Overdue</th><th>Completion</th><th class="n">Hours</th></tr></thead><tbody>
       ${table.map(({k, s}) => `<tr><td>${grp === 'learner' ? `<button class="link" data-go="record" data-id="${groups.get(k)[0].u.id}">${esc(k)}</button>` : esc(k)}</td><td class="n">${s.learners}</td><td class="n">${s.total}</td><td class="n">${s.completed}</td><td class="n">${s.inprogress}</td><td class="n">${s.notstarted}</td><td class="n">${s.overdue ? `<b style="color:var(--bad)">${s.overdue}</b>` : 0}</td><td style="min-width:140px"><div class="prog"><div class="bar"><i style="width:${s.completionRate}%"></i></div><span class="num">${fmtPct(s.completionRate)}</span></div></td><td class="n">${s.creditHours.toFixed(1)}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No data for this filter.</td></tr>'}
     </tbody></table></div>
     <h2 style="margin-bottom:10px">Individual detail</h2>${rowTable(rows.sort((x, y) => (y.atRisk - x.atRisk) || x.u.firstname.localeCompare(y.u.firstname)), {id:'anarows'})}`;

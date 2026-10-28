@@ -58,7 +58,7 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 - **Administrator:** `user.admin`, or the site role `manager`. Built-in admins have `builtinAdmin: true`. They are the **super administrators** (`h.isSuperAdmin()`). They hold every persona (`h.personas` returns all four; Trainer and Team Lead views show every course and cohort), and only they can remove admin access (`removeAdmin`), suspend or delete other admins, and they cannot themselves be deleted, suspended or demoted in the app.
 - **Course group chats** (`S.chats`, `S.chatMessages`; ops `createChat`, `updateChat`, `deleteChat`, `sendChatMessage`, `readChat` in core-ext.js): created by the course's trainers or by admins (`h.canManageChats`). `mode: 'course'` means everyone enrolled in the course is a member.
 
-- **Teams:** a user's team is stored in `user.department` and must be one of `S.site.teams` (default `TEAMS` in core.js, editable via `saveTeams`); `normTeam` validates it. The Company field is no longer asked for.
+- **Teams:** a user's team is stored in `user.department` and must be one of `S.site.teams` (default `TEAMS` in core.js, editable via `saveTeams`); `normTeam` validates it. There is no Company field anywhere (forms, rules, Analytics, exports). `tidyData` in core.js runs at every start-up (server and preview): it removes old company values and renames teams in `RENAMED_TEAMS` ("Training" → "Training Team"), logging each change in the audit log.
 
 - **Locks** (step-by-step order `modLock`, overdue lockout `isLocked`, learning-path order `pathLock`) apply only to learners who cannot edit the course: `h.editsCourse(cid)` exempts editors and admins even when they are also enrolled as learners.
 

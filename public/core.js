@@ -521,6 +521,29 @@ const TEMPLATE_VARS = '{firstname} {lastname} {username} {site} {course} {item} 
 const TEAMS = ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal', 'Seller Servicing', 'Owner Servicing', 'Buyer Acquisition and Property Sales', 'PnM Sales', 'PnM Servicing', 'Investment Advisory', 'Loan Sales', 'Loan Servicing', 'CPMS Tenant Search', 'CPMS Servicing', 'PMS Servicing', 'PMS Sales', 'Owner/Seller Sales', 'Tenant/Buyer Sales', 'CPMS Sales', 'NRI Sales', 'Commercial Sales', 'Outbound', 'Hood', 'Training Team', 'Human Resources'];
 const teamsOf = S => Array.isArray(S.site.teams) && S.site.teams.length ? S.site.teams : TEAMS;
 /* A team name from the list (matched without regard to case or spacing), '' for none; anything else is refused */
+/* Clean up stored data from older versions; run on every load. Returns a list of what changed (empty when nothing did).
+   - Company is no longer used: remove it from users and cohorts, and remove rules that matched on it.
+   - The team "Training" became "Training Team". */
+const RENAMED_TEAMS = {'training':'Training Team'};
+function tidyData(S) {
+  const out = [], ren = v => { const k = String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' '); return RENAMED_TEAMS[k] || null; };
+  let comp = 0, moved = 0;
+  for (const x of [...(S.users || []), ...(S.cohorts || [])]) {
+    if ('company' in x) { if (x.company) comp++; delete x.company; }
+    const to = ren(x.department); if (to) { x.department = to; moved++; }
+  }
+  if (comp) out.push(`Company removed from ${comp} record${comp === 1 ? '' : 's'}`);
+  if (moved) out.push(`Team "Training" changed to "Training Team" for ${moved} record${moved === 1 ? '' : 's'}`);
+  const gone = (S.rules || []).filter(r => r.match?.type === 'company');
+  if (gone.length) { S.rules = S.rules.filter(r => !gone.includes(r)); out.push(`Removed ${gone.length} assignment rule${gone.length === 1 ? '' : 's'} that matched on company: ${gone.map(r => r.name).join(', ')}`); }
+  for (const r of S.rules || []) if (r.match?.type === 'department') { const to = ren(r.match.value); if (to) { r.match.value = to; out.push(`Rule "${r.name}" now applies to team "${to}"`); } }
+  if (Array.isArray(S.site?.teams)) {
+    const before = S.site.teams.length, list = [];
+    for (const t of S.site.teams) { const v = ren(t) || t; if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v); }
+    if (list.length !== before || list.some((t, i) => t !== S.site.teams[i])) { S.site.teams = list; out.push('Team list: "Training" merged into "Training Team"'); }
+  }
+  return out;
+}
 function normTeam(S, v) { const x = String(v ?? '').trim(); if (!x) return ''; const key = t => t.toLowerCase().replace(/\s+/g, ' '); const hit = teamsOf(S).find(t => key(t) === key(x)); if (!hit) throw new OpError(`"${x}" is not one of the teams. Choose a team from the list.`, 400); return hit; }
 function defaultSite() {
   return {name:'NB Academy', tagline:'Courses, assessments and progress tracking for every learner.', demo:false, url:'',
@@ -810,7 +833,6 @@ function assignCourse(S, env, byId, uid, cid, due, opts = {}) {
 function ruleMatches(S, r, u) {
   const m = r.match || {}; if (m.type === 'all') return true;
   if (m.type === 'department') return (u.department || '').toLowerCase() === String(m.value || '').toLowerCase();
-  if (m.type === 'company') return (u.company || '').toLowerCase() === String(m.value || '').toLowerCase();
   if (m.type === 'cohort') return !!S.cohorts.find(c => c.id === m.value)?.members.includes(u.id);
   return false;
 }
@@ -884,7 +906,7 @@ function validateUserRows(S, csvText) {
     }
     if (r.password) { try { checkPassword(S, r.password); } catch (e) { errors.push(e.message.replace(/\.$/, '')); } }
     let team = ''; try { team = normTeam(S, r.team ?? r.department); } catch (e) { errors.push(`Team "${r.team ?? r.department}" is not on the team list`); }
-    return {line:i + 2, username:un, firstname:r.firstname, lastname:r.lastname, email:r.email, company:r.company || '', department:team, password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
+    return {line:i + 2, username:un, firstname:r.firstname, lastname:r.lastname, email:r.email, department:team, password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
   });
   return {headers, rows:out, errors:[]};
 }
@@ -935,7 +957,7 @@ op('heartbeat', (S, h, p) => { const e = h.enrolOf(p.cid); if (e && h.isLearner(
 op('updateProfile', (S, h, p, env) => {
   const u = h.user(p.id); need(u, 'User not found.', 404); const manage = h.has('user:manage');
   need(u.id === h.meId || manage, 'You cannot edit this profile.');
-  if (manage) { u.firstname = req(p.firstname, 'First name', 100); u.lastname = req(p.lastname, 'Last name', 100); const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; if (p.company !== undefined) u.company = str(p.company, 120); u.department = normTeam(S, p.team ?? p.department); }
+  if (manage) { u.firstname = req(p.firstname, 'First name', 100); u.lastname = req(p.lastname, 'Last name', 100); const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; u.department = normTeam(S, p.team ?? p.department); }
   if (p.password) {
     if (u.id === h.meId && !h.isAdmin()) need(env.verify(u, String(p.current || '')), 'Your current password is not correct.', 400);
     checkPassword(S, p.password); Object.assign(u, env.hash(String(p.password))); u.pwChanged = env.now(); u.mustChangePassword = u.id !== h.meId;
@@ -984,7 +1006,7 @@ op('newUser', (S, h, p, env) => {
   need(!p.admin || h.isAdmin(), 'Only site administrators can create administrators.');
   const pw = p.password ? String(p.password) : (env.defaultPassword || DEFAULT_PASSWORD);
   if (p.password) checkPassword(S, pw);
-  const u = {id:env.uid('u'), firstname:req(p.firstname, 'First name', 100), lastname:req(p.lastname, 'Last name', 100), username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, company:str(p.company, 120), department:normTeam(S, p.team ?? p.department), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
+  const u = {id:env.uid('u'), firstname:req(p.firstname, 'First name', 100), lastname:req(p.lastname, 'Last name', 100), username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, department:normTeam(S, p.team ?? p.department), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
   S.users.push(u); log(S, env, h.meId, `User created: ${un}`); audit(S, env, h.meId, 'User created', un, `${u.firstname} ${u.lastname} <${u.email}>`);
   if (p.welcome !== false) welcomeUser(S, env, u);
   applyRules(S, env, u.id);
@@ -1034,8 +1056,8 @@ op('uploadUsers', (S, h, p, env) => {
     if (r.errors.length) { res.skipped++; res.errors.push(`Line ${r.line}: ${r.errors.join('; ')}`); continue; }
     let u = findUser(S, r.username);
     let isNew = false;
-    if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:r.firstname, lastname:r.lastname, email:u.builtinAdmin ? u.email : r.email, company:r.company || u.company, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
-    else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, company:r.company, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
+    if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:r.firstname, lastname:r.lastname, email:u.builtinAdmin ? u.email : r.email, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
+    else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
     for (const e of r.enrols) {
       if (!S.enrol.some(x => x.courseId === e.courseId && x.userId === u.id)) { const dd = Number(p.dueDays) || 0; S.enrol.push({id:env.uid('e'), courseId:e.courseId, userId:u.id, role:e.role, time:env.now(), ...(dd && e.role === 'student' ? {due:env.now() + dd * D, mandatory:true, assignedBy:h.meId, source:'upload'} : {})}); res.enrolled++; }
       if (e.group) { let g = S.groups.find(x => x.courseId === e.courseId && x.name.toLowerCase() === e.group.toLowerCase()); if (!g) { g = {id:env.uid('g'), courseId:e.courseId, name:e.group, members:[]}; S.groups.push(g); } if (!g.members.includes(u.id)) g.members.push(u.id); }
@@ -1469,7 +1491,7 @@ function view(S, meId) {
   const V = {version:VERSION, me:meId, site, roles:clone(S.roles), sysroles:clone(S.sysroles), categories:clone(S.categories), now:Date.now()};
   const manageUsers = h.has('user:manage');
   const team = new Set(h.teamMembers(meId)), scope = h.trainerScope(meId);
-  V.users = S.users.map(u => ({id:u.id, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:!!u.admin, created:u.created, suspended:!!u.suspended, company:u.company || '', department:u.department || '', personas:u.personas || [], builtinAdmin:!!u.builtinAdmin,
+  V.users = S.users.map(u => ({id:u.id, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:!!u.admin, created:u.created, suspended:!!u.suspended, department:u.department || '', personas:u.personas || [], builtinAdmin:!!u.builtinAdmin,
     ...(u.id === meId || manageUsers ? {username:u.username, lastLogin:u.lastLogin || null, locked:!!(u.lockedUntil && u.lockedUntil > Date.now()), mfaEnabled:!!u.mfaEnabled, auth:u.auth || 'manual', mustChangePassword:!!u.mustChangePassword} : {}),
     ...(u.id === meId ? {prefs:u.prefs || {}, prefsSet:!!u.prefsSet, termsAccepted:u.termsAccepted || 0} : {}),
     ...(team.has(u.id) || scope.has(u.id) ? {lastLogin:u.lastLogin || null} : {})}));
@@ -1551,5 +1573,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
   gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

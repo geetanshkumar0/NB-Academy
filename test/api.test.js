@@ -436,12 +436,12 @@ test('backup and restore round trip, including users', async () => {
   const r = await op(admin, 'restoreCourse', {backup:b.text, catId:'k1', includeUsers:true});
   assert.equal(r.status, 200); assert.equal(r.json.result.shortname, 'DA101-2'); assert.ok(r.json.result.enrolments >= 6);
 });
-test('CSV upload creates users with company, department, enrolments and due dates', async () => {
+test('CSV upload creates users with department, enrolments and due dates (a company column is ignored)', async () => {
   const admin = await login('admin');
   const csv = 'username,firstname,lastname,email,company,department,course1,role1,group1\nnew.one,New,One,new.one@example.com,NB Retail,Sales,DA101,student,Batch Z\nbad user,Bad,User,nope,,,DA101,student,';
   const r = await op(admin, 'uploadUsers', {csv, defaultPassword:'Pass@2026', dueDays:21});
   assert.equal(r.json.result.created, 1); assert.equal(r.json.result.skipped, 1);
-  const S = getState(); const u = S.users.find(x => x.username === 'new.one'); assert.equal(u.department, 'Sales');
+  const S = getState(); const u = S.users.find(x => x.username === 'new.one'); assert.equal(u.department, 'Sales'); assert.ok(!('company' in u));
   const e = S.enrol.find(x => x.userId === u.id && x.courseId === 'c1'); assert.ok(e.due > Date.now() + 20 * 864e5);
   assert.ok(S.groups.some(g => g.name === 'Batch Z' && g.members.includes(u.id)));
   await login('new.one', 'Pass@2026');
@@ -701,6 +701,29 @@ test('user uploads accept friendly headers (as typed in Excel) and role names', 
   assert.match(src, /xlsxTemplate:/); assert.match(src, /async function readXlsx/);
 });
 
+test('Company is gone: not stored, not shown, not used by rules; old values and the "Training" team are cleaned up', async () => {
+  const a = await login('admin');
+  let r = await op(a, 'newUser', {firstname:'Co', lastname:'Free', username:'co.free', email:'co.free@example.com', welcome:false, personas:['learner'], company:'NB Retail'});
+  assert.equal(r.status, 200, r.text); assert.ok(!('company' in getState().users.find(u => u.id === r.json.result.id)));
+  assert.ok(r.json.state.users.every(u => !('company' in u)), 'the user list sent to the browser has no company');
+  r = await op(a, 'updateProfile', {id:r.json.result.id, firstname:'Co', lastname:'Free', email:'co.free@example.com', company:'X'}); assert.equal(r.status, 200, r.text);
+  assert.ok(!('company' in getState().users.find(u => u.username === 'co.free')));
+  assert.equal((await op(a, 'saveRule', {name:'By company', matchType:'company', matchValue:'NB Retail', targetType:'course', targetId:'c1', days:30})).status, 400);
+  // Clean-up of data saved by older versions
+  const S = {site:{teams:['Legal Sales', 'Training', 'Training Team', 'Hood']},
+    users:[{id:'x1', company:'NB Retail', department:'Training'}, {id:'x2', company:'', department:' training '}, {id:'x3', department:'Hood'}],
+    cohorts:[{id:'k1', name:'T', company:'NB', department:'Training'}],
+    rules:[{id:'r1', name:'Old', match:{type:'company', value:'NB'}}, {id:'r2', name:'Trainers', match:{type:'department', value:'Training'}}]};
+  const changes = Core.tidyData(S);
+  assert.ok(changes.length >= 4, changes.join('\n'));
+  assert.ok([...S.users, ...S.cohorts].every(x => !('company' in x)));
+  assert.deepEqual(S.users.map(u => u.department), ['Training Team', 'Training Team', 'Hood']); assert.equal(S.cohorts[0].department, 'Training Team');
+  assert.deepEqual(S.rules.map(r => [r.id, r.match.value]), [['r2', 'Training Team']]);
+  assert.deepEqual(S.site.teams, ['Legal Sales', 'Training Team', 'Hood']);
+  assert.deepEqual(Core.tidyData(S), [], 'running it again changes nothing');
+  assert.ok(getState().users.every(u => !('company' in u)) && getState().cohorts.every(c => !('company' in c)), 'start-up cleaned the demo data too');
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
@@ -773,3 +796,4 @@ test('the browser tab icon is the NB logo, served from the page and at /favicon.
     assert.match(r.text, /<rect width="32" height="32" rx="7" fill="#d2831a"\/>/);
   }
 });
+
