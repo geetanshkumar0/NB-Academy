@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (59 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (60 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -76,6 +76,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | Excel template for bulk user upload; .xlsx uploads | Upload users: Download Excel template (dropdowns for team, course, role). Tested. |
 | Google Forms-style question editor for quizzes | Quiz page: question cards with autosave, reorder, duplicate. Tested. |
 | Designed welcome email; one colour theme for all emails | Notifications and terms › Email design; template previews. Tested. |
+| Browser tab icon matches the NB Academy logo | Every page; follows Admin › Branding (uploaded logo or brand colours). Tested. |
 | Group chat when a course is created, for trainers and admins | New course form option; course Group chats tab; Messages. Tested. |
 
 ## Limits and decisions

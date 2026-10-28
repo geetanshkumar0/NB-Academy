@@ -37,6 +37,7 @@ npm run build:preview         # dist/preview.html: browser-only edition, data in
   - **Quiz question editor:** `qbBuilder`/`qbCard` (views-activities.js) and the `qb*` actions (actions-ext.js). Cards save themselves with `saveQuestion` and do not redraw the page; a new card gets its final id up front, and each card's saves are chained so nothing is created twice. Structural changes (`qbDup`, `qbMove`, `qbDel`) flush pending saves and redraw.
   - **Forms are submitted by app code, not by the browser** (see `submitForm` in actions.js). The preview runs in a sandboxed frame where native form submission is blocked. Keep `type="submit"` buttons inside `data-form` forms and don't rely on the browser's submit event.
 - `public/app.html` holds the page shell and all CSS. Colours come from CSS variables, and dark mode is supported.
+- **Tab icon (favicon):** the NB mark (`DEFAULT_LOGO` in base.js) is inlined in app.html's `<link id="favicon">` and served at `/favicon.ico` (`FAVICON_SVG` in server.js). `applyFavicon` in base.js switches it to the uploaded site logo, or recolours it with the brand colours.
 - `server/server.js` holds the HTTP server:
   - sessions, CSRF header `X-NB-Request: 1`, uploads, SCORM, certificates and SSO;
   - built-in admins (`ensureSiteAdmins`);

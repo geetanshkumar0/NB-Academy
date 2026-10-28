@@ -762,3 +762,14 @@ test('a demo site started without --demo is cleaned: backup first, then only rea
   db.close();
   assert.doesNotMatch(await run([]), /Demo data removed/, 'only once');
 });
+
+test('the browser tab icon is the NB logo, served from the page and at /favicon.ico', async () => {
+  const page = await call('GET', '/');
+  const m = page.text.match(/<link rel="icon" id="favicon" type="image\/svg\+xml" href="data:image\/svg\+xml,([^"]*)">/);
+  assert.ok(m, 'favicon link in the page head'); assert.match(decodeURIComponent(m[1]), /fill="#d2831a"\/><path [^>]+\/><\/svg>$/);
+  for (const u of ['/favicon.ico', '/favicon.svg']) {
+    const r = await call('GET', u);
+    assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /image\/svg\+xml/);
+    assert.match(r.text, /<rect width="32" height="32" rx="7" fill="#d2831a"\/>/);
+  }
+});

@@ -263,8 +263,19 @@ async function act(name, payload, okMsg, opts = {}) {
 
 /* ---------- Branding and accessibility ---------- */
 function shade(hex, f) { const n = parseInt(hex.slice(1), 16); const c = [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => Math.round(f < 0 ? v * (1 + f) : v + (255 - v) * f)); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); }
+// Browser tab icon: the site's uploaded logo if there is one, otherwise the NB mark in the brand colours.
+function faviconSvg(accent = '#d2831a', nav = '#0d3843') { return DEFAULT_LOGO.replace(' class="logo"', ' xmlns="http://www.w3.org/2000/svg"').replace(' aria-hidden="true"', '').replace('var(--accent)', accent).replace('var(--nav)', nav); }
+function applyFavicon(b) {
+  let el = document.getElementById('favicon'); if (!el) { el = document.createElement('link'); el.id = 'favicon'; el.rel = 'icon'; document.head.appendChild(el); }
+  let href = '';
+  if (b?.logo) href = B.server ? '/api/logo?v=' + encodeURIComponent(b.logo) : (S && fileOf(b.logo) ? B.fileUrl(fileOf(b.logo)) : '');
+  if (href) { el.removeAttribute('type'); }
+  else { el.type = 'image/svg+xml'; href = 'data:image/svg+xml,' + encodeURIComponent(faviconSvg(b?.accent || undefined, b?.primary ? shade(b.primary, -.45) : undefined)); }
+  if (el.getAttribute('href') !== href) el.setAttribute('href', href);
+}
 function applyBranding() {
   const b = (S?.site || window.__site || {}).branding; let st = document.getElementById('brandcss');
+  try { applyFavicon(b); } catch (e) {}
   if (!b || (b.primary === '#0e6175' && b.accent === '#d2831a')) { if (st) st.textContent = ''; return; }
   if (!st) { st = document.createElement('style'); st.id = 'brandcss'; document.head.appendChild(st); }
   const p = b.primary, a = b.accent;
