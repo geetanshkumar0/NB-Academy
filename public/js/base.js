@@ -120,7 +120,7 @@ const ServerBackend = {
   async login(username, password) { return this.req('POST', '/api/login', {username, password}); },
   async loginMfa(ticket, code) { return this.req('POST', '/api/login/mfa', {ticket, code}); },
   async logout() { await this.req('POST', '/api/logout', {}); },
-  async liveJoin(mid) { return this.req('POST', '/api/live/join', {mid}); },
+  async liveJoin(mid, sid) { return this.req('POST', '/api/live/join', sid ? {sid} : {mid}); },
   async op(name, payload, opts) { return this.req('POST', '/api/op', {op:name, payload}, {}, opts || {}); }, // opts.keepalive: still sent if the page is closing
   async loginAs(id) { return (await this.req('POST', '/api/loginas', {id})).state; },
   /* Upload with progress. Files over 16 MB go in 8 MB pieces, 4 at a time, each on its own connection:
@@ -366,7 +366,8 @@ function backLink() {
   if (v === 'mod') { const m = mod(p.id); if (m && h.course(m.courseId)) { to = ['course', m.courseId]; label = `Back to ${h.course(m.courseId).fullname}`; } }
   else if (v === 'attempt' || v === 'lessonplay') { const m = mod((v === 'attempt' ? ui.attempt : ui.lesson)?.cmid); if (m) { to = ['mod', m.id]; label = v === 'attempt' ? `Back to ${m.name} (your answers are saved)` : `Back to ${m.name}`; } }
   else if (v === 'review') { const a = S.attempts.find(x => x.id === p.id), m = a && mod(a.cmid); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
-  else if (v === 'liveroom') { const m = mod(p.id); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
+  else if (v === 'liveroom') { if (p.sid) { const s = (S.sessions || []).find(x => x.id === p.sid); if (s) { to = ['session', s.id]; label = `Back to ${s.name}`; } } else { const m = mod(p.id); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } } }
+  else if (v === 'session' || v === 'sessionEdit') { to = ['sessions', '']; label = 'Back to Live sessions'; }
   else if (v === 'submit' || v === 'grader') { const m = mod(p.id); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
   else if (v === 'discussion') { const d = S.posts.find(x => x.id === p.id), m = d && mod(d.cmid); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
   return to ? `<div class="backbar"><button class="btn ghost sm" data-go="${to[0]}" data-id="${esc(to[1])}"><span aria-hidden="true">←</span> ${esc(label)}</button></div>` : '';
@@ -401,10 +402,12 @@ function navbar() {
   const L = {learner:[['dashboard', 'Dashboard'], ['mycourses', 'My learning'], ['home', 'Library'], ['calendar', 'Calendar']],
     teamlead:[['team', 'Team workspace'], ['calendar', 'Calendar']],
     trainer:[['trainer', 'Trainer workspace'], ['mycourses', 'My courses'], ['calendar', 'Calendar']],
-    admin:[['analytics', 'Analytics'], ...(h.has('access:approve') ? [['approvals', 'Approvals']] : []), ['home', 'Courses'], ...(canSiteAdmin() ? [['admin', 'Site administration']] : [])]}[mode];
+    admin:[['analytics', 'Analytics'], ...(h.has('access:approve') ? [['approvals', 'Approvals']] : []), ['home', 'Courses'], ['sessions', 'Live sessions'], ...(canSiteAdmin() ? [['admin', 'Site administration']] : [])]}[mode];
+  // Anyone invited to a live session also gets the Live sessions tab
+  if (mode !== 'admin' && (S.sessions || []).length) L.splice(L.length - 1, 0, ['sessions', 'Live sessions']);
   const pending = h.has('access:approve') ? S.accessRequests.filter(r => r.status === 'pending').length : 0;
   const courseCtx = ['course', 'participants', 'groups', 'grades', 'badges', 'creports', 'csettings', 'mod', 'attempt', 'review', 'discussion', 'grader', 'submit', 'lessonplay', 'wsassess'].includes(v);
-  const on = k => (k === v || (k === 'mycourses' && courseCtx && mode !== 'admin') || (k === 'home' && courseCtx && mode === 'admin')) ? 'on' : '';
+  const on = k => (k === v || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && mode !== 'admin') || (k === 'home' && courseCtx && mode === 'admin')) ? 'on' : '';
   const um = h.unreadMessages(), un = h.unreadNotifications();
   const notes = S.notifications.slice().sort((a, b) => b.time - a.time).slice(0, 8);
   return `<header class="nav"><div class="nav-in">

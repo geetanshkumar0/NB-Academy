@@ -21,7 +21,19 @@ Object.assign(A, {
     try { const r = await B.liveJoin(d.id); ui.liveRoom = {mid:d.id, url:r.url}; if (r.state) setState(r.state); go('liveroom', {id:d.id}); }
     catch (e) { toast(e.message, 'err'); }
   },
-  liveLeave: d => { ui.liveRoom = null; go('mod', {id:d.id}); },
+  liveLeave: d => { ui.liveRoom = null; if (d.sid) go('session', {id:d.sid}); else go('mod', {id:d.id}); },
+  sessJoin: async d => {
+    if (!B.server) return toast('Video rooms work on the NB Academy server. This browser-only preview cannot hold a meeting.');
+    try { const r = await B.liveJoin(null, d.id); ui.liveRoom = {sid:d.id, url:r.url}; if (r.state) setState(r.state); go('liveroom', {sid:d.id}); } catch (e) { toast(e.message, true); }
+  },
+  sessCancel: d => { const s = S.sessions.find(x => x.id === d.id);
+    openModal('Cancel this session?', `<form data-form="sessCancel" class="stack"><input type="hidden" name="id" value="${s.id}"><p><b>${esc(s.name)}</b>, ${fmtDate(s.start)}. Everyone invited gets a cancellation email.</p>
+      <div class="field"><label for="scr">Reason (optional, included in the email)</label><input id="scr" name="reason" type="text" maxlength="500"></div>
+      <div class="row"><button class="btn danger" type="submit">Cancel the session</button><button class="btn ghost" type="button" data-act="closeModal">Keep it</button></div></form>`); },
+  sessExport: d => { const s = S.sessions.find(x => x.id === d.id);
+    download(`attendance-${s.name.replace(/[^\w-]+/g, '-').toLowerCase()}.csv`, csv([['Name', 'Email', 'Team', 'Attendance', 'Joined'], ...(s.invitees || []).map(id => h.user(id)).filter(Boolean).map(u => { const a = s.attendance?.[u.id] || {}; return [fullname(u), u.email, u.department || '', a.status || '', a.joinedAt ? new Date(a.joinedAt).toISOString() : '']; })])); },
+  spAll: () => { document.querySelectorAll('#sp-list .sp-row:not([hidden]) input').forEach(x => { x.checked = true; }); spCount(); },
+  spNone: () => { document.querySelectorAll('#sp-list .sp-row:not([hidden]) input').forEach(x => { x.checked = false; }); spCount(); },
   vResume: () => { const v = document.getElementById('vplayer'); if (v) v.play().catch(() => {}); },
   vRestart: () => { const v = document.getElementById('vplayer'); if (!v) return; v.currentTime = 0; v.play().catch(() => {}); },
   seek: d => { const v = document.getElementById('vplayer'); if (!v) return; const [mm, ss] = d.t.split(':').slice(-2).map(parseFloat); v.currentTime = (mm || 0) * 60 + (ss || 0); v.play().catch(() => {}); },
@@ -482,3 +494,26 @@ document.addEventListener('change', async e => {
   try { const text = await XL.readXlsx(await t.files[0].arrayBuffer()); const ta = document.getElementById('csvtext'); if (ta) ta.value = text; ui.csv = {...C.validateUserRows(S, text), text}; render(); toast('Excel file read. Check the preview below.'); }
   catch (er) { toast(`This Excel file could not be read: ${er.message}`, true); }
 }, true);
+
+/* Live sessions tab: forms, and the people picker's filters (course, team, search, selected only) */
+Object.assign(F, {
+  session: async (d, f) => {
+    const r = await act('saveSession', {id:d.id || null, name:d.name, description:d.description, start:fromInput(d.start), duration:d.duration, mode:d.mode, link:d.link, location:d.location, invitees:picked(f, 'invitee')}, null, {silent:true, errEl:'sesserr'});
+    if (r === FAIL) return; go('session', {id:r.id}); toast(d.id ? 'Session saved. Changes were emailed to the people invited.' : `Session scheduled. Invitations sent to ${r.invited} ${r.invited === 1 ? 'person' : 'people'}.`);
+  },
+  sessAttendance: async (d, f) => { const marks = {}; for (const [k, v] of Object.entries(d)) if (k.startsWith('att:')) marks[k.slice(4)] = v; await act('sessionAttendance', {id:d.id, marks}, 'Attendance saved'); },
+  sessCancel: async d => { if (await act('cancelSession', {id:d.id, reason:d.reason}, null, {silent:true}) === FAIL) return; closeModal(); render(); toast('Session cancelled. Everyone invited has been told.'); },
+});
+function spCount() { const n = document.querySelectorAll('#sp-list input[name=invitee]:checked').length, el = document.getElementById('sp-count'); if (el) el.textContent = `${n} selected`; }
+function spFilter() {
+  const list = document.getElementById('sp-list'); if (!list) return;
+  const q = (document.getElementById('sp-q')?.value || '').trim().toLowerCase(), c = document.getElementById('sp-course')?.value || '', t = document.getElementById('sp-team')?.value || '', only = document.getElementById('sp-only')?.checked;
+  let shown = 0; for (const r of list.querySelectorAll('.sp-row')) { const ok = (!q || r.dataset.s.includes(q)) && (!c || r.dataset.c.includes(` ${c} `)) && (!t || r.dataset.t === t) && (!only || r.querySelector('input').checked); r.hidden = !ok; if (ok) shown++; }
+  const n = document.getElementById('sp-shown'); if (n) n.textContent = shown; const none = document.getElementById('sp-none'); if (none) none.hidden = shown > 0;
+}
+document.addEventListener('input', e => { if (e.target.id === 'sp-q') spFilter(); });
+document.addEventListener('change', e => {
+  const t = e.target; if (['sp-course', 'sp-team', 'sp-only'].includes(t.id)) spFilter();
+  if (t.name === 'invitee') { spCount(); if (document.getElementById('sp-only')?.checked) spFilter(); }
+  if (t.id === 'ss-mode') document.querySelectorAll('[data-smode]').forEach(x => { x.hidden = x.dataset.smode !== t.value; });
+});

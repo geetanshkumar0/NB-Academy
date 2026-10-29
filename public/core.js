@@ -514,6 +514,10 @@ const DEFAULT_TEMPLATES = {
   recert:{label:'Recertification due', subject:'Recertification due: {course}', body:'Hi {firstname},\n\nYour certificate for {course} expires on {expires}. The course has been assigned to you again. Please complete it by {due} to stay certified.\n\n{link}', email:true, inapp:true},
   nudge:{label:'Reminder from a team lead or trainer', subject:'Reminder from {sender}: {course}', body:'Hi {firstname},\n\n{sender} is reminding you to complete {course}.{duepart}\n\n{link}', email:true, inapp:true},
   liveSession:{label:'Live session reminder', subject:'Upcoming session: {item}', body:'Hi {firstname},\n\nYou are registered for {item} ({course}) on {when}.\n{where}\n\n{link}', email:true, inapp:true},
+  sessionInvite:{label:'Live session invitation (Live sessions tab)', subject:'Invitation: {item} on {when}', body:'Hi {firstname},\n\nYou are invited to a live session.\n\nSession: {item}\nWhen: {when} ({duration})\n{where}\n{about}\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
+  sessionUpdated:{label:'Live session changed (Live sessions tab)', subject:'Updated: {item} on {when}', body:'Hi {firstname},\n\nThe details of a live session you are invited to have changed.\n\nSession: {item}\nWhen: {when} ({duration})\n{where}\n\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
+  sessionCancelled:{label:'Live session cancelled (Live sessions tab)', subject:'Cancelled: {item}', body:'Hi {firstname},\n\n{item} on {when} has been cancelled. {reason}', email:true, inapp:true},
+  sessionReminder:{label:'Live session reminder (Live sessions tab)', subject:'Tomorrow: {item} at {when}', body:'Hi {firstname},\n\nA reminder that you are invited to {item} on {when} ({duration}).\n{where}\n\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
   liveInvite:{label:'Live session invitation', subject:'Invitation: {item} on {when}', body:'Hi {firstname},\n\nYou are invited to a live session.\n\nSession: {item}\nCourse: {course}\nWhen: {when} ({duration})\n{where}\n\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
   liveUpdated:{label:'Live session changed', subject:'Updated: {item} on {when}', body:'Hi {firstname},\n\nThe details of a live session you are invited to have changed.\n\nSession: {item}\nCourse: {course}\nWhen: {when} ({duration})\n{where}\n\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
   liveCancelled:{label:'Live session cancelled', subject:'Cancelled: {item}', body:'Hi {firstname},\n\n{item} ({course}) on {when} has been cancelled. {reason}\n\n{link}', email:true, inapp:true},
@@ -566,12 +570,12 @@ function emptyState() {
     users:[], roles:clone(BUILTIN_ROLES), sysroles:[], categories:[], courses:[], mods:{}, enrol:[], groups:[], completion:{},
     submissions:[], attempts:[], posts:[], messages:[], notifications:[], badges:[], badgeIssued:[], certIssued:[],
     lessonAttempts:[], glossary:[], choiceAnswers:[], wsSubs:[], wsAllocs:[], files:[], logs:[], access:{},
-    cohorts:[], paths:[], rules:[], accessRequests:[], liveSignups:[], feedbackResponses:[], qbank:[], courseVersions:[], outbox:[], audit:[], tokens:[], chats:[], chatMessages:[],
+    cohorts:[], paths:[], rules:[], accessRequests:[], liveSignups:[], feedbackResponses:[], qbank:[], courseVersions:[], outbox:[], audit:[], tokens:[], chats:[], chatMessages:[], sessions:[],
     resume:{}, extraAttempts:{}};
 }
 /* Collections, used by the server for persistence */
 const ARRAYS = ['users', 'roles', 'sysroles', 'categories', 'courses', 'enrol', 'groups', 'submissions', 'attempts', 'posts', 'messages', 'notifications', 'badges', 'badgeIssued', 'certIssued', 'lessonAttempts', 'glossary', 'choiceAnswers', 'wsSubs', 'wsAllocs', 'files', 'logs',
-  'cohorts', 'paths', 'rules', 'accessRequests', 'liveSignups', 'feedbackResponses', 'qbank', 'courseVersions', 'outbox', 'audit', 'tokens', 'chats', 'chatMessages'];
+  'cohorts', 'paths', 'rules', 'accessRequests', 'liveSignups', 'feedbackResponses', 'qbank', 'courseVersions', 'outbox', 'audit', 'tokens', 'chats', 'chatMessages', 'sessions'];
 const MAPS = ['mods', 'completion', 'access', 'resume', 'extraAttempts'];
 
 /* ---------------- SHA-256 (pure JS, used for the audit hash chain) ---------------- */
@@ -697,7 +701,7 @@ const EI = (() => {
   }
   return {iconPng, NAMES};
 })();
-const HEADER_ICON = {liveInvite:'header-calendar', liveUpdated:'header-calendar', liveCancelled:'header-calendar', welcome:'welcome', assigned:'header-book', deadline:'header-bell', overdue:'header-lock', accessRequest:'header-mail', accessApproved:'header-check', accessRejected:'header-lock', graded:'header-check', certificate:'header-award', recert:'header-calendar', nudge:'header-bell', liveSession:'header-calendar', passwordReset:'header-key'};
+const HEADER_ICON = {sessionInvite:'header-calendar', sessionUpdated:'header-calendar', sessionCancelled:'header-calendar', sessionReminder:'header-calendar', liveInvite:'header-calendar', liveUpdated:'header-calendar', liveCancelled:'header-calendar', welcome:'welcome', assigned:'header-book', deadline:'header-bell', overdue:'header-lock', accessRequest:'header-mail', accessApproved:'header-check', accessRejected:'header-lock', graded:'header-check', certificate:'header-award', recert:'header-calendar', nudge:'header-bell', liveSession:'header-calendar', passwordReset:'header-key'};
 /* Where emails load their icons from. On the server: /email-assets/... (made absolute when sent). In the browser-only preview: inline images. */
 let emailIconUrl = (name, hex) => `/email-assets/${name}-${hex.slice(1).toUpperCase()}.png`;
 /* ---------- Email rendering: every email shares one look (the site's email colour) ---------- */
@@ -707,7 +711,7 @@ function emailPalette(S) {
   const mix = (hex, w) => '#' + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - w) + 255 * w).toString(16).padStart(2, '0')).join('');
   return {brand:c, brandSoft:mix(c, 0.94), brandLine:mix(c, 0.8)};
 }
-const CTA = {liveInvite:'Open the session', liveUpdated:'Open the session', liveCancelled:'Open NB Academy', welcome:'Set Your Password', assigned:'Start the course', deadline:'Continue the course', overdue:'Request access', accessRequest:'Review the request', accessApproved:'Continue the course', accessRejected:'Open NB Academy', graded:'See the feedback', certificate:'View your certificate', recert:'Start the course', nudge:'Open the course', liveSession:'View the session', passwordReset:'Choose a new password'};
+const CTA = {sessionInvite:'Open the session', sessionUpdated:'Open the session', sessionCancelled:'Open NB Academy', sessionReminder:'Open the session', liveInvite:'Open the session', liveUpdated:'Open the session', liveCancelled:'Open NB Academy', welcome:'Set Your Password', assigned:'Start the course', deadline:'Continue the course', overdue:'Request access', accessRequest:'Review the request', accessApproved:'Continue the course', accessRejected:'Open NB Academy', graded:'See the feedback', certificate:'View your certificate', recert:'Start the course', nudge:'Open the course', liveSession:'View the session', passwordReset:'Choose a new password'};
 const fillHtml = (tpl, vars) => String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? escHtml(vars[k]) : '');
 /* The same design as the welcome email, for any template: coloured header with the subject, the message, a button for the link, footer */
 function emailLayout(S, key, subject, text, v) {

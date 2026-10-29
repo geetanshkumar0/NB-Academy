@@ -339,6 +339,75 @@ op('liveRegister', (S, h, p, env) => {
   const taken = S.liveSignups.filter(x => x.cmid === m.id && !x.archived).length; need(!m.capacity || taken < m.capacity, 'This session is full.', 400);
   if (!S.liveSignups.some(x => x.cmid === m.id && x.userId === h.meId && !x.archived)) S.liveSignups.push({id:env.uid('ls'), cmid:m.id, userId:h.meId, status:'registered', time:env.now()});
 });
+/* ---------------- Live sessions tab: sessions scheduled by administrators, outside courses ----------------
+   The administrator picks invitees from all registered users. Invitations, changes and cancellations are emailed
+   from the site's own address with a link to the session page (?go=session). Joining records attendance. */
+const canSchedule = h => h.isAdmin() || h.has('site:config');
+const sessOf = (S, id) => { const s = (S.sessions || []).find(x => x.id === id); need(s, 'Live session not found.', 404); return s; };
+const sessEnd = s => s.start + (s.duration || 60) * 6e4;
+function sessVars(s, extra) { return {item:s.name, when:fmtD(s.start), duration:`${s.duration || 60} minutes`, where:Core.liveWhere(s), about:s.description ? `\n${s.description}\n` : '', reason:'', short:fmtD(s.start), ...extra}; }
+const newRoom = env => ('nbacademy-' + env.uid('').replace(/[^a-z0-9]/gi, '') + Math.random().toString(36).slice(2, 10)).toLowerCase();
+op('saveSession', (S, h, p, env) => {
+  need(canSchedule(h), 'Only administrators can schedule live sessions.');
+  S.sessions ||= []; const isNew = !p.id, s = isNew ? {id:env.uid('ls'), created:env.now(), createdBy:h.meId, attendance:{}, invited:[]} : sessOf(S, p.id);
+  need(!s.cancelled, 'This session was cancelled.', 400);
+  const was = isNew ? null : JSON.stringify([s.start, s.duration, s.mode, s.location, s.link]);
+  s.name = req(p.name, 'Title', 200); s.description = str(p.description, 5000).trim();
+  const start = Number(p.start); need(start > 0, 'Set the date and time.', 400); need(!isNew || start > env.now() - 6e4, 'The start time is in the past.', 400); s.start = start;
+  s.duration = Math.min(600, Math.max(5, Number(p.duration) || 60));
+  s.mode = ['room', 'vilt', 'ilt'].includes(p.mode) ? p.mode : 'room';
+  s.link = str(p.link, 500).trim(); s.location = str(p.location, 300).trim();
+  if (s.mode === 'vilt') need(/^https?:\/\//i.test(s.link), 'Enter the meeting link, starting with https://', 400);
+  if (s.mode === 'ilt') need(s.location, 'Enter the location.', 400);
+  if (s.mode === 'room' && !s.room) s.room = newRoom(env);
+  const ids = [...new Set(Array.isArray(p.invitees) ? p.invitees.map(String) : [])];
+  const missing = ids.filter(id => !h.user(id)); need(!missing.length, 'Some of the people chosen no longer exist. Reload the page and try again.', 400);
+  const off = ids.filter(id => h.user(id).suspended); need(!off.length, `Suspended: ${off.map(id => h.fullname(id)).join(', ')}`, 400);
+  need(ids.length, 'Choose at least one person to invite.', 400); need(ids.length <= 2000, 'Invite at most 2,000 people to one session.', 400);
+  const removed = (s.invitees || []).filter(id => !ids.includes(id)); s.invitees = ids;
+  if (isNew) S.sessions.push(s);
+  const changed = !isNew && was !== JSON.stringify([s.start, s.duration, s.mode, s.location, s.link]);
+  // Emails, only for sessions still to come
+  const sent = new Set(s.invited || []), v = sessVars(s);
+  if (sessEnd(s) > env.now()) {
+    for (const id of ids) { if (!sent.has(id)) { notifyT(S, env, 'sessionInvite', id, v, 'session', s.id); sent.add(id); } else if (changed) notifyT(S, env, 'sessionUpdated', id, v, 'session', s.id); }
+    for (const id of removed) if (sent.has(id)) { notifyT(S, env, 'sessionCancelled', id, {...v, reason:'You are no longer invited to this session.'}, 'dashboard'); sent.delete(id); }
+  }
+  s.invited = [...sent]; if (changed) s.reminded = [];
+  audit(S, env, h.meId, isNew ? 'Live session scheduled' : 'Live session changed', s.name, `${fmtD(s.start)} · ${ids.length} invited${removed.length ? ` · ${removed.length} removed` : ''}`);
+  return {id:s.id, invited:ids.length};
+});
+op('cancelSession', (S, h, p, env) => {
+  need(canSchedule(h), 'Only administrators can cancel live sessions.'); const s = sessOf(S, p.id); need(!s.cancelled, 'This session is already cancelled.', 400);
+  s.cancelled = env.now(); const reason = str(p.reason, 500).trim();
+  if (sessEnd(s) > env.now()) for (const id of s.invited || []) notifyT(S, env, 'sessionCancelled', id, sessVars(s, {reason}), 'dashboard');
+  audit(S, env, h.meId, 'Live session cancelled', s.name, fmtD(s.start));
+});
+op('sessionAttendance', (S, h, p, env) => {
+  need(canSchedule(h), 'Only administrators can change attendance.'); const s = sessOf(S, p.id); s.attendance ||= {};
+  for (const [uid, st] of Object.entries(p.marks || {})) { if (!(s.invitees || []).includes(uid)) continue;
+    if (!st) delete s.attendance[uid]; else if (['present', 'late', 'absent'].includes(st)) s.attendance[uid] = {...(s.attendance[uid] || {}), status:st, by:h.meId}; }
+  audit(S, env, h.meId, 'Live session attendance saved', s.name);
+});
+op('sessionJoin', (S, h, p, env) => {
+  const s = sessOf(S, p.id), admin = canSchedule(h), invited = (s.invitees || []).includes(h.meId);
+  need(admin || invited, 'You are not invited to this session.'); need(!s.cancelled, 'This session was cancelled.', 400);
+  need(s.mode === 'room', 'This session is not held in NB Academy.', 400);
+  const t = env.now(); need(t >= s.start - (admin ? 60 : 15) * 6e4, `The room opens ${admin ? 60 : 15} minutes before the session starts (${fmtD(s.start)}).`, 400);
+  need(t <= sessEnd(s) + (admin ? 120 : 30) * 6e4, 'This session has ended.', 400);
+  if (invited) { s.attendance ||= {}; const a = s.attendance[h.meId] ||= {}; if (!a.status || a.status === 'absent' && !a.by) a.status = t > s.start + 10 * 6e4 ? 'late' : 'present'; a.joinedAt ||= t; a.lastJoin = t; }
+  if (!s.room) s.room = newRoom(env);
+  const u = h.me(); return {room:s.room, name:`${u.firstname} ${u.lastname}`.trim(), email:u.email || '', id:u.id, moderator:admin, until:sessEnd(s) + 3 * 3600e3};
+});
+// Reminders the day before, and what each person may see
+function sessionTick(S, env) { let n = 0; const now = env.now();
+  for (const s of S.sessions || []) { if (s.cancelled || s.start <= now || s.start - now > D) continue; s.reminded ||= [];
+    for (const id of s.invited || []) if (!s.reminded.includes(id)) { notifyT(S, env, 'sessionReminder', id, sessVars(s), 'session', s.id); s.reminded.push(id); n++; } }
+  return n; }
+VIEW_HOOKS.push((S, h, V) => { const meId = h.meId;
+  if (canSchedule(h)) { V.sessions = clone(S.sessions || []).map(s => { delete s.room; return s; }); return; }
+  V.sessions = (S.sessions || []).filter(s => (s.invitees || []).includes(meId)).map(s => ({id:s.id, name:s.name, description:s.description, start:s.start, duration:s.duration, mode:s.mode, location:s.location, link:s.link, cancelled:s.cancelled || null, invitedCount:(s.invitees || []).length, mine:clone(s.attendance?.[meId] || null)}));
+});
 /* Joining a session held in NB Academy: checks who and when, records attendance, and returns what the server needs
    to sign the meeting link (the server adds the Jitsi address and the signed token; see /api/live/join). */
 op('liveJoin', (S, h, p, env) => {
@@ -554,6 +623,7 @@ function tick(S, env) {
     notifyT(S, env, 'recert', ci.userId, {course:c.fullname, expires:fmtD(ci.expires), due:fmtD(ci.expires), short:`Complete by ${fmtD(ci.expires)}`}, 'course', c.id);
     audit(S, env, null, 'Recertification started', `${c.shortname} › ${h.fullname(ci.userId)}`, `Certificate ${ci.code} expires ${fmtD(ci.expires)}`); n++;
   }
+  n += sessionTick(S, env); // Live sessions tab: reminders the day before
   // live session reminders 24 hours before
   for (const x of S.liveSignups) {
     if (x.archived || x.reminded || x.status !== 'registered') continue; const m = S.mods[x.cmid]; if (!m?.start) continue;

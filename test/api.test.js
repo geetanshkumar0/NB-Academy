@@ -826,6 +826,52 @@ test('quiz questions upload in bulk (Sno | Question Text | A–F | Correct Answe
   const csv = Core.csvGrid('Question Text,A,B,Correct Answer\n"Pick, carefully",Yes,No,No\n');
   assert.deepEqual(Core.parseQuestionRows(csv).questions[0].options, [{text:'Yes', correct:false}, {text:'No', correct:true}]);
 });
+test('Live sessions tab: admins schedule for any registered users, invitations by email, join, attendance, reminders, cancel', async () => {
+  const a = await login('admin'), S0 = getState(), by = n => S0.users.find(u => u.username === n);
+  const asha = by('asha'), kabir = by('kabir'), vikram = by('vikram');
+  const inNoCourse = S0.users.find(u => !u.suspended && !u.admin && !S0.enrol.some(e => e.userId === u.id));
+  const people = [asha.id, kabir.id, vikram.id, ...(inNoCourse ? [inNoCourse.id] : [])];
+  const base = {name:'Legal process walkthrough', description:'Bring your questions.', duration:45, mode:'room', link:'', location:''};
+  assert.equal((await op(await login('rohan'), 'saveSession', {...base, start:Date.now() + 864e5, invitees:[asha.id]})).status, 403, 'only administrators schedule');
+  assert.equal((await op(a, 'saveSession', {...base, start:Date.now() + 864e5, invitees:[]})).status, 400, 'someone must be invited');
+  assert.equal((await op(a, 'saveSession', {...base, mode:'vilt', start:Date.now() + 864e5, invitees:[asha.id]})).status, 400, 'an outside link is needed for that mode');
+  let n = getState().outbox.length;
+  let r = await op(a, 'saveSession', {...base, start:Date.now() + 2 * 864e5, invitees:people}); assert.equal(r.status, 200, r.text);
+  const sid = r.json.result.id; assert.equal(r.json.result.invited, people.length);
+  const inv = getState().outbox.slice(n); assert.deepEqual(inv.map(x => x.key), people.map(() => 'sessionInvite'));
+  assert.match(inv[0].subject, /^Invitation: Legal process walkthrough on /); assert.match(inv[0].body, /\?go=session&id=/); assert.match(inv[0].body, /Bring your questions/); assert.doesNotMatch(inv[0].body, /Course:/);
+  assert.ok(r.json.state.sessions.some(s => s.id === sid && s.invitees.length === people.length), 'admins see who is invited');
+  // Invitees see their session (not the list); others see nothing
+  const ca = await login('asha'), mine = (await state(ca)).sessions;
+  assert.equal(mine.length, 1); assert.equal(mine[0].invitedCount, people.length); assert.equal(mine[0].invitees, undefined); assert.equal(mine[0].room, undefined);
+  assert.deepEqual((await state(await login('priya'))).sessions, []);
+  // Change the time: everyone gets an update; remove someone: they get a cancellation
+  n = getState().outbox.length; const s = getState().sessions.find(x => x.id === sid);
+  r = await op(a, 'saveSession', {...base, id:sid, start:s.start + 3600e3, invitees:people}); assert.equal(r.status, 200, r.text);
+  assert.deepEqual(getState().outbox.slice(n).map(x => x.key), people.map(() => 'sessionUpdated'));
+  n = getState().outbox.length; r = await op(a, 'saveSession', {...base, id:sid, start:s.start, invitees:people.filter(id => id !== kabir.id)});
+  assert.deepEqual(getState().outbox.slice(n).map(x => [x.key, x.userId]), [['sessionCancelled', kabir.id]]);
+  // Reminder the day before, once
+  r = await op(a, 'saveSession', {...base, id:sid, start:Date.now() + 20 * 3600e3, invitees:[asha.id, vikram.id]}); assert.equal(r.status, 200);
+  n = getState().outbox.length; runTick(); runTick();
+  assert.deepEqual(getState().outbox.slice(n).filter(x => x.key === 'sessionReminder').map(x => x.userId).sort(), [asha.id, vikram.id].sort());
+  // Join: needs the meeting server, then opens 15 minutes before; attendance is recorded
+  await op(a, 'saveIntegration', {kind:'meetings', server:'https://meet.example.com', appId:'nbacademy', secret:'k-123'});
+  r = await call('POST', '/api/live/join', {sid}, ca); assert.equal(r.status, 400); assert.match(r.json.error, /opens 15 minutes before/);
+  await op(a, 'saveSession', {...base, id:sid, start:Date.now() + 5 * 6e4, invitees:[asha.id, vikram.id]});
+  r = await call('POST', '/api/live/join', {sid}, ca); assert.equal(r.status, 200, r.text);
+  assert.match(r.json.url, new RegExp(`^https://meet\\.example\\.com/${getState().sessions.find(x => x.id === sid).room}\\?jwt=`));
+  assert.equal(getState().sessions.find(x => x.id === sid).attendance[asha.id].status, 'present');
+  assert.equal((await call('POST', '/api/live/join', {sid}, await login('kabir'))).status, 403, 'removed people cannot join');
+  assert.equal((await op(ca, 'sessionJoin', {id:sid})).status, 400, 'joining only goes through /api/live/join');
+  r = await op(a, 'sessionAttendance', {id:sid, marks:{[vikram.id]:'absent', [kabir.id]:'present'}}); assert.equal(r.status, 200);
+  const att = getState().sessions.find(x => x.id === sid).attendance; assert.equal(att[vikram.id].status, 'absent'); assert.equal(att[kabir.id], undefined, 'only invitees have attendance');
+  // Cancel: everyone invited is told, with the reason; nobody can join
+  n = getState().outbox.length; r = await op(a, 'cancelSession', {id:sid, reason:'Trainer unavailable.'}); assert.equal(r.status, 200);
+  const cx = getState().outbox.slice(n); assert.deepEqual(cx.map(x => x.key), ['sessionCancelled', 'sessionCancelled']); assert.match(cx[0].body, /Trainer unavailable\./);
+  assert.equal((await call('POST', '/api/live/join', {sid}, ca)).status, 400);
+  await op(a, 'saveIntegration', {kind:'meetings', server:'', appId:'nbacademy'});
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

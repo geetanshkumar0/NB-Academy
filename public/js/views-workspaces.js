@@ -167,3 +167,79 @@ function chatForm(cid, chat) {
     <p class="err" id="cherr" hidden></p>
     <div class="mfoot">${chat ? `<button class="btn ghost danger" type="button" data-act="deleteChat" data-id="${chat.id}" style="margin-right:auto">Delete chat</button>` : ''}<button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">${chat ? 'Save changes' : 'Create chat'}</button></div></form>`, true);
 }
+
+/* ---------- Live sessions tab: scheduled by administrators for any registered users, outside courses ---------- */
+const canScheduleSessions = () => !!me()?.admin || h.has('site:config');
+const sessEndT = s => s.start + (s.duration || 60) * 6e4;
+const sessWhere = s => s.mode === 'ilt' ? `In person · ${esc(s.location || '')}` : s.mode === 'vilt' ? 'Online · outside meeting link' : 'Online · video room in NB Academy';
+const sessState = s => s.cancelled ? '<span class="chip bad">Cancelled</span>' : now() > sessEndT(s) ? '<span class="chip">Finished</span>' : now() >= s.start ? '<span class="chip ok">Happening now</span>' : `<span class="chip brand">In ${dur(s.start - now())}</span>`;
+const sessAttended = s => Object.values(s.attendance || {}).filter(a => a.status === 'present' || a.status === 'late').length;
+VIEWS.sessions = () => {
+  const admin = canScheduleSessions(), all = (S.sessions || []).slice().sort((a, b) => a.start - b.start);
+  const up = all.filter(s => !s.cancelled && sessEndT(s) >= now()), past = all.filter(s => s.cancelled || sessEndT(s) < now()).reverse();
+  const row = s => `<tr><td><button class="link" data-go="session" data-id="${s.id}"><b>${esc(s.name)}</b></button><div class="muted small">${sessWhere(s)}</div></td><td class="small">${fmtDate(s.start)}<div class="muted">${s.duration || 60} min</div></td>
+    <td class="n">${admin ? (s.invitees || []).length : s.invitedCount}</td>${admin ? `<td class="n">${sessAttended(s)}</td>` : `<td>${s.mine?.status ? `<span class="chip ok">${s.mine.status === 'late' ? 'Attended (late)' : s.mine.status === 'absent' ? 'Absent' : 'Attended'}</span>` : ''}</td>`}<td>${sessState(s)}</td></tr>`;
+  const table = (list, empty) => list.length ? `<div class="tw"><table><thead><tr><th>Session</th><th>When</th><th class="n">Invited</th>${admin ? '<th class="n">Attended</th>' : '<th>You</th>'}<th>Status</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>` : `<div class="card muted">${empty}</div>`;
+  return `${phead([['Live sessions']], 'Live sessions', admin ? '<button class="btn primary" data-go="sessionEdit">＋ Schedule a live session</button>' : '')}
+    <h2 style="margin:4px 0 10px">Upcoming</h2>${table(up, admin ? 'No sessions scheduled. Use "Schedule a live session" to invite people.' : 'You have no upcoming live sessions.')}
+    <h2 style="margin:24px 0 10px">Past and cancelled</h2>${table(past, 'None yet.')}`;
+};
+VIEWS.session = p => {
+  const s = (S.sessions || []).find(x => x.id === p.id); if (!s) return notFound();
+  const admin = canScheduleSessions(), past = now() > sessEndT(s), room = s.mode === 'room';
+  const open = room && !s.cancelled && now() >= s.start - (admin ? 60 : 15) * 6e4 && now() <= sessEndT(s) + (admin ? 120 : 30) * 6e4;
+  const join = s.cancelled || past && !open ? '' : room ? (open ? `<button class="btn primary" data-act="sessJoin" data-id="${s.id}">▶ Join the session</button>` : `<button class="btn" disabled>Join opens ${admin ? 60 : 15} min before the start</button>`)
+    : s.mode === 'vilt' && s.link ? `<a class="btn primary" href="${esc(s.link)}" target="_blank" rel="noopener">Join the meeting ↗</a>` : '';
+  let html = `${phead([['Live sessions', 'sessions'], [s.name]], s.name, admin && !s.cancelled ? `<div class="row"><button class="btn" data-go="sessionEdit" data-id="${s.id}">Edit</button><button class="btn danger" data-act="sessCancel" data-id="${s.id}">Cancel session</button></div>` : '')}
+    <div class="card stack" style="max-width:760px"><div class="fgrid">
+      <div><span class="eyebrow">When</span><div><b>${fmtDate(s.start)}</b><br><span class="muted small">${s.duration || 60} minutes</span></div></div>
+      <div><span class="eyebrow">Where</span><div>${s.mode === 'ilt' ? esc(s.location || '') : s.mode === 'vilt' ? (s.link ? `<a href="${esc(s.link)}" target="_blank" rel="noopener">Meeting link ↗</a>` : 'Link to follow') : `Video room in NB Academy${S.site.meetings?.ready ? '' : ' <span class="muted small">(not set up yet)</span>'}`}</div></div>
+      <div><span class="eyebrow">Status</span><div>${sessState(s)}</div></div>
+      <div><span class="eyebrow">Invited</span><div>${admin ? (s.invitees || []).length : s.invitedCount} ${(admin ? (s.invitees || []).length : s.invitedCount) === 1 ? 'person' : 'people'}</div></div></div>
+      ${s.description ? `<div class="prose">${esc(s.description).replace(/\n/g, '<br>')}</div>` : ''}
+      ${join ? `<div class="row">${join}</div>` : ''}
+      ${room && !admin && !s.cancelled ? '<p class="muted small">Joining from here records your attendance.</p>' : ''}</div>`;
+  if (admin) {
+    const people = (s.invitees || []).map(id => h.user(id)).filter(Boolean).sort((a, b) => fullname(a).localeCompare(fullname(b)));
+    html += `<section class="stack" style="margin-top:22px;max-width:960px"><div class="spread"><h2>Attendance</h2><span class="muted small">${sessAttended(s)} of ${people.length} attended</span></div>
+      <form data-form="sessAttendance" class="stack"><input type="hidden" name="id" value="${s.id}"><div class="tw"><table><thead><tr><th>Person</th><th>Email</th><th>Team</th><th>Joined</th><th>Attendance</th></tr></thead><tbody>
+      ${people.map(u => { const a = s.attendance?.[u.id] || {}; return `<tr><td>${esc(fullname(u))}</td><td class="small">${esc(u.email || '')}</td><td class="small">${esc(u.department || '')}</td><td class="small">${a.joinedAt ? fmtShort(a.joinedAt) : '–'}</td>
+        <td><select name="att:${u.id}" class="sel-sm" aria-label="Attendance for ${esc(fullname(u))}">${[['', '—'], ['present', 'Present'], ['late', 'Late'], ['absent', 'Absent']].map(([v, l]) => `<option value="${v}" ${(a.status || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`; }).join('')}
+      </tbody></table></div><div class="row"><button class="btn primary" type="submit">Save attendance</button><button class="btn" type="button" data-act="sessExport" data-id="${s.id}">Export CSV</button></div></form></section>`;
+  }
+  return html;
+};
+/* Schedule or edit: details, then pick people from everyone registered, filtered by course, team or a search */
+VIEWS.sessionEdit = p => {
+  if (!canScheduleSessions()) return notFound();
+  const s = p.id ? (S.sessions || []).find(x => x.id === p.id) : null; if (p.id && !s) return notFound();
+  const v = s || {mode:'room', duration:60, start:Math.ceil((now() + D) / 36e5) * 36e5}, sel = new Set(s?.invitees || []);
+  const users = S.users.filter(u => !u.suspended || sel.has(u.id)).sort((a, b) => fullname(a).localeCompare(fullname(b)));
+  const coursesOf = {}; for (const e of S.enrol) (coursesOf[e.userId] ||= []).push(e.courseId);
+  const courses = S.courses.filter(c => c.status !== 'archived').sort((a, b) => a.fullname.localeCompare(b.fullname)), teams = [...new Set(users.map(u => u.department).filter(Boolean))].sort();
+  const ready = S.site.meetings?.ready;
+  return `${phead([['Live sessions', 'sessions'], [s ? 'Edit' : 'Schedule']], s ? `Edit: ${s.name}` : 'Schedule a live session')}
+  <form data-form="session" class="stack" style="max-width:980px">${s ? `<input type="hidden" name="id" value="${s.id}">` : ''}
+    <section class="card stack"><h2>Details</h2><div class="fgrid">
+      <div class="field full"><label for="ss-name">Title</label><input id="ss-name" name="name" type="text" required maxlength="200" value="${esc(v.name || '')}" placeholder="e.g. Legal process walkthrough"></div>
+      <div class="field"><label for="ss-start">Date and time</label><input id="ss-start" name="start" type="datetime-local" required value="${toInput(v.start)}"></div>
+      <div class="field"><label for="ss-dur">Duration (minutes)</label><input id="ss-dur" name="duration" type="number" min="5" max="600" value="${v.duration || 60}"></div>
+      <div class="field"><label for="ss-mode">Where</label><select id="ss-mode" name="mode"><option value="room" ${v.mode === 'room' ? 'selected' : ''}>Online in NB Academy (video room)</option><option value="vilt" ${v.mode === 'vilt' ? 'selected' : ''}>Online, with an outside meeting link</option><option value="ilt" ${v.mode === 'ilt' ? 'selected' : ''}>In person</option></select>
+        ${ready ? '' : '<span class="hint">Video rooms need the meeting server (Site administration › Email, sign-in and meetings). You can still schedule and invite now.</span>'}</div>
+      <div class="field" data-smode="vilt" ${v.mode === 'vilt' ? '' : 'hidden'}><label for="ss-link">Meeting link</label><input id="ss-link" name="link" type="url" placeholder="https://" value="${esc(v.link || '')}"></div>
+      <div class="field" data-smode="ilt" ${v.mode === 'ilt' ? '' : 'hidden'}><label for="ss-loc">Location</label><input id="ss-loc" name="location" type="text" value="${esc(v.location || '')}"></div>
+      <div class="field full"><label for="ss-desc">Description (optional, included in the invitation)</label><textarea id="ss-desc" name="description" rows="3">${esc(v.description || '')}</textarea></div></div></section>
+    <section class="card stack"><div class="spread"><h2>Invite people</h2><b id="sp-count" class="small">${sel.size} selected</b></div>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input type="search" id="sp-q" placeholder="Search name or email" aria-label="Search people" style="flex:1;min-width:200px">
+        <select id="sp-course" class="sel-sm" aria-label="Filter by course"><option value="">All registered users</option>${courses.map(c => `<option value="${c.id}">${esc(c.shortname)} · ${esc(c.fullname)}</option>`).join('')}</select>
+        <select id="sp-team" class="sel-sm" aria-label="Filter by team"><option value="">All teams</option>${teams.map(t => `<option>${esc(t)}</option>`).join('')}</select>
+        <label class="check small"><input type="checkbox" id="sp-only"> Selected only</label></div>
+      <div class="row small"><button type="button" class="btn sm" data-act="spAll">Select all shown (<span id="sp-shown">${users.length}</span>)</button><button type="button" class="btn sm ghost" data-act="spNone">Clear shown</button></div>
+      <div class="sp-list" id="sp-list">${users.map(u => `<label class="sp-row" data-s="${esc((fullname(u) + ' ' + (u.email || '') + ' ' + (u.username || '')).toLowerCase())}" data-c=" ${(coursesOf[u.id] || []).join(' ')} " data-t="${esc(u.department || '')}">
+        <input type="checkbox" name="invitee" value="${u.id}" ${sel.has(u.id) ? 'checked' : ''}><span class="sp-name">${esc(fullname(u))}${u.suspended ? ' <span class="chip bad">Suspended</span>' : ''}</span><span class="sp-mail muted">${esc(u.email || '')}</span><span class="sp-team muted">${esc(u.department || '')}</span></label>`).join('') || '<div class="empty">No users yet.</div>'}
+        <div class="empty" id="sp-none" hidden>No one matches these filters.</div></div>
+      <p class="muted small" style="margin:0">Invitations are emailed from NB Academy's email address when you save, with a link to this session. People you add later get an invitation; people you remove get a cancellation; changing the time or place emails everyone an update.</p></section>
+    <span class="err" id="sesserr" hidden></span>
+    <div class="row"><button class="btn primary" type="submit">${s ? 'Save and notify changes' : 'Schedule and send invitations'}</button><button class="btn ghost" type="button" data-go="${s ? 'session' : 'sessions'}" ${s ? `data-id="${s.id}"` : ''}>Cancel</button></div></form>`;
+};

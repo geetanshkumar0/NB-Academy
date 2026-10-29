@@ -490,13 +490,13 @@ BODIES.video = (m, c) => {
 /* The video room of a live session held in NB Academy: the meeting runs in a frame on this page.
    The signed link is kept in memory only (ui.liveRoom), never in the address bar or browser history. */
 VIEWS.liveroom = p => {
-  const m = S.mods[p.id]; if (!m || m.type !== 'live') return notFound();
-  const c = h.course(m.courseId), r = ui.liveRoom?.mid === m.id ? ui.liveRoom : null;
-  return `<div class="spread" style="margin-bottom:10px"><div><div class="muted small">${esc(c?.fullname || '')}</div><h1 style="margin:0">${esc(m.name)}</h1><div class="muted small">${fmtDate(m.start)} · ${m.duration || 60} minutes</div></div>
-    <button class="btn" data-act="liveLeave" data-id="${m.id}">Leave the session</button></div>
+  const m = p.sid ? (S.sessions || []).find(x => x.id === p.sid) : S.mods[p.id]; if (!m || (!p.sid && m.type !== 'live')) return notFound();
+  const c = p.sid ? null : h.course(m.courseId), r = ui.liveRoom && (p.sid ? ui.liveRoom.sid === m.id : ui.liveRoom.mid === m.id) ? ui.liveRoom : null, ids = p.sid ? `data-sid="${m.id}"` : `data-id="${m.id}"`;
+  return `<div class="spread" style="margin-bottom:10px"><div><div class="muted small">${esc(c?.fullname || 'Live session')}</div><h1 style="margin:0">${esc(m.name)}</h1><div class="muted small">${fmtDate(m.start)} · ${m.duration || 60} minutes</div></div>
+    <button class="btn" data-act="liveLeave" ${ids}>Leave the session</button></div>
     ${r ? `<iframe id="liveframe" class="liveframe" title="${esc(m.name)}: video meeting" src="${esc(r.url)}" allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write; speaker-selection" allowfullscreen referrerpolicy="no-referrer"></iframe>
       <p class="muted small" style="margin-top:8px">If your browser asks, allow the camera and microphone. Use the screen icon in the meeting to share your screen.</p>`
-    : `<div class="card stack" style="max-width:560px"><p>You have left the meeting, or the page was reloaded.</p><div><button class="btn primary" data-act="liveJoin" data-id="${m.id}">▶ Join again</button></div></div>`}`;
+    : `<div class="card stack" style="max-width:560px"><p>You have left the meeting, or the page was reloaded.</p><div><button class="btn primary" data-act="${p.sid ? 'sessJoin' : 'liveJoin'}" data-id="${m.id}">▶ Join again</button></div></div>`}`;
 };
 /* SCORM 1.2 player */
 BODIES.scorm = (m, c) => {

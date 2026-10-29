@@ -471,7 +471,7 @@ async function handle(req, res) {
 
     if (p === '/api/op') {
       const b = await readJSON(req);
-      if (['registerFile', 'loginAsCheck', 'liveJoin'].includes(b.op)) return sendErr(res, 400, 'Not allowed.');
+      if (['registerFile', 'loginAsCheck', 'liveJoin', 'sessionJoin'].includes(b.op)) return sendErr(res, 400, 'Not allowed.');
       const result = runOp(me.uid, b.op, b.payload);
       if (b.op === 'deleteUser' || (b.op === 'suspendUser' && b.payload?.on)) store.dropUserSessions(b.payload.id);
       if (['setOwnPassword', 'updateProfile'].includes(b.op) && b.payload?.password) { /* keep this session, end others */ }
@@ -482,7 +482,7 @@ async function handle(req, res) {
     if (p === '/api/live/join') {
       const b = await readJSON(req), mt = meetingConfig();
       if (!mt.server || !mt.secret) return sendErr(res, 503, 'Video meetings are not set up yet. An administrator needs to add the meeting server in Site administration › Email, sign-in and meetings.');
-      const r = runOp(me.uid, 'liveJoin', {mid:b.mid});
+      const r = b.sid ? runOp(me.uid, 'sessionJoin', {id:b.sid}) : runOp(me.uid, 'liveJoin', {mid:b.mid});
       return send(res, 200, {url:meetingUrl(mt, r), origin:new URL(mt.server).origin, state:Core.view(S, me.uid)});
     }
     if (p === '/api/loginas') {

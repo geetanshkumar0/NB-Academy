@@ -100,6 +100,8 @@ function events(range = [-14, 60]) {
     }
   }
   for (const {e, c, st} of myAssignments()) if (e.due && e.due >= lo && e.due <= hi && st !== 'completed') out.push({course:true, due:e.due, c, done:false, learner:true, st});
+  // Live sessions I am invited to (Live sessions tab)
+  for (const s of S.sessions || []) if (!s.cancelled && s.start >= lo && s.start <= hi && (!s.invitees || s.invitees.includes(S.me))) out.push({sess:s, due:s.start, done:!!s.mine?.status && s.mine.status !== 'absent', learner:true});
   return out.sort((a, b) => a.due - b.due);
 }
 const dueVerb = m => ({assign:'Assignment is due', quiz:'Quiz closes', workshop:'Submissions close', lesson:'Lesson closes', live:'Live session starts'}[m.type] || 'Due');
@@ -113,9 +115,10 @@ VIEWS.dashboard = () => {
   const tiles = [['notstarted', 'Assigned · not started', 'assigned'], ['inprogress', 'In progress', 'progress'], ['completed', 'Completed', 'done'], ['overdue', 'Overdue · locked', 'overdue']];
   const resume = mine.filter(x => x.st === 'inprogress' && x.e.lastMod).map(x => ({...x, m:resumeTarget(x.c.id)})).filter(x => x.m).sort((a, b) => (S.access[S.me]?.[b.c.id] || 0) - (S.access[S.me]?.[a.c.id] || 0))[0];
   let lastDay = '';
-  const tl = ev.filter(e => !(e.done && e.due < now())).map(e => {
+  const tl = ev.filter(e => !(e.done && e.due < now()) && !(e.sess && e.due + (e.sess.duration || 60) * 6e4 < now())).map(e => {
     const late = !e.done && e.due < now(); const dayLbl = late ? 'Overdue' : fmtDay(e.due);
     const head = dayLbl !== lastDay ? `<div class="tl-day">${esc(dayLbl)}</div>` : ''; lastDay = dayLbl;
+    if (e.sess) return `${head}<div class="tl-item"><span class="tl-time num">${fmtTime(e.due)}</span>${icon('live', 'sm')}<div class="t"><button class="link" data-go="session" data-id="${e.sess.id}">${esc(e.sess.name)}</button><div class="muted small">Live session · ${e.sess.duration || 60} min</div></div><div class="act"><button class="btn sm" data-go="session" data-id="${e.sess.id}">View session</button></div></div>`;
     if (e.course) return `${head}<div class="tl-item"><span class="tl-time num">${fmtTime(e.due)}</span><span class="ic sm p-other" aria-hidden="true"><svg viewBox="0 0 24 24">${SVG.lock}</svg></span><div class="t"><button class="link" data-go="course" data-id="${e.c.id}">${esc(e.c.fullname)}</button><div class="muted small">Course deadline · ${h.progress(e.c.id, S.me)}% done${late ? ' · <span style="color:var(--bad)">locked</span>' : ''}</div></div><div class="act"><button class="btn sm" data-go="course" data-id="${e.c.id}">${late ? 'Request access' : 'Continue'}</button></div></div>`;
     const action = e.done ? `<span class="chip ok">Done</span>` : `<button class="btn sm" data-go="mod" data-id="${e.m.id}">${actLabel(e.m)}</button>`;
     return `${head}<div class="tl-item"><span class="tl-time num">${fmtTime(e.due)}</span>${icon(e.m.type, 'sm')}<div class="t"><button class="link" data-go="mod" data-id="${e.m.id}">${esc(e.m.name)}</button><div class="muted small">${dueVerb(e.m)} · ${esc(e.c.shortname)}${late ? ` · <span style="color:var(--bad)">${dur(now() - e.due)} late</span>` : ''}</div></div><div class="act">${action}</div></div>`;
@@ -136,7 +139,7 @@ VIEWS.dashboard = () => {
   <aside class="stack" style="gap:20px">${miniCal()}
     ${expiring.length ? `<section class="block"><header><h3>Certificates expiring</h3></header><div class="bb stack" style="gap:8px">${expiring.map(c => `<div><b class="small">${esc(h.course(S.mods[c.cmid]?.courseId)?.fullname || '')}</b><div class="muted small">Expires ${fmtDateOnly(c.expires)}</div></div>`).join('')}</div></section>` : ''}
     <section class="block"><header><h3>Upcoming events</h3><button class="link small" data-go="calendar">Full calendar</button></header>
-      <div class="bb stack" style="gap:12px">${ev.filter(e => e.due >= now() && !e.course).slice(0, 5).map(e => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${icon(e.m.type, 'sm')}<div style="min-width:0"><button class="link" data-go="mod" data-id="${e.m.id}">${esc(e.m.name)}</button><div class="muted small">${fmtDate(e.due)}</div></div></div>`).join('') || '<p class="muted small">No upcoming events.</p>'}</div></section>
+      <div class="bb stack" style="gap:12px">${ev.filter(e => e.due >= now() && !e.course).slice(0, 5).map(e => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${icon(e.sess ? 'live' : e.m.type, 'sm')}<div style="min-width:0"><button class="link" data-go="${e.sess ? 'session' : 'mod'}" data-id="${(e.sess || e.m).id}">${esc((e.sess || e.m).name)}</button><div class="muted small">${fmtDate(e.due)}</div></div></div>`).join('') || '<p class="muted small">No upcoming events.</p>'}</div></section>
     ${earned.length ? `<section class="block"><header><h3>My latest badges</h3><button class="link small" data-go="mybadges">All badges</button></header><div class="bb bstrip">${earned.slice(-3).reverse().map(b => `<div class="bmini">${medal(b)}<span>${esc(b.name)}</span></div>`).join('')}</div></section>` : ''}
   </aside></div>`;
 };
@@ -220,14 +223,14 @@ VIEWS.calendar = () => {
   for (let i = 1; i <= days; i++) {
     const today = d0.getFullYear() === y && d0.getMonth() === m && d0.getDate() === i;
     const de = evs.filter(e => new Date(e.due).getDate() === i);
-    cells += `<div class="${today ? 'today' : ''}"><span class="dn num">${i}</span>${de.map(e => e.course ? `<button class="ev p-other" data-go="course" data-id="${e.c.id}" title="Course deadline: ${esc(e.c.fullname)}">Due: ${esc(e.c.shortname)}</button>` : `<button class="ev p-${C.TYPES[e.m.type].p}" data-go="mod" data-id="${e.m.id}" title="${esc(e.m.name)} · ${esc(e.c.shortname)}">${esc(e.m.name)}</button>`).join('')}</div>`;
+    cells += `<div class="${today ? 'today' : ''}"><span class="dn num">${i}</span>${de.map(e => e.sess ? `<button class="ev p-collab" data-go="session" data-id="${e.sess.id}" title="Live session: ${esc(e.sess.name)}">${esc(e.sess.name)}</button>` : e.course ? `<button class="ev p-other" data-go="course" data-id="${e.c.id}" title="Course deadline: ${esc(e.c.fullname)}">Due: ${esc(e.c.shortname)}</button>` : `<button class="ev p-${C.TYPES[e.m.type].p}" data-go="mod" data-id="${e.m.id}" title="${esc(e.m.name)} · ${esc(e.c.shortname)}">${esc(e.m.name)}</button>`).join('')}</div>`;
   }
   const tail = (7 - (off + days) % 7) % 7; for (let i = 0; i < tail; i++) cells += '<div class="out"></div>';
   return `${phead([['Dashboard', 'dashboard'], ['Calendar']], 'Calendar')}
     <div class="spread" style="margin-bottom:14px"><div class="row"><button class="btn sm" data-act="calMove" data-d="-1" aria-label="Previous month">←</button><h2 style="min-width:170px;text-align:center">${first.toLocaleDateString('en-IN', {month:'long', year:'numeric'})}</h2><button class="btn sm" data-act="calMove" data-d="1" aria-label="Next month">→</button><button class="btn sm ghost" data-act="calMove" data-d="0">Today</button></div></div>
     <div class="block" style="overflow:hidden"><div class="cal">${cells}</div></div>
     <h2 style="margin:24px 0 10px">Events this month</h2>
-    <div class="block"><div class="tl">${evs.map(e => e.course ? `<div class="tl-item"><span class="tl-time">${fmtShort(e.due)}</span><span class="ic sm p-other" aria-hidden="true"><svg viewBox="0 0 24 24">${SVG.lock}</svg></span><div class="t"><button class="link" data-go="course" data-id="${e.c.id}">${esc(e.c.fullname)}</button><div class="muted small">Course deadline ${fmtDate(e.due)}</div></div><div class="act">${statusChip(e.st)}</div></div>`
+    <div class="block"><div class="tl">${evs.map(e => e.sess ? `<div class="tl-item"><span class="tl-time">${fmtShort(e.due)}</span>${icon('live', 'sm')}<div class="t"><button class="link" data-go="session" data-id="${e.sess.id}">${esc(e.sess.name)}</button><div class="muted small">Live session ${fmtDate(e.due)} · ${e.sess.duration || 60} min</div></div><div class="act"></div></div>` : e.course ? `<div class="tl-item"><span class="tl-time">${fmtShort(e.due)}</span><span class="ic sm p-other" aria-hidden="true"><svg viewBox="0 0 24 24">${SVG.lock}</svg></span><div class="t"><button class="link" data-go="course" data-id="${e.c.id}">${esc(e.c.fullname)}</button><div class="muted small">Course deadline ${fmtDate(e.due)}</div></div><div class="act">${statusChip(e.st)}</div></div>`
       : `<div class="tl-item"><span class="tl-time">${fmtShort(e.due)}</span>${icon(e.m.type, 'sm')}<div class="t"><button class="link" data-go="mod" data-id="${e.m.id}">${esc(e.m.name)}</button><div class="muted small">${dueVerb(e.m)} ${fmtDate(e.due)} · ${esc(e.c.shortname)}</div></div><div class="act">${e.done ? '<span class="chip ok">Done</span>' : ''}</div></div>`).join('') || '<div class="empty">No events this month.</div>'}</div></div>`;
 };
 

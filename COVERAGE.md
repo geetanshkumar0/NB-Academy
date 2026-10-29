@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (65 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (66 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -74,6 +74,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | Super administrator holds every role (Learner, Trainer, Team Lead, Admin) | View switcher; Trainer and Team Lead workspaces show everything. Tested. |
 | Team dropdown instead of Company/Department when adding users | Add a new user, user profile, CSV upload; editable Team list. Tested. |
 | Excel template for bulk user upload; .xlsx uploads | Upload users: Download Excel template (dropdowns for team, course, role). Tested. |
+| Live sessions tab: schedule sessions for any registered users (course and team filters), email invitations, reminders, cancellations, attendance | Live sessions tab (administrators). Tested. |
 | Bulk upload of quiz questions (Excel/CSV: Sno, Question Text, A–F, Correct Answer) | Quiz page: Upload questions, template download, preview, add or replace. Tested. |
 | Google Forms-style question editor for quizzes | Quiz page: question cards with autosave, reorder, duplicate. Tested. |
 | Designed welcome email; one colour theme for all emails | Notifications and terms › Email design; template previews. Tested. |

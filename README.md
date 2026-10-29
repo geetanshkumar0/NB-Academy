@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (65 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (66 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -247,7 +247,13 @@ Questions are edited directly on the quiz page, one card per question, much like
 
 ## Live sessions
 
-A **Live session** activity is held in one of three ways: **online in NB Academy** (a video room inside NB Academy), online with an outside meeting link (Zoom, Teams, Meet…), or in person.
+### Live sessions tab (administrators)
+
+Administrators have a **Live sessions** tab next to Courses. **Schedule a live session** asks for a title, date and time, duration, where it happens (video room in NB Academy, an outside meeting link, or in person) and an optional description, then the people to invite: everyone registered in NB Academy is listed, with a **course filter** (only people enrolled in that course), a team filter, a search box, "Select all shown" and "Selected only". Saving emails the invitations from NB Academy's own address, with a link to the session page. Editing emails an update, removing someone emails them a cancellation, and **Cancel session** tells everyone (with an optional reason). Everyone invited gets a reminder the day before, sees the session on their dashboard and calendar, and gets the Live sessions tab. Joining the video room records attendance; the session page has the attendance list, which administrators can correct and export as CSV.
+
+### Live sessions inside a course
+
+A **Live session** activity in a course is held in one of three ways: **online in NB Academy** (a video room inside NB Academy), online with an outside meeting link (Zoom, Teams, Meet…), or in person.
 
 - **Scheduling:** the trainer sets the date, time and duration, and types the email addresses to invite. Each address must belong to an NB Academy account; anyone not yet in the course is enrolled as a learner. Invitations go out from NB Academy's own email address (Site administration › Email, sign-in and meetings › Email) with a link that opens the session in NB Academy. Changing the time or place emails an update; removing someone, or deleting the session, emails a cancellation. Invitees also get the usual reminder 24 hours before.
 - **Joining:** the Join button appears 15 minutes before the start (60 minutes for trainers). The meeting opens inside NB Academy with camera, microphone, screen sharing and chat. Joining records attendance (present, or late after 10 minutes), which completes the activity; trainers can still correct the roster.
