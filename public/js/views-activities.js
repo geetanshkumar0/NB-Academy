@@ -713,7 +713,7 @@ function qbBuilder(m) {
   const qs = m.questions || [], dr = ui.qbDraft && ui.qbDraft.mid === m.id && !qs.some(q => q.id === ui.qbDraft.id) ? ui.qbDraft : null, draft = dr?.q, n = qs.length + (draft ? 1 : 0);
   const total = qs.reduce((t, q) => t + (Number(q.mark) || 0), 0);
   return `<section class="qb" style="margin-bottom:22px"><div class="spread" style="margin-bottom:12px"><div><h2>Questions</h2><p class="muted small" style="margin:2px 0 0">${qs.length} question${qs.length === 1 ? '' : 's'} · ${fmtG(total)} point${total === 1 ? '' : 's'} · changes save automatically</p></div>
-      <div class="row">${S.qbank.length ? `<button class="btn sm" data-act="bankPick" data-id="${m.id}">Add from question bank</button>` : ''}</div></div>
+      <div class="row"><button class="btn sm" data-act="qImport" data-id="${m.id}">⇪ Upload questions</button>${S.qbank.length ? `<button class="btn sm" data-act="bankPick" data-id="${m.id}">Add from question bank</button>` : ''}</div></div>
     <div class="qb-list">${qs.map((q, i) => qbCard(m, q, q.id, i, n)).join('')}${draft ? qbCard(m, draft, dr.id, qs.length, n, true) : ''}</div>
     <button type="button" class="qb-add" data-act="qbAdd" data-mid="${m.id}"><span aria-hidden="true">＋</span> Add question</button></section>`;
 }

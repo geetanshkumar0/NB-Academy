@@ -350,6 +350,33 @@ ${freeze ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCe
 <sheetFormatPr defaultRowHeight="15"/>${widths.length ? `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"${textCols.includes(i) ? ' style="3"' : ''}/>`).join('')}</cols>` : ''}
 <sheetData>${rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => v == null || v === '' ? '' : cell(ri + 1, ci, typeof v === 'object' ? v.v : v, typeof v === 'object' ? v.s : 0)).join('')}</row>`).join('')}</sheetData>
 ${validations}</worksheet>`;
+  // A workbook from sheets: [[name, sheet xml, hidden?], …]
+  const STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0E6175"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  function book(sheets) {
+    const X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', WS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml', R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    return zip([
+      ['[Content_Types].xml', `${X}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="${WS}"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+      ['_rels/.rels', `${X}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+      ['xl/workbook.xml', `${X}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><bookViews><workbookView activeTab="0"/></bookViews><sheets>${sheets.map(([n, , hid], i) => `<sheet name="${x(n)}" sheetId="${i + 1}"${hid ? ' state="hidden"' : ''} r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
+      ['xl/_rels/workbook.xml.rels', `${X}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${R}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="${R}/styles" Target="styles.xml"/></Relationships>`],
+      ['xl/styles.xml', STYLES], ...sheets.map(([, xml], i) => [`xl/worksheets/sheet${i + 1}.xml`, xml])]);
+  }
+  // Quiz questions template, in the agreed format: Sno | Question Text | A–F | Correct Answer
+  function quizTemplate() {
+    const COLS = [['Sno', 6], ['Question Text', 60], ['A', 26], ['B', 26], ['C', 26], ['D', 26], ['E', 20], ['F', 20], ['Correct Answer', 16]], n = 2001;
+    const validations = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Correct Answer" error="Enter the letter of the correct option: A, B, C, D, E or F." promptTitle="Correct Answer" prompt="Letter of the correct option" sqref="I2:I${n}"><formula1>"A,B,C,D,E,F"</formula1></dataValidation></dataValidations>`;
+    const qs = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[1]), freeze:true, validations, textCols:[2, 3, 4, 5, 6, 7]});
+    const instr = sheet([[{v:'How to fill in the questions sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
+      ['Sno', 'Optional. A running number, for your own reference.', '1'],
+      ['Question Text', 'The question (required).', 'What does legal on property mean?'],
+      ['A, B, C, D', 'The options. At least two; A and B are required.', 'Physical inspection / Verification of property documents / …'],
+      ['E, F', 'Optional extra options. Leave empty if not needed.', ''],
+      ['Correct Answer', 'The letter of the one correct option (A to F).', 'B'], [''],
+      ['Notes', 'One question per row. Keep the header row as it is.', ''],
+      ['', 'Every question is multiple choice with one correct answer, worth 1 mark.', ''],
+      ['', 'On the quiz page, choose Upload questions and pick this file. You see a preview before anything is saved.', '']], {widths:[18, 80, 44]});
+    return book([['Quiz-Activity-Questions', qs], ['Instructions', instr]]);
+  }
   // The template: a Users sheet to fill in, Instructions, and a hidden Lists sheet behind the dropdowns
   function userTemplate() {
     const teams = C.teamsOf(S), courses = S.courses.filter(c => c.status !== 'archived').map(c => c.shortname), roles = ['Learner', 'Trainer', 'Course author', 'Non-editing teacher'];
@@ -369,17 +396,13 @@ ${validations}</worksheet>`;
       ['', 'Save the file and choose it in Site administration › Upload users. Excel (.xlsx) and CSV both work.', '']], {widths:[18, 80, 26]});
     const maxL = Math.max(teams.length, courses.length, roles.length);
     const lists = sheet([[{v:'Teams', s:1}, {v:'Courses', s:1}, {v:'Roles', s:1}], ...Array.from({length:maxL}, (_, i) => [teams[i] || '', courses[i] || '', roles[i] || ''])], {widths:[34, 16, 20]});
-    return zip([
-      ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
-      ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
-      ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="Users" sheetId="1" r:id="rId1"/><sheet name="Instructions" sheetId="2" r:id="rId2"/><sheet name="Lists" sheetId="3" state="hidden" r:id="rId3"/></sheets></workbook>'],
-      ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
-      ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0E6175"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
-      ['xl/worksheets/sheet1.xml', users], ['xl/worksheets/sheet2.xml', instr], ['xl/worksheets/sheet3.xml', lists],
-    ]);
+    return book([['Users', users], ['Instructions', instr], ['Lists', lists, true]]);
   }
   // Reading a filled-in .xlsx: the Users sheet (or the first sheet) becomes CSV text for the usual preview
-  async function readXlsx(buf) {
+  async function readXlsx(buf) { const grid = await readXlsxGrid(buf, /^users$/i); const q = v => { v = String(v ?? '').trim(); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+    return grid.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => Array.from({length:r.length}, (_, i) => q(r[i])).join(',')).join('\n'); }
+  // The rows of one sheet (the first whose name matches, else the first sheet) as arrays of cell text
+  async function readXlsxGrid(buf, prefer) {
     const b = new Uint8Array(buf), dv = new DataView(b.buffer, b.byteOffset, b.byteLength), files = {};
     let eocd = -1; for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
     if (eocd < 0) throw new Error('This is not an Excel (.xlsx) file.');
@@ -394,7 +417,7 @@ ${validations}</worksheet>`;
     const P = t => new DOMParser().parseFromString(t || '<x/>', 'application/xml'), all = (doc, tag) => [...doc.getElementsByTagNameNS('*', tag)];
     const wb = P(files['xl/workbook.xml']), rels = P(files['xl/_rels/workbook.xml.rels']);
     const sheets = all(wb, 'sheet').map(s => ({name:s.getAttribute('name'), rid:s.getAttribute('r:id') || s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')}));
-    const pick = sheets.find(s => /^users$/i.test(s.name)) || sheets[0]; if (!pick) throw new Error('The workbook has no sheets.');
+    const pick = sheets.find(s => prefer && prefer.test(s.name)) || sheets[0]; if (!pick) throw new Error('The workbook has no sheets.');
     const target = all(rels, 'Relationship').find(r => r.getAttribute('Id') === pick.rid)?.getAttribute('Target') || 'worksheets/sheet1.xml';
     const ws = P(files['xl/' + target.replace(/^\/?xl\//, '').replace(/^\//, '')]);
     const shared = all(P(files['xl/sharedStrings.xml']), 'si').map(si => all(si, 't').map(t => t.textContent).join(''));
@@ -407,15 +430,51 @@ ${validations}</worksheet>`;
       }
       grid[Number(row.getAttribute('r') || grid.length + 1) - 1] = out;
     }
-    const q = v => { v = String(v ?? '').trim(); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
-    return grid.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => Array.from({length:r.length}, (_, i) => q(r[i])).join(',')).join('\n');
+    return Array.from(grid, r => Array.from({length:(r || []).length}, (_, i) => (r || [])[i] ?? ''));
   }
-  return {userTemplate, readXlsx};
+  return {userTemplate, quizTemplate, readXlsx, readXlsxGrid};
 })();
 Object.assign(A, {
   xlsxTemplate: () => download('nb-academy-users-template.xlsx', XL.userTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
   csvTemplate: () => download('nb-academy-users-template.csv', 'username,firstname,lastname,email,team,password,course1,role1,group1\n'),
 });
+/* ---------- Bulk upload of quiz questions: choose a file, check the preview, then add or replace ---------- */
+function qImportPreview() {
+  const st = ui.qImport, m = st && S.mods[st.mid]; if (!m || !st.res) return '';
+  const {questions, errors} = st.res, have = (m.questions || []).length, L = 'ABCDEF';
+  return `${errors.length ? `<div class="card stack" style="background:var(--bad-soft, #fdecec);border-color:transparent"><b>${errors.length} row${errors.length === 1 ? ' needs' : 's need'} fixing. Nothing is added until every row is right.</b>
+      <ul class="small" style="margin:0;padding-left:18px">${errors.slice(0, 40).map(e => `<li><b>Row ${e.row}</b>${e.text ? ` (${esc(e.text.slice(0, 60))})` : ''}: ${esc(e.error)}</li>`).join('')}${errors.length > 40 ? `<li>…and ${errors.length - 40} more</li>` : ''}</ul></div>` : ''}
+    ${questions.length ? `<p><b>${questions.length} question${questions.length === 1 ? '' : 's'}</b> read from ${esc(st.name)}${errors.length ? ' (the rows above are not counted)' : ''}. The correct option is marked ✓.</p>
+    <div class="tw" style="max-height:44vh;overflow:auto"><table><thead><tr><th class="n">Row</th><th>Question</th><th>Options</th></tr></thead><tbody>
+      ${questions.map(q => `<tr><td class="n">${q.row}</td><td>${esc(q.text)}</td><td class="small">${q.options.map((o, i) => o.correct ? `<b style="color:var(--ok)">✓ ${esc(o.text)}</b>` : esc(o.text)).join('<br>')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${!errors.length && questions.length ? `${have ? `<fieldset class="stack" style="border:0;padding:0;margin:0"><legend class="small"><b>This quiz already has ${have} question${have === 1 ? '' : 's'}.</b></legend>
+        <label class="check"><input type="radio" name="qimode" value="add" checked> Add these after the existing questions</label><label class="check"><input type="radio" name="qimode" value="replace"> Replace the existing questions</label></fieldset>` : ''}
+      <span class="err small" id="qierr" hidden></span><div class="row"><button class="btn primary" data-act="qImportGo">Add ${questions.length} question${questions.length === 1 ? '' : 's'}</button><button class="btn ghost" data-act="closeModal">Cancel</button></div>` : ''}`;
+}
+Object.assign(A, {
+  quizTemplate: () => download('quiz-questions-template.xlsx', XL.quizTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+  qImport: d => { ui.qImport = {mid:d.id};
+    openModal('Upload questions', `<div class="stack"><p class="muted small" style="margin:0">An Excel (.xlsx) or CSV file with the columns <b>Question Text</b>, options <b>A</b> to <b>F</b> (at least A and B) and <b>Correct Answer</b> (the letter of the right option). A <b>Sno</b> column is fine. Each row becomes a multiple-choice question worth 1 mark. <button class="link" data-act="quizTemplate">Download the template</button></p>
+      <div class="field"><label for="qifile">Questions file</label><input id="qifile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-qimport="1"></div><div id="qiprev" class="stack"></div></div>`, true); },
+  qImportGo: async () => {
+    const st = ui.qImport; if (!st?.rows) return; const replace = document.querySelector('input[name=qimode]:checked')?.value === 'replace';
+    if (replace && !confirmReplace()) return;
+    const r = await act('importQuestions', {mid:st.mid, rows:st.rows, replace}, null, {silent:true, errEl:'qierr'}); if (r === FAIL) return;
+    ui.qImport = null; closeModal(); render(); toast(`${r.added} question${r.added === 1 ? '' : 's'} added${r.replaced ? `, ${r.replaced} replaced` : ''}. The quiz now has ${r.total}.`);
+  },
+});
+const confirmReplace = () => { const b = document.querySelector('[data-act=qImportGo]'); if (b?.dataset.sure) return true; if (b) { b.dataset.sure = '1'; b.textContent = 'Yes, replace the existing questions'; b.classList.add('danger'); } return false; };
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset?.qimport || !t.files?.[0]) return; e.stopImmediatePropagation();
+  const f = t.files[0], box = document.getElementById('qiprev');
+  try {
+    const rows = /\.csv$/i.test(f.name) || f.type === 'text/csv' ? C.csvGrid(await f.text()) : await XL.readXlsxGrid(await f.arrayBuffer(), /question/i);
+    const used = rows.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => r.map(v => String(v ?? '')));
+    ui.qImport = {...ui.qImport, name:f.name, rows:used, res:C.parseQuestionRows(used)};
+    if (box) box.innerHTML = qImportPreview();
+  } catch (er) { if (box) box.innerHTML = `<p class="err">This file could not be read: ${esc(er.message)}. Save it as Excel (.xlsx) or CSV and try again.</p>`; }
+}, true);
+document.addEventListener('change', e => { if (e.target.name === 'qimode') { const b = document.querySelector('[data-act=qImportGo]'); if (b) { delete b.dataset.sure; b.classList.remove('danger'); b.textContent = b.textContent.replace(/^Yes, replace the existing questions$/, `Add ${ui.qImport?.res?.questions.length || ''} questions`); } } });
 // Choosing an .xlsx in Upload users: read it here and show the preview straight away
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset?.csv || !t.files?.[0] || !/\.xlsx$/i.test(t.files[0].name)) return;

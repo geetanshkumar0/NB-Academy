@@ -466,6 +466,6 @@ let toastT;
 function toast(msg, bad) { const t = document.getElementById('toast'); t.innerHTML = `<div style="${bad ? 'background:var(--bad);color:#fff' : ''}">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => t.innerHTML = '', bad ? Math.min(20000, Math.max(4500, String(msg).length * 70)) : 2600); }
 function download(name, text, type = 'text/csv') {
   try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (e) {}
-  if (!B.server) openModal('Export', `<p class="muted small">In the preview, downloads may be blocked by the viewer. Copy the data below instead.</p><textarea rows="10" class="mono" style="font-size:.78rem" readonly id="exporttxt">${esc(text)}</textarea><div class="mfoot"><button class="btn primary" data-act="copyText" data-t="exporttxt">Copy to clipboard</button></div>`, true);
+  if (!B.server && typeof text === 'string') openModal('Export', `<p class="muted small">In the preview, downloads may be blocked by the viewer. Copy the data below instead.</p><textarea rows="10" class="mono" style="font-size:.78rem" readonly id="exporttxt">${esc(text)}</textarea><div class="mfoot"><button class="btn primary" data-act="copyText" data-t="exporttxt">Copy to clipboard</button></div>`, true);
 }
 const csv = rows => rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\n');

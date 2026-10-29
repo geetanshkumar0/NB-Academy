@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (64 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (65 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -273,6 +273,12 @@ The video runs on **Jitsi Meet**, free and open source, installed with Docker (h
 3. In NB Academy: Site administration › Email, sign-in and meetings › **Live sessions: video meetings**: enter `https://meet.nobroker.in` and the same secret. (Or set `NB_MEET_URL`, `NB_MEET_APP_ID` and `NB_MEET_SECRET` for the NB Academy container; a secret set this way is never stored in the database.)
 
 If the meeting area shows "refused to connect", the meeting server is forbidding embedding: allow framing from NB Academy's address in its web server settings.
+
+## Uploading quiz questions in bulk
+
+On a quiz page (edit mode), **⇪ Upload questions** takes an Excel (.xlsx) or CSV file with the columns **Sno** (optional), **Question Text**, options **A** to **F** (at least A and B) and **Correct Answer** (the letter of the right option, or the option's exact text). "Download the template" gives an empty sheet in this format, with a dropdown for the answer. Each row becomes a multiple-choice question worth 1 mark (add a **Marks** column to change that).
+
+You see every question, with the correct option ticked, before anything is saved. If any row has a problem (no question, fewer than two options, an answer that points to an empty option, two answers), nothing is added and each problem is listed with its row number. Questions can be added after the existing ones or replace them.
 
 ## Teams
 

@@ -866,7 +866,8 @@ function checkPassword(S, pw) {
 }
 
 /* ---------------- CSV ---------------- */
-function parseCSV(text) {
+/* CSV text to rows of cells (quotes, commas and line breaks inside quotes handled) */
+function csvGrid(text) {
   const rows = []; let row = [], cell = '', q = false;
   text = String(text || '').replace(/^﻿/, '');
   for (let i = 0; i < text.length; i++) {
@@ -878,7 +879,10 @@ function parseCSV(text) {
     else cell += c;
   }
   if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-  const clean = rows.filter(r => r.some(x => x.trim() !== ''));
+  return rows;
+}
+function parseCSV(text) {
+  const clean = csvGrid(text).filter(r => r.some(x => x.trim() !== ''));
   if (!clean.length) return {headers:[], rows:[]};
   // Headers are forgiving: "First name", "First Name" and "firstname" all mean firstname
   const ALIAS = {emailaddress:'email', mail:'email', firstname:'firstname', givenname:'firstname', lastname:'lastname', surname:'lastname', familyname:'lastname', user:'username', login:'username', loginname:'username', department:'team'};
@@ -1303,6 +1307,51 @@ op('saveQuestion', (S, h, p) => {
   else { const at = p.after ? m.questions.findIndex(x => x.id === p.after) : -1; if (at >= 0) m.questions.splice(at + 1, 0, q); else m.questions.push(q); } // a duplicate goes right below its original
   return {id:q.id};
 });
+/* ---------- Bulk upload of quiz questions (Excel or CSV) ----------
+   Columns, found by their header (in any order; other columns such as Sno are ignored):
+   Question Text | A | B | C | D | E | F | Correct Answer   (optional: Marks)
+   Correct Answer is the letter of the right option (A–F), or the option's exact text. At least two options. */
+const QCOLS = {text:/^(question\s*text|question|questions)$/i, answer:/^(correct\s*answer|correct\s*option|answer|correct)$/i, mark:/^(marks?|points?|score)$/i};
+function parseQuestionRows(rows) {
+  rows = (rows || []).map(r => (Array.isArray(r) ? r : []).map(v => String(v ?? '').trim()));
+  const hi = rows.findIndex(r => r.some(v => QCOLS.text.test(v))); if (hi < 0) return {questions:[], errors:[{row:1, error:'Header row not found. The first row needs the columns Question Text, A, B, C, D (up to F) and Correct Answer.'}]};
+  const head = rows[hi], col = re => head.findIndex(v => re.test(v)), ci = {text:col(QCOLS.text), answer:col(QCOLS.answer), mark:col(QCOLS.mark)};
+  const opt = 'ABCDEF'.split('').map(L => [L, head.findIndex(v => new RegExp(`^(option\\s*)?${L}\\)?$`, 'i').test(v))]).filter(([, i]) => i >= 0);
+  const errors = []; if (ci.answer < 0) errors.push({row:hi + 1, error:'The Correct Answer column is missing.'}); if (opt.length < 2) errors.push({row:hi + 1, error:'Option columns A and B (up to F) are missing.'});
+  if (errors.length) return {questions:[], errors};
+  const questions = [];
+  rows.slice(hi + 1).forEach((r, k) => {
+    const row = hi + 2 + k, text = r[ci.text] || '', options = opt.map(([L, i]) => [L, r[i] || '']), ans = String(r[ci.answer] || '').trim();
+    if (!text && options.every(([, v]) => !v) && !ans) return; // empty row
+    const bad = msg => errors.push({row, error:msg, text});
+    if (!text) return bad('The question text is empty.');
+    if (text.length > 4000) return bad('The question is longer than 4,000 characters.');
+    const filled = options.filter(([, v]) => v); if (filled.length < 2) return bad('Give at least two options.');
+    if (filled.some(([, v]) => v.length > 500)) return bad('An option is longer than 500 characters.');
+    if (!ans) return bad('The Correct Answer is empty.');
+    let pick = null; const L = ans.replace(/^option\s*/i, '').replace(/[).\s]+$/, '').toUpperCase();
+    if (/^[A-F]$/.test(L)) { pick = options.find(([x]) => x === L); if (!pick) return bad(`Correct Answer "${ans}" has no option column.`); if (!pick[1]) return bad(`Correct Answer "${ans}" points to an empty option.`); }
+    else if (/^[A-F](\s*[,/&+]\s*[A-F])+$/i.test(ans)) return bad(`Only one correct answer is allowed per question (found "${ans}").`);
+    else { const hits = filled.filter(([, v]) => v.toLowerCase() === ans.toLowerCase()); if (hits.length !== 1) return bad(`Correct Answer "${ans}" is not a letter A–F and does not match one option.`); pick = hits[0]; }
+    const seen = new Set(); for (const [, v] of filled) { if (seen.has(v.toLowerCase())) return bad(`Two options are the same ("${v}").`); seen.add(v.toLowerCase()); }
+    const mark = ci.mark >= 0 && r[ci.mark] !== '' && r[ci.mark] != null ? Number(r[ci.mark]) : 1; if (!(mark > 0) || mark > 100) return bad('Marks must be a number from 0.5 to 100.');
+    questions.push({row, type:'mc', text, mark:Math.max(0.5, mark), options:filled.map(([x, v]) => ({text:v, correct:x === pick[0]}))});
+  });
+  if (!questions.length && !errors.length) errors.push({row:hi + 2, error:'No questions found under the header row.'});
+  return {questions, errors};
+}
+op('importQuestions', (S, h, p, env) => {
+  const m = modOf(S, p.mid); need(h.canEdit(m.courseId), 'You cannot edit this quiz.'); need(m.type === 'quiz', 'Not a quiz.', 400);
+  need(Array.isArray(p.rows) && p.rows.length <= 2001, 'Upload at most 2,000 questions at a time.', 400);
+  const {questions, errors} = parseQuestionRows(p.rows);
+  need(!errors.length, `Nothing was imported. Fix ${errors.length === 1 ? 'this row' : 'these rows'} and upload again: ${errors.slice(0, 8).map(e => `row ${e.row}: ${e.error}`).join(' ')}${errors.length > 8 ? ` …and ${errors.length - 8} more.` : ''}`, 400);
+  const add = questions.map(({row, ...q}) => ({id:'q' + env.uid('').replace(/[^a-z0-9]/gi, '').slice(-6) + Math.random().toString(36).slice(2, 6), ...q}));
+  const replaced = p.replace ? (m.questions || []).length : 0;
+  m.questions = p.replace ? add : [...(m.questions || []), ...add];
+  log(S, env, h.meId, `Questions uploaded: ${m.name} (${add.length})`, m.courseId);
+  audit(S, env, h.meId, 'Quiz questions uploaded', `${h.course(m.courseId)?.shortname} › ${m.name}`, `${add.length} added${replaced ? `, ${replaced} replaced` : ''}`);
+  return {added:add.length, replaced, total:m.questions.length};
+});
 op('moveQuestion', (S, h, p) => {
   const m = modOf(S, p.mid); need(h.canEdit(m.courseId), 'You cannot edit this quiz.'); const qs = m.questions || [];
   const i = qs.findIndex(q => q.id === p.qid); need(i >= 0, 'Question not found.', 404);
@@ -1622,6 +1671,6 @@ function canReadFile(S, meId, fileId) {
 }
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
-  gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  gradeQ, correctText, reviewOf, parseCSV, csvGrid, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

@@ -800,6 +800,32 @@ test('live sessions in NB Academy: signed meeting link, join window, moderators,
   assert.equal((await op(a, 'saveIntegration', {kind:'meetings', server:'', appId:'nbacademy'})).status, 200, 'meetings can be switched off');
   await op(a, 'deleteMod', {id:mid});
 });
+test('quiz questions upload in bulk (Sno | Question Text | A–F | Correct Answer): all or nothing, add or replace', async () => {
+  const a = await login('admin'), S0 = getState(), quiz = Object.values(S0.mods).find(m => m.type === 'quiz' && m.courseId === 'c1'), before = quiz.questions.length;
+  const head = ['Sno', 'Question Text', 'A', 'B', 'C', 'D', 'E', 'F', 'Correct Answer'];
+  const rows = [head,
+    [1, 'What does legal on property mean?', 'Physical inspection', 'Verification of property documents', 'Interior design', 'Home loan', '', '', 'B'],
+    [2, 'Legal services available in how many major cities?', 4, 5, 6, 8, '', '', 'C'],
+    [3, 'Which is NOT listed?', 'Bengaluru', 'Pune', 'Kolkata', 'Mumbai', 'Delhi', 'Chennai', 'f'],
+    ['', '', '', '', '', '', '', '', '']];
+  let r = await op(a, 'importQuestions', {mid:quiz.id, rows}); assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.json.result, {added:3, replaced:0, total:before + 3});
+  const qs = getState().mods[quiz.id].questions.slice(-3);
+  assert.deepEqual(qs.map(q => [q.type, q.mark, q.options.length, q.options.find(o => o.correct).text]), [['mc', 1, 4, 'Verification of property documents'], ['mc', 1, 4, '6'], ['mc', 1, 6, 'Chennai']]);
+  assert.equal(new Set(getState().mods[quiz.id].questions.map(q => q.id)).size, before + 3, 'every question gets its own id');
+  // One bad row: nothing is added, and the message names the rows
+  r = await op(a, 'importQuestions', {mid:quiz.id, rows:[head, rows[1], [2, 'Broken', 'x', 'y', '', '', '', '', 'D'], [3, 'Two answers', 'x', 'y', 'z', '', '', '', 'A,B']]});
+  assert.equal(r.status, 400); assert.match(r.json.error, /row 3: Correct Answer "D" points to an empty option/); assert.match(r.json.error, /row 4: Only one correct answer/);
+  assert.equal(getState().mods[quiz.id].questions.length, before + 3);
+  assert.equal((await op(a, 'importQuestions', {mid:quiz.id, rows:[['Name', 'Email'], ['x', 'y']]})).status, 400, 'a file without the right header is refused');
+  // Replace, and a learner cannot upload
+  r = await op(a, 'importQuestions', {mid:quiz.id, rows:[head, rows[1]], replace:true}); assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.json.result, {added:1, replaced:before + 3, total:1});
+  assert.equal((await op(await login('asha'), 'importQuestions', {mid:quiz.id, rows})).status, 403);
+  // The answer may also be the option's text, and CSV works through the same reader
+  const csv = Core.csvGrid('Question Text,A,B,Correct Answer\n"Pick, carefully",Yes,No,No\n');
+  assert.deepEqual(Core.parseQuestionRows(csv).questions[0].options, [{text:'Yes', correct:false}, {text:'No', correct:true}]);
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
