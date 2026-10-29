@@ -482,7 +482,8 @@ html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition
 .upbar-meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted)}
 .upbar-meta b{color:var(--ink)}
 @media (prefers-reduced-motion: reduce){.upbar-track i{transition:none}}
-[data-for][hidden],[data-smode][hidden]{display:none!important}
+[data-for][hidden]{display:none!important}
+[data-smode][hidden]{display:none!important}
 .qb-list{display:grid;gap:14px}
 .qb-card{background:var(--surface);border:1px solid var(--line);border-left:6px solid transparent;border-radius:12px;padding:18px 20px 12px;display:grid;gap:12px;transition:border-color .15s, box-shadow .15s}
 .qb-card.active{border-left-color:var(--brand);box-shadow:0 2px 10px rgba(0,0,0,.08)}
