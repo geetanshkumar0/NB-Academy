@@ -90,6 +90,14 @@ op('saveIntegration', (S, h, p, env) => {
   if (p.kind === 'email') { const e = S.site.email; Object.assign(e, {enabled:!!p.enabled, host:str(p.host, 200).trim(), port:Number(p.port) || 587, secure:!!p.secure, user:str(p.user, 200).trim(), from:str(p.from, 200).trim() || e.from}); if (p.pass) e.pass = cleanSmtpPass(p.pass); need(!e.enabled || e.host, 'Enter the SMTP server address.', 400); if (e.enabled) S.outbox.forEach(m => { if (m.status === 'not sent' && env.now() - m.time < 3 * D) m.status = 'queued'; }); }
   else if (p.kind === 'sso') { const x = S.site.sso; Object.assign(x, {enabled:!!p.enabled, label:str(p.label, 80) || 'Company single sign-on', issuer:str(p.issuer, 300).trim().replace(/\/+$/, ''), clientId:str(p.clientId, 300).trim(), autoCreate:!!p.autoCreate}); if (p.clientSecret) x.clientSecret = str(p.clientSecret, 500); need(!x.enabled || (/^https:\/\//.test(x.issuer) && x.clientId), 'Enter an https issuer URL and a client ID.', 400); }
   else if (p.kind === 'ldap') { const x = S.site.ldap; Object.assign(x, {enabled:!!p.enabled, url:str(p.url, 300).trim(), bindDn:str(p.bindDn, 300).trim() || x.bindDn, autoCreate:!!p.autoCreate, emailDomain:str(p.emailDomain, 120).trim()}); need(!x.enabled || (/^ldaps?:\/\//.test(x.url) && x.bindDn.includes('{username}')), 'Enter an ldap:// or ldaps:// URL and a bind DN that contains {username}.', 400); }
+  else if (p.kind === 'meetings') {
+    const x = S.site.meetings || (S.site.meetings = {server:'', appId:'nbacademy', secret:''});
+    const server = str(p.server, 300).trim().replace(/\/+$/, '');
+    need(!server || /^https:\/\/[a-z0-9.-]+(:\d+)?(\/[\w.-]+)*$/i.test(server), 'Enter the meeting server address, starting with https:// (for example https://meet.yourcompany.com).', 400);
+    Object.assign(x, {server, appId:str(p.appId, 100).trim().replace(/[^\w.-]/g, '') || 'nbacademy'}); if (p.secret) x.secret = str(p.secret, 500).trim();
+    need(!x.server || x.secret || x.secretInEnv, 'Enter the shared secret (JWT_APP_SECRET on the meeting server).', 400);
+    audit(S, env, h.meId, 'Integration settings changed', 'Meetings', x.server ? `Meeting server ${x.server}` : 'Meeting server removed'); return;
+  }
   else throw new OpError('Unknown integration.', 400);
   audit(S, env, h.meId, 'Integration settings changed', p.kind.toUpperCase(), p.enabled ? 'Enabled' : 'Disabled');
 });
@@ -331,6 +339,23 @@ op('liveRegister', (S, h, p, env) => {
   const taken = S.liveSignups.filter(x => x.cmid === m.id && !x.archived).length; need(!m.capacity || taken < m.capacity, 'This session is full.', 400);
   if (!S.liveSignups.some(x => x.cmid === m.id && x.userId === h.meId && !x.archived)) S.liveSignups.push({id:env.uid('ls'), cmid:m.id, userId:h.meId, status:'registered', time:env.now()});
 });
+/* Joining a session held in NB Academy: checks who and when, records attendance, and returns what the server needs
+   to sign the meeting link (the server adds the Jitsi address and the signed token; see /api/live/join). */
+op('liveJoin', (S, h, p, env) => {
+  const m = modOf(S, p.mid); need(m.type === 'live' && m.mode === 'room', 'This session is not held in NB Academy.', 400); mustSeeMod(h, m);
+  const manage = h.has('live:manage', m.courseId), learner = h.isLearner(m.courseId), t = env.now(), end = Core.liveEnd(m);
+  let x = S.liveSignups.find(y => y.cmid === m.id && y.userId === h.meId && !y.archived);
+  need(manage || learner, 'Only the learners and trainers of this course can join.');
+  need(t >= m.start - (manage ? 60 : 15) * 6e4, `The room opens ${manage ? 60 : 15} minutes before the session starts (${fmtD(m.start)}).`, 400);
+  need(t <= end + (manage ? 120 : 30) * 6e4, 'This session has ended.', 400);
+  if (learner && !manage) {
+    if (!x) { const taken = S.liveSignups.filter(y => y.cmid === m.id && !y.archived).length; need(!m.capacity || taken < m.capacity, 'This session is full.', 400); x = {id:env.uid('ls'), cmid:m.id, userId:h.meId, status:'registered', time:t}; S.liveSignups.push(x); }
+    if (x.status === 'registered') { x.status = t > m.start + 10 * 6e4 ? 'late' : 'present'; x.auto = true; log(S, env, h.meId, `Joined live session: ${m.name}`, m.courseId); checkBadges(S, env, h.meId, m.courseId); }
+    x.joinedAt ||= t; x.lastJoin = t;
+  }
+  if (!m.room) m.room = ('nbacademy-' + env.uid('').replace(/[^a-z0-9]/gi, '') + Math.random().toString(36).slice(2, 10)).toLowerCase();
+  const u = h.me(); return {room:m.room, name:`${u.firstname} ${u.lastname}`.trim(), email:u.email || '', id:u.id, moderator:manage, until:end + 3 * 3600e3};
+});
 op('liveCancel', (S, h, p) => { const m = modOf(S, p.mid); mustLearn(h, m); S.liveSignups = S.liveSignups.filter(x => !(x.cmid === m.id && x.userId === h.meId && x.status === 'registered' && !x.archived)); });
 op('liveAttendance', (S, h, p, env) => {
   const m = modOf(S, p.mid); need(m.type === 'live' && h.has('live:manage', m.courseId), 'You cannot take attendance for this session.');
@@ -533,7 +558,7 @@ function tick(S, env) {
   for (const x of S.liveSignups) {
     if (x.archived || x.reminded || x.status !== 'registered') continue; const m = S.mods[x.cmid]; if (!m?.start) continue;
     if (m.start > now && m.start - now <= D) { x.reminded = true; n++; const h = H(S, x.userId);
-      notifyT(S, env, 'liveSession', x.userId, {item:m.name, course:h.course(m.courseId)?.fullname, when:fmtD(m.start), where:m.mode === 'ilt' ? `Location: ${m.location || 'to be confirmed'}` : `Join link: ${m.link || 'shared before the session'}`, short:fmtD(m.start)}, 'mod', m.id); }
+      notifyT(S, env, 'liveSession', x.userId, {item:m.name, course:h.course(m.courseId)?.fullname, when:fmtD(m.start), where:Core.liveWhere(m), short:fmtD(m.start)}, 'mod', m.id); }
   }
   S.tokens = S.tokens.filter(t => t.expires > now);
   return n;

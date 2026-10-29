@@ -120,6 +120,7 @@ const ServerBackend = {
   async login(username, password) { return this.req('POST', '/api/login', {username, password}); },
   async loginMfa(ticket, code) { return this.req('POST', '/api/login/mfa', {ticket, code}); },
   async logout() { await this.req('POST', '/api/logout', {}); },
+  async liveJoin(mid) { return this.req('POST', '/api/live/join', {mid}); },
   async op(name, payload, opts) { return this.req('POST', '/api/op', {op:name, payload}, {}, opts || {}); }, // opts.keepalive: still sent if the page is closing
   async loginAs(id) { return (await this.req('POST', '/api/loginas', {id})).state; },
   /* Upload with progress. Files over 16 MB go in 8 MB pieces, 4 at a time, each on its own connection:
@@ -338,6 +339,7 @@ function go(name, p = {}, fromHistory = false) {
   // Leaving a video: save the exact position now (normally saved every few seconds)
   if (typeof videoAway === 'function') videoAway('page');
   if (name !== 'lessonplay') ui.lesson = null;
+  if (name !== 'liveroom') ui.liveRoom = null; // leaving the video room ends the call
   ui.view = {name, p}; ui.replyTo = null;
   closeModal(); render(); window.scrollTo(0, 0);
   if (!fromHistory) pushNav();
@@ -364,6 +366,7 @@ function backLink() {
   if (v === 'mod') { const m = mod(p.id); if (m && h.course(m.courseId)) { to = ['course', m.courseId]; label = `Back to ${h.course(m.courseId).fullname}`; } }
   else if (v === 'attempt' || v === 'lessonplay') { const m = mod((v === 'attempt' ? ui.attempt : ui.lesson)?.cmid); if (m) { to = ['mod', m.id]; label = v === 'attempt' ? `Back to ${m.name} (your answers are saved)` : `Back to ${m.name}`; } }
   else if (v === 'review') { const a = S.attempts.find(x => x.id === p.id), m = a && mod(a.cmid); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
+  else if (v === 'liveroom') { const m = mod(p.id); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
   else if (v === 'submit' || v === 'grader') { const m = mod(p.id); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
   else if (v === 'discussion') { const d = S.posts.find(x => x.id === p.id), m = d && mod(d.cmid); if (m) { to = ['mod', m.id]; label = `Back to ${m.name}`; } }
   return to ? `<div class="backbar"><button class="btn ghost sm" data-go="${to[0]}" data-id="${esc(to[1])}"><span aria-hidden="true">←</span> ${esc(label)}</button></div>` : '';

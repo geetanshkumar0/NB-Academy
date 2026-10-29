@@ -733,6 +733,73 @@ test('videos resume where the learner stopped (also once watched); switching tab
   const page = ['base', 'views-activities', 'actions-ext', 'boot'].map(f => fs.readFileSync(path.join(__dirname, '../public/js', f + '.js'), 'utf8')).join('\n');
   for (const s of ["addEventListener('visibilitychange'", "addEventListener('pagehide'", 'vResume:', 'vRestart:', 'keepalive:!!opts.keepalive', 'Resume from', 'navTarget(st)']) assert.ok(page.includes(s), s);
 });
+test('live sessions: invite by email (accounts only), emails from the site address, changes and cancellations', async () => {
+  const a = await login('admin'); let S0 = getState();
+  const c1 = S0.courses.find(c => c.id === 'c1'), sid = c1.sections[1].id, inC1 = new Set(S0.enrol.filter(e => e.courseId === 'c1').map(e => e.userId));
+  const asha = S0.users.find(u => u.username === 'asha'), outsider = S0.users.find(u => !u.admin && !inC1.has(u.id) && !u.suspended && u.email);
+  assert.ok(inC1.has(asha.id) && outsider, 'demo data: asha is in DA101 and someone is not');
+  const base = {cid:'c1', sid, type:'live', name:'Pivot tables live', intro:'', visible:true};
+  const fields = (extra = {}) => ({mode:'room', start:Date.now() + 2 * 864e5, duration:45, capacity:0, location:'', link:'', recordingUrl:'', ...extra});
+  let r = await op(a, 'saveMod', {...base, fields:fields({invites:`${asha.email}, nobody@nowhere.example`})});
+  assert.equal(r.status, 400); assert.match(r.json.error, /No NB Academy account uses this email: nobody@nowhere\.example/);
+  assert.ok(!Object.values(getState().mods).some(m => m.name === 'Pivot tables live'), 'nothing is saved when an email is unknown');
+  const outbox0 = getState().outbox.length;
+  r = await op(a, 'saveMod', {...base, fields:fields({invites:`${asha.email.toUpperCase()}\n${outsider.email}`})}); assert.equal(r.status, 200, r.text);
+  const mid = r.json.result.id; let S1 = getState(), m = S1.mods[mid]; const start0 = m.start;
+  assert.equal(m.mode, 'room'); assert.match(m.room, /^nbacademy-[a-z0-9]+$/i); assert.deepEqual(m.invitees.sort(), [asha.id, outsider.id].sort());
+  assert.ok(S1.enrol.some(e => e.courseId === 'c1' && e.userId === outsider.id && e.role === 'student' && e.source === 'live invite'), 'an invitee outside the course is enrolled as a learner');
+  const invites = S1.outbox.slice(outbox0).filter(x => x.key === 'liveInvite');
+  assert.deepEqual(invites.map(x => x.to).sort(), [asha.email, outsider.email].sort());
+  assert.match(invites[0].subject, /^Invitation: Pivot tables live on /); assert.match(invites[0].body, /Online, in NB Academy/); assert.match(invites[0].body, /\?go=mod&id=/); assert.match(invites[0].html, /Open the session/);
+  assert.equal(S1.liveSignups.filter(x => x.cmid === mid && x.invited && x.status === 'registered').length, 2, 'invited learners hold a place');
+  // Learners see that they are invited, but not who else is, nor the room name; trainers see the list
+  const cl = await login('asha'), lm = (await state(cl)).mods[mid];
+  assert.equal(lm.invitedMe, true); assert.equal(lm.inviteEmails, undefined); assert.equal(lm.invitees, undefined); assert.equal(lm.room, undefined);
+  assert.deepEqual(r.json.state.mods[mid].inviteEmails.sort(), [asha.email, outsider.email].sort());
+  // Saving again without changes sends nothing; a new time emails an update; removing someone tells them
+  let n = getState().outbox.length;
+  r = await op(a, 'saveMod', {...base, mid, fields:{...fields({invites:[asha.email, outsider.email].join(',')}), start:start0}}); assert.equal(r.status, 200, r.text); assert.equal(getState().outbox.length, n);
+  r = await op(a, 'saveMod', {...base, mid, fields:fields({start:start0 + 3600e3, invites:[asha.email, outsider.email].join(',')})}); assert.equal(r.status, 200);
+  assert.deepEqual(getState().outbox.slice(n).filter(x => x.key === 'liveUpdated').map(x => x.to).sort(), [asha.email, outsider.email].sort());
+  n = getState().outbox.length;
+  r = await op(a, 'saveMod', {...base, mid, fields:fields({start:start0 + 3600e3, invites:asha.email})}); assert.equal(r.status, 200);
+  const gone = getState().outbox.slice(n); assert.equal(gone.length, 1, JSON.stringify(gone.map(x => [x.key, x.to, x.subject]))); assert.equal(gone[0].key, 'liveCancelled'); assert.equal(gone[0].to, outsider.email); assert.match(gone[0].body, /no longer invited/);
+  assert.ok(!getState().liveSignups.some(x => x.cmid === mid && x.userId === outsider.id && !x.archived));
+  // Deleting the session tells everyone still invited
+  n = getState().outbox.length; r = await op(a, 'deleteMod', {id:mid}); assert.equal(r.status, 200);
+  assert.deepEqual(getState().outbox.slice(n).map(x => [x.key, x.to]), [['liveCancelled', asha.email]]);
+});
+test('live sessions in NB Academy: signed meeting link, join window, moderators, attendance, settings kept private', async () => {
+  const a = await login('admin'), S0 = getState(), sid = S0.courses.find(c => c.id === 'c1').sections[1].id;
+  const asha = S0.users.find(u => u.username === 'asha');
+  const save = (extra, mid) => op(a, 'saveMod', {cid:'c1', sid, type:'live', name:'Room test', intro:'', visible:true, ...(mid ? {mid} : {}), fields:{mode:'room', duration:60, capacity:0, location:'', link:'', recordingUrl:'', invites:asha.email, ...extra}});
+  let r = await save({start:Date.now() + 5 * 6e4}); assert.equal(r.status, 200, r.text); const mid = r.json.result.id;
+  const cl = await login('asha');
+  r = await call('POST', '/api/live/join', {mid}, cl); assert.equal(r.status, 503, 'not set up yet'); assert.match(r.json.error, /meeting server/);
+  assert.equal((await op(a, 'saveIntegration', {kind:'meetings', server:'http://meet.example.com', secret:'x'})).status, 400, 'https only');
+  r = await op(a, 'saveIntegration', {kind:'meetings', server:'https://meet.example.com/', appId:'nbacademy', secret:'s3cret-value'}); assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.state.site.meetings.secret, '', 'the secret never goes to the browser'); assert.equal(r.json.state.site.meetings.secretSet, true);
+  assert.deepEqual((await state(cl)).site.meetings, {ready:true}, 'learners only learn that meetings are ready');
+  assert.match((await call('GET', '/', null, cl)).headers.get('content-security-policy'), /frame-src 'self' blob: https:\/\/meet\.example\.com/);
+  assert.equal((await op(cl, 'liveJoin', {mid})).status, 400, 'joining only goes through /api/live/join');
+  r = await call('POST', '/api/live/join', {mid}, cl); assert.equal(r.status, 200, r.text);
+  const u = new URL(r.json.url), room = getState().mods[mid].room; assert.equal(u.origin + u.pathname, `https://meet.example.com/${room}`);
+  const [hd, pl, sg] = u.searchParams.get('jwt').split('.'), crypto = require('node:crypto');
+  assert.equal(sg, crypto.createHmac('sha256', 's3cret-value').update(hd + '.' + pl).digest('base64url'), 'signed with the shared secret');
+  const claims = JSON.parse(Buffer.from(pl, 'base64url').toString());
+  assert.equal(claims.iss, 'nbacademy'); assert.equal(claims.aud, 'jitsi'); assert.equal(claims.room, room); assert.equal(claims.moderator, false);
+  assert.equal(claims.context.user.email, asha.email); assert.ok(claims.exp * 1000 > getState().mods[mid].start + 3600e3);
+  const x = getState().liveSignups.find(y => y.cmid === mid && y.userId === asha.id); assert.equal(x.status, 'present'); assert.ok(x.joinedAt);
+  r = await call('POST', '/api/live/join', {mid}, a); assert.equal(r.status, 200, r.text);
+  assert.equal(JSON.parse(Buffer.from(new URL(r.json.url).searchParams.get('jwt').split('.')[1], 'base64url')).moderator, true, 'admins and trainers moderate');
+  // Too early, and someone outside the course
+  await save({start:Date.now() + 3 * 864e5}, mid);
+  r = await call('POST', '/api/live/join', {mid}, cl); assert.equal(r.status, 400); assert.match(r.json.error, /opens 15 minutes before/);
+  const inC1 = new Set(getState().enrol.filter(e => e.courseId === 'c1').map(e => e.userId)), other = getState().users.find(u => !u.admin && !inC1.has(u.id) && !u.suspended && u.username && u.username !== 'nisha');
+  if (other) { r = await call('POST', '/api/live/join', {mid}, await login(other.username)); assert.ok([403, 404].includes(r.status), `outsider: ${r.status}`); }
+  assert.equal((await op(a, 'saveIntegration', {kind:'meetings', server:'', appId:'nbacademy'})).status, 200, 'meetings can be switched off');
+  await op(a, 'deleteMod', {id:mid});
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

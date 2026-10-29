@@ -152,6 +152,10 @@ function removeDemoData() {
 const siteConfig = require('./site-admins');
 ensureSiteAdmins();
 removeDemoData();
+// Meeting server secret given in the environment (NB_MEET_SECRET) is never stored; the settings page only shows that it is set
+S.site.meetings = {server:'', appId:'nbacademy', secret:'', ...(S.site.meetings || {}), secretInEnv:!!process.env.NB_MEET_SECRET};
+if (process.env.NB_MEET_URL) S.site.meetings.server = process.env.NB_MEET_URL.replace(/\/+$/, '');
+if (process.env.NB_MEET_APP_ID) S.site.meetings.appId = process.env.NB_MEET_APP_ID;
 // Clean up data from older versions (Company field removed, "Training" renamed to "Training Team")
 { const changes = Core.tidyData(S); if (changes.length) { for (const c of changes) { Core._.audit(S, env, null, 'Data clean-up', S.site.name, c); console.log('Data clean-up: ' + c); } store.save(S); } }
 // Demo mode keeps the demo accounts (including 'admin'); the remove list applies to the real site
@@ -225,6 +229,25 @@ function upClean() { // forget pieced uploads untouched for a day
 }
 /* ---------- HTTP helpers ---------- */
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; frame-src 'self' blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'";
+/* Live sessions held in NB Academy run on a Jitsi server (set in Site administration, or NB_MEET_URL / NB_MEET_APP_ID / NB_MEET_SECRET).
+   Each person gets a link signed with the shared secret (JWT, HS256), so only NB Academy accounts can get in;
+   trainers and admins join as moderators. The page may frame the meeting server, with camera, microphone and screen sharing. */
+function meetingConfig() {
+  const x = S.site.meetings || {};
+  return {server:(process.env.NB_MEET_URL || x.server || '').replace(/\/+$/, ''), appId:process.env.NB_MEET_APP_ID || x.appId || 'nbacademy', secret:process.env.NB_MEET_SECRET || x.secret || ''};
+}
+function meetOrigin() { try { const s = meetingConfig().server; return s ? new URL(s).origin : ''; } catch (e) { return ''; } }
+function jitsiToken(mt, r) {
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url'), now = Math.floor(Date.now() / 1000), mod = !!r.moderator;
+  const payload = {aud:'jitsi', iss:mt.appId, sub:'*', room:r.room, iat:now, nbf:now - 60, exp:Math.floor(r.until / 1000), moderator:mod,
+    context:{user:{id:r.id, name:r.name, email:r.email, moderator:String(mod), affiliation:mod ? 'owner' : 'member'}, features:{recording:String(mod), livestreaming:'false', 'screen-sharing':'true', transcription:'false', 'outbound-call':'false'}}};
+  const data = b64({alg:'HS256', typ:'JWT'}) + '.' + b64(payload);
+  return data + '.' + crypto.createHmac('sha256', mt.secret).update(data).digest('base64url');
+}
+function meetingUrl(mt, r) {
+  const opts = ['config.prejoinConfig.enabled=false', 'config.disableDeepLinking=true', 'config.startWithAudioMuted=' + !r.moderator, 'config.enableWelcomePage=false', 'interfaceConfig.SHOW_JITSI_WATERMARK=false', 'interfaceConfig.MOBILE_APP_PROMO=false'];
+  return `${mt.server}/${encodeURIComponent(r.room)}?jwt=${jitsiToken(mt, r)}#${opts.join('&')}`;
+}
 const SEC_HEADERS = {'Content-Security-Policy':CSP, 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'SAMEORIGIN', 'Referrer-Policy':'same-origin'};
 function send(res, status, body, headers = {}) {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
@@ -325,7 +348,7 @@ async function handle(req, res) {
   if (req.headers.host && !siteUrl()) seenOrigin = `${req.headers['x-forwarded-proto'] === 'https' || req.socket.encrypted ? 'https' : 'http'}://${req.headers.host}`;
   const p = url.pathname;
   try {
-    if (req.method === 'GET' && (p === '/' || p === '/index.html')) { if (process.env.NODE_ENV !== 'production') SHELL = shell(); return send(res, 200, SHELL, {'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-cache'}); }
+    if (req.method === 'GET' && (p === '/' || p === '/index.html')) { if (process.env.NODE_ENV !== 'production') SHELL = shell(); const mo = meetOrigin(); return send(res, 200, SHELL, {...(mo ? {'Content-Security-Policy':CSP.replace("frame-src 'self' blob:", `frame-src 'self' blob: ${mo}`)} : {}), 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-cache'}); }
     if (req.method === 'GET' && /^\/(core|core-ext|demo-media)\.js$/.test(p)) return send(res, 200, fs.readFileSync(path.join(PUBLIC, p)), {'Content-Type':MIME['.js'], 'Cache-Control':'no-cache'});
     if (req.method === 'GET' && /^\/js\/[a-z0-9-]+\.js$/.test(p) && fs.existsSync(path.join(PUBLIC, p))) return send(res, 200, fs.readFileSync(path.join(PUBLIC, p)), {'Content-Type':MIME['.js'], 'Cache-Control':'no-cache'});
     if (req.method === 'GET' && p === '/health') return send(res, 200, {ok:true, users:S.users.length, courses:S.courses.length, queuedEmails:S.outbox.filter(m => m.status === 'queued').length});
@@ -448,13 +471,19 @@ async function handle(req, res) {
 
     if (p === '/api/op') {
       const b = await readJSON(req);
-      if (['registerFile', 'loginAsCheck'].includes(b.op)) return sendErr(res, 400, 'Not allowed.');
+      if (['registerFile', 'loginAsCheck', 'liveJoin'].includes(b.op)) return sendErr(res, 400, 'Not allowed.');
       const result = runOp(me.uid, b.op, b.payload);
       if (b.op === 'deleteUser' || (b.op === 'suspendUser' && b.payload?.on)) store.dropUserSessions(b.payload.id);
       if (['setOwnPassword', 'updateProfile'].includes(b.op) && b.payload?.password) { /* keep this session, end others */ }
       if (S.outbox.some(m => m.status === 'queued')) setImmediate(deliverMail);
       if (b.op === 'heartbeat' || b.op === 'touch' || b.op === 'saveProgress') return send(res, 200, {result});
       return send(res, 200, {result, state:Core.view(S, me.uid)});
+    }
+    if (p === '/api/live/join') {
+      const b = await readJSON(req), mt = meetingConfig();
+      if (!mt.server || !mt.secret) return sendErr(res, 503, 'Video meetings are not set up yet. An administrator needs to add the meeting server in Site administration › Email, sign-in and meetings.');
+      const r = runOp(me.uid, 'liveJoin', {mid:b.mid});
+      return send(res, 200, {url:meetingUrl(mt, r), origin:new URL(mt.server).origin, state:Core.view(S, me.uid)});
     }
     if (p === '/api/loginas') {
       const b = await readJSON(req);

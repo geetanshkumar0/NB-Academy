@@ -16,6 +16,12 @@ Object.assign(A, {
   copyText: async d => { const el = document.getElementById(d.t); const text = el?.value ?? el?.textContent ?? ''; try { await navigator.clipboard.writeText(text.replace(/\s+/g, d.t === 'mfakey' ? '' : ' ').trim() || text); toast('Copied'); } catch (e) { if (el?.select) el.select(); toast('Press Ctrl+C (or Cmd+C) to copy'); } },
   mfaSetup: async () => { const r = await act('mfaSetup', {}, null, {silent:true}); if (r !== FAIL) { ui.mfaSetup = r; render(); } },
   mfaOff: d => confirmBox('Turn off two-step sign-in', `Turn off two-step sign-in for ${esc(fullname(d.u))}? Do this only if they lost their phone.`, () => act('mfaDisable', {id:d.u}, 'Two-step sign-in turned off'), 'Turn off'),
+  liveJoin: async d => {
+    if (!B.server) return toast('Video rooms work on the NB Academy server. This browser-only preview cannot hold a meeting.');
+    try { const r = await B.liveJoin(d.id); ui.liveRoom = {mid:d.id, url:r.url}; if (r.state) setState(r.state); go('liveroom', {id:d.id}); }
+    catch (e) { toast(e.message, 'err'); }
+  },
+  liveLeave: d => { ui.liveRoom = null; go('mod', {id:d.id}); },
   vResume: () => { const v = document.getElementById('vplayer'); if (v) v.play().catch(() => {}); },
   vRestart: () => { const v = document.getElementById('vplayer'); if (!v) return; v.currentTime = 0; v.play().catch(() => {}); },
   seek: d => { const v = document.getElementById('vplayer'); if (!v) return; const [mm, ss] = d.t.split(':').slice(-2).map(parseFloat); v.currentTime = (mm || 0) * 60 + (ss || 0); v.play().catch(() => {}); },

@@ -487,6 +487,17 @@ BODIES.video = (m, c) => {
   if (h.has('grade:viewall', c.id)) html += `<section class="stack" style="margin-top:22px"><h2>Viewing</h2><div class="tw"><table><thead><tr><th>Learner</th><th class="n">Watched</th><th>Last viewed</th><th>Status</th></tr></thead><tbody>${h.students(c.id).map(s => { const x = h.resume(m.id, s.id); return `<tr><td>${esc(fullname(s))}</td><td class="n">${x?.duration ? fmtPct(Math.min(100, (x.watched || 0) / x.duration * 100)) : '–'}</td><td class="small">${x ? ago(x.updated) : '–'}</td><td>${x?.completed ? '<span class="chip ok">Completed</span>' : x ? '<span class="chip brand">Started</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div></section>`;
   return html;
 };
+/* The video room of a live session held in NB Academy: the meeting runs in a frame on this page.
+   The signed link is kept in memory only (ui.liveRoom), never in the address bar or browser history. */
+VIEWS.liveroom = p => {
+  const m = S.mods[p.id]; if (!m || m.type !== 'live') return notFound();
+  const c = h.course(m.courseId), r = ui.liveRoom?.mid === m.id ? ui.liveRoom : null;
+  return `<div class="spread" style="margin-bottom:10px"><div><div class="muted small">${esc(c?.fullname || '')}</div><h1 style="margin:0">${esc(m.name)}</h1><div class="muted small">${fmtDate(m.start)} · ${m.duration || 60} minutes</div></div>
+    <button class="btn" data-act="liveLeave" data-id="${m.id}">Leave the session</button></div>
+    ${r ? `<iframe id="liveframe" class="liveframe" title="${esc(m.name)}: video meeting" src="${esc(r.url)}" allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write; speaker-selection" allowfullscreen referrerpolicy="no-referrer"></iframe>
+      <p class="muted small" style="margin-top:8px">If your browser asks, allow the camera and microphone. Use the screen icon in the meeting to share your screen.</p>`
+    : `<div class="card stack" style="max-width:560px"><p>You have left the meeting, or the page was reloaded.</p><div><button class="btn primary" data-act="liveJoin" data-id="${m.id}">▶ Join again</button></div></div>`}`;
+};
 /* SCORM 1.2 player */
 BODIES.scorm = (m, c) => {
   const r = h.resume(m.id, S.me), learner = h.isLearner(c.id);
@@ -500,15 +511,22 @@ BODIES.scorm = (m, c) => {
 };
 /* Live session (ILT / VILT) */
 BODIES.live = (m, c) => {
-  const learner = h.isLearner(c.id), mine = S.liveSignups.find(x => x.cmid === m.id && x.userId === S.me && !x.archived);
-  const end = m.start + (m.duration || 60) * 6e4, past = now() > end, soon = now() > m.start - 15 * 6e4 && !past;
+  const learner = h.isLearner(c.id), manage = h.has('live:manage', c.id), mine = S.liveSignups.find(x => x.cmid === m.id && x.userId === S.me && !x.archived);
+  const end = m.start + (m.duration || 60) * 6e4, past = now() > end, room = m.mode === 'room';
+  const soon = now() > m.start - 15 * 6e4 && !past, open = room && !past ? now() > m.start - (manage ? 60 : 15) * 6e4 && now() < end + (manage ? 120 : 30) * 6e4 : false;
+  const full = m.capacity && (m.registered || 0) >= m.capacity && !mine;
+  const where = m.mode === 'ilt' ? esc(m.location || 'To be confirmed')
+    : room ? `Video room in NB Academy${S.site.meetings?.ready ? '' : ' <span class="muted small">(not set up yet)</span>'}`
+    : m.link ? (mine || !learner ? `<a href="${esc(m.link)}" target="_blank" rel="noopener">${soon || !learner ? 'Join the session' : 'Meeting link'} ↗</a>` : 'Register to see the link') : 'Link shared before the session';
+  const joinBtn = room && (manage || learner) && !past ? (open ? `<button class="btn primary" data-act="liveJoin" data-id="${m.id}" ${full && !manage ? 'disabled' : ''}>▶ Join the session</button>` : `<button class="btn" disabled>Join opens ${manage ? 60 : 15} min before the start</button>`) : '';
   let html = `<div class="card stack" style="max-width:760px"><div class="fgrid">
     <div><span class="eyebrow">When</span><div><b>${fmtDate(m.start)}</b><br><span class="muted small">${m.duration || 60} minutes${past ? ' · finished' : now() > m.start ? ' · happening now' : ` · starts in ${dur(m.start - now())}`}</span></div></div>
-    <div><span class="eyebrow">${m.mode === 'ilt' ? 'Where (in person)' : 'Where (online)'}</span><div>${m.mode === 'ilt' ? esc(m.location || 'To be confirmed') : m.link ? (mine || !learner ? `<a href="${esc(m.link)}" target="_blank" rel="noopener">${soon || !learner ? 'Join the session' : 'Meeting link'} ↗</a>` : 'Register to see the link') : 'Link shared before the session'}</div></div>
+    <div><span class="eyebrow">${m.mode === 'ilt' ? 'Where (in person)' : 'Where (online)'}</span><div>${where}</div></div>
     <div><span class="eyebrow">Places</span><div>${m.registered || 0}${m.capacity ? ` of ${m.capacity}` : ''} registered</div></div>
-    ${learner ? `<div><span class="eyebrow">You</span><div>${mine ? `<span class="chip ${mine.status === 'present' || mine.status === 'late' ? 'ok' : mine.status === 'absent' ? 'bad' : 'brand'}">${{registered:'Registered', present:'Attended', late:'Attended (late)', absent:'Absent'}[mine.status]}</span>` : '<span class="chip">Not registered</span>'}</div></div>` : ''}</div>
-    ${learner && !past ? `<div class="row">${mine ? (mine.status === 'registered' ? `<button class="btn" data-act="liveCancel" data-id="${m.id}">Cancel my place</button>` : '') : `<button class="btn primary" data-act="liveRegister" data-id="${m.id}" ${m.capacity && (m.registered || 0) >= m.capacity ? 'disabled' : ''}>${m.capacity && (m.registered || 0) >= m.capacity ? 'Session full' : 'Register'}</button>`}${soon && m.link && mine ? `<a class="btn primary" href="${esc(m.link)}" target="_blank" rel="noopener">Join now ↗</a>` : ''}</div>` : ''}
-    ${learner ? '<p class="muted small">Attendance is recorded by the trainer and completes this activity.</p>' : ''}</div>`;
+    ${learner ? `<div><span class="eyebrow">You</span><div>${mine ? `<span class="chip ${mine.status === 'present' || mine.status === 'late' ? 'ok' : mine.status === 'absent' ? 'bad' : 'brand'}">${{registered:m.invitedMe ? 'Invited' : 'Registered', present:'Attended', late:'Attended (late)', absent:'Absent'}[mine.status]}</span>` : '<span class="chip">Not registered</span>'}</div></div>` : ''}</div>
+    ${!past && (learner || joinBtn) ? `<div class="row">${learner && !room || learner && !mine ? (mine ? (mine.status === 'registered' && !m.invitedMe ? `<button class="btn" data-act="liveCancel" data-id="${m.id}">Cancel my place</button>` : '') : `<button class="btn ${room ? '' : 'primary'}" data-act="liveRegister" data-id="${m.id}" ${full ? 'disabled' : ''}>${full ? 'Session full' : 'Register'}</button>`) : ''}${joinBtn}${!room && soon && m.link && mine ? `<a class="btn primary" href="${esc(m.link)}" target="_blank" rel="noopener">Join now ↗</a>` : ''}</div>` : ''}
+    ${learner ? `<p class="muted small">${room ? 'Joining from here records your attendance and completes this activity.' : 'Attendance is recorded by the trainer and completes this activity.'}</p>` : ''}
+    ${manage && (m.inviteEmails || []).length ? `<details><summary class="small"><b>Invited by email (${m.inviteEmails.length})</b></summary><p class="small muted" style="margin-top:6px">${m.inviteEmails.map(esc).join(', ')}</p></details>` : ''}</div>`;
   const rec = m.recordingFileId && fileOf(m.recordingFileId);
   if (rec || m.recordingUrl) html += `<section class="card stack" style="margin-top:16px;max-width:760px"><h2>Recording</h2>${rec ? (/^video\//.test(rec.type) ? `<video controls preload="metadata" style="width:100%;border-radius:6px;background:#000" src="${esc(B.fileUrl(rec))}"></video>` : fileChip(rec.id)) : ''}${m.recordingUrl ? `<a href="${esc(m.recordingUrl)}" target="_blank" rel="noopener">Watch the recording ↗</a>` : ''}</section>`;
   if (h.has('live:manage', c.id)) {

@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (62 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (64 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -245,6 +245,35 @@ Questions are edited directly on the quiz page, one card per question, much like
 - **changes save automatically**, and the card says "Saved", or what is still missing (for example "Click the circle next to the correct answer");
 - creating a new quiz takes you straight to an empty question card.
 
+## Live sessions
+
+A **Live session** activity is held in one of three ways: **online in NB Academy** (a video room inside NB Academy), online with an outside meeting link (Zoom, Teams, Meet…), or in person.
+
+- **Scheduling:** the trainer sets the date, time and duration, and types the email addresses to invite. Each address must belong to an NB Academy account; anyone not yet in the course is enrolled as a learner. Invitations go out from NB Academy's own email address (Site administration › Email, sign-in and meetings › Email) with a link that opens the session in NB Academy. Changing the time or place emails an update; removing someone, or deleting the session, emails a cancellation. Invitees also get the usual reminder 24 hours before.
+- **Joining:** the Join button appears 15 minutes before the start (60 minutes for trainers). The meeting opens inside NB Academy with camera, microphone, screen sharing and chat. Joining records attendance (present, or late after 10 minutes), which completes the activity; trainers can still correct the roster.
+- **Who can get in:** each person receives a meeting link signed by NB Academy, so only NB Academy accounts taking part in the course can join. Trainers and administrators join as moderators (mute others, remove people, record).
+
+### Setting up the meeting server (one time, by whoever runs the server)
+
+The video runs on **Jitsi Meet**, free and open source, installed with Docker (https://jitsi.github.io/handbook/docs/devops-guide/devops-guide-docker). One server with 4 CPUs and 8 GB of memory comfortably holds sessions of 50 or more people.
+
+1. Give it its own address, for example `meet.nobroker.in`, with HTTPS. Open port **443/TCP** and **10000/UDP** (video).
+2. In docker-jitsi-meet's `.env`, after `./gen-passwords.sh`, set:
+   ```
+   PUBLIC_URL=https://meet.nobroker.in
+   ENABLE_AUTH=1
+   AUTH_TYPE=jwt
+   JWT_APP_ID=nbacademy
+   JWT_APP_SECRET=<a long random secret, e.g. from: openssl rand -hex 32>
+   JWT_ACCEPTED_ISSUERS=nbacademy
+   JWT_ACCEPTED_AUDIENCES=jitsi
+   ENABLE_GUESTS=0
+   ```
+   then `docker compose up -d`.
+3. In NB Academy: Site administration › Email, sign-in and meetings › **Live sessions: video meetings**: enter `https://meet.nobroker.in` and the same secret. (Or set `NB_MEET_URL`, `NB_MEET_APP_ID` and `NB_MEET_SECRET` for the NB Academy container; a secret set this way is never stored in the database.)
+
+If the meeting area shows "refused to connect", the meeting server is forbidding embedding: allow framing from NB Academy's address in its web server settings.
+
 ## Teams
 
 - Each person can belong to a **Team**, chosen from a dropdown when adding or editing them. There is no Company field anywhere, including Analytics and exports; company values saved by older versions are removed at start-up, and the old team name "Training" becomes "Training Team".
@@ -278,7 +307,7 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 
 ## Connecting your company systems
 
-- **Email:** Site administration › Email, SSO and LDAP › Email (SMTP). Enter your mail server, then "Send a test email" (it saves what is on screen first). App passwords can be pasted with their spaces. If the mail server refuses, the message says why and what to change. Until email is on, emails are kept in the Email log and **not sent**; turning it on sends those from the last 3 days. Google Workspace: `smtp.gmail.com`, port 587, an app password. Microsoft 365: `smtp.office365.com`, port 587. Links in emails use the site address (General › Site address, or `NB_PUBLIC_URL`). Until that is set, they use the address the site is being reached at.
+- **Email:** Site administration › Email, sign-in and meetings › Email (SMTP). Enter your mail server, then "Send a test email" (it saves what is on screen first). App passwords can be pasted with their spaces. If the mail server refuses, the message says why and what to change. Until email is on, emails are kept in the Email log and **not sent**; turning it on sends those from the last 3 days. Google Workspace: `smtp.gmail.com`, port 587, an app password. Microsoft 365: `smtp.office365.com`, port 587. Links in emails use the site address (General › Site address, or `NB_PUBLIC_URL`). Until that is set, they use the address the site is being reached at.
 - **Single sign-on:** register `https://YOUR-SITE/auth/sso/callback` as a redirect URI with your OpenID Connect provider, then enter the issuer URL, client ID and secret. Users are matched by email address.
 - **LDAP / Active Directory:** enter the server URL (`ldaps://…` recommended) and a bind DN pattern containing `{username}`, then "Test a sign-in".
 - **Custom domain:** set General › Site address, point DNS at the server and terminate HTTPS at the reverse proxy.

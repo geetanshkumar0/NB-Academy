@@ -2,7 +2,7 @@
 'use strict';
 
 async function refresh() {
-  if (!S || document.hidden || modalEl.innerHTML || ['attempt', 'lessonplay', 'submit'].includes(ui.view.name) || document.getElementById('vplayer') || document.getElementById('scormframe')) return;
+  if (!S || document.hidden || modalEl.innerHTML || ['attempt', 'lessonplay', 'submit'].includes(ui.view.name) || document.getElementById('vplayer') || document.getElementById('scormframe') || document.getElementById('liveframe')) return;
   const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
   try { const st = await B.init(); if (!st) { setState(null); ui.loginErr = 'You were signed out after a period of inactivity.'; render(); return; } const y = window.scrollY; setState(st); render(); window.scrollTo(0, y); } catch (e) {}
 }
@@ -11,9 +11,9 @@ window.addEventListener('beforeunload', e => { if (ui.uploading) { e.preventDefa
 ['mousemove', 'keydown', 'scroll', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ui.lastActive = Date.now(); }, {passive:true}));
 function heartbeat() {
   if (!S || document.hidden) return; const cid = ui.ctxCourse; const vid = document.getElementById('vplayer');
-  const watching = vid && !vid.paused;
+  const watching = (vid && !vid.paused) || !!document.getElementById('liveframe'); // in a video or a live session
   if (!cid || !h.isLearner(cid) || (Date.now() - ui.lastActive > 60e3 && !watching)) return;
-  if (!['course', 'mod', 'attempt', 'lessonplay', 'review', 'discussion', 'submit'].includes(ui.view.name)) return;
+  if (!['course', 'mod', 'attempt', 'lessonplay', 'review', 'discussion', 'submit', 'liveroom'].includes(ui.view.name)) return;
   B.op('heartbeat', {cid, secs:60}).catch(() => {});
 }
 (async () => {

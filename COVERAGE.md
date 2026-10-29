@@ -1,13 +1,13 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (62 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (64 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
 | Requirement | Where | Notes |
 |---|---|---|
 | Automated welcome email with login link | Welcome template, Email log | Sent on user creation, CSV upload, rule or SSO/LDAP creation. Link sets the password (valid 7 days). Tested with a fake SMTP server. |
-| Company SSO / MFA | Login page, Profile › Two-step sign-in, Admin › Security, Admin › Email, SSO and LDAP | OpenID Connect (Entra ID, Google, Okta…) with PKCE and signature checks; TOTP authenticator codes; policy can require MFA for admins or everyone. Tested with a fake identity provider. |
+| Company SSO / MFA | Login page, Profile › Two-step sign-in, Admin › Security, Admin › Email, sign-in and meetings | OpenID Connect (Entra ID, Google, Okta…) with PKCE and signature checks; TOTP authenticator codes; policy can require MFA for admins or everyone. Tested with a fake identity provider. |
 | First login: set password, accept terms, accessibility | Onboarding screens | Forced password change (policy enforced), terms with versioning, contrast, text size, captions, reduced motion. |
 | Dashboard tabs: Assigned, In progress, Completed (scores, certificates), Overdue (locked), Course library | Dashboard tiles, My learning | Completed tab lists grades and certificate PDFs. |
 | Auto-move to In progress | Opening a course | Recorded on first visit. |
@@ -39,7 +39,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 |---|---|
 | Role toggle, scoped to tagged courses and cohorts | View switcher; Trainer workspace |
 | Direct assignment of courses and learning paths to learners or cohorts | Assign training (with due date, mandatory flag). Scope enforced. Tested. |
-| ILT/VILT: rosters, attendance, recordings | Live session activity |
+| ILT/VILT: rosters, attendance, recordings | Live session activity: in person, outside link, or a video room inside NB Academy (self-hosted Jitsi, signed links). Email invitations from the site's address, updates and cancellations; attendance recorded on joining. Tested. |
 | Subjective grading with inline rubric feedback | Assignment rubrics, essay grading |
 | Reset or grant extra quiz attempts | Quiz results table. Tested. |
 | Course analytics: enrolment vs completion, time to complete, drop-off | Course › Reports, Trainer workspace |
@@ -52,7 +52,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 |---|---|
 | Logos, brand colours, custom domain, certificate templates | Admin › Branding and certificates; General › Site address |
 | Notification engine: email and in-app templates | Admin › Notifications and terms; Email log |
-| Password rules, session timeouts, SSO/LDAP | Admin › Security; Admin › Email, SSO and LDAP. Tested. |
+| Password rules, session timeouts, SSO/LDAP | Admin › Security; Admin › Email, sign-in and meetings. Tested. |
 | User CRUD, bulk CSV, suspend/delete, unlock, reset passwords | Admin › Users, Upload users, user profile |
 | Personas (Learner, Trainer, Team Lead, Administrator, in any combination) | Add a new user, and Personas on each user's profile, including cohorts and courses. Anyone with more than one persona, administrators included, switches views from the top bar. Tested. |
 | Login As | Users and profile |

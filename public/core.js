@@ -30,7 +30,7 @@ const TYPES = {
   choice:      {label:'Choice', p:'comm', desc:'A single question poll. Useful for quick votes and decisions.'},
   scorm:       {label:'SCORM package', p:'content', desc:'SCORM 1.2 e-learning package. Saves the learner\'s place and score between sessions.', graded:true},
   video:       {label:'Video', p:'content', desc:'Video with optional captions. Learners resume where they stopped.'},
-  live:        {label:'Live session', p:'collab', desc:'Instructor-led (ILT) or virtual (VILT) session with registration, attendance and recordings.'},
+  live:        {label:'Live session', p:'collab', desc:'Instructor-led (ILT), online in NB Academy, or with an outside meeting link. Email invitations, registration, attendance and recordings.'},
   feedback:    {label:'Feedback survey', p:'comm', desc:'Course feedback questionnaire with ratings, choices and comments.'},
   certificate: {label:'Certificate', p:'other', desc:'Issues a verifiable certificate when the learner meets the conditions.'},
   label:       {label:'Text and media area', p:'other', desc:'Text shown directly on the course page between activities.'}
@@ -514,6 +514,9 @@ const DEFAULT_TEMPLATES = {
   recert:{label:'Recertification due', subject:'Recertification due: {course}', body:'Hi {firstname},\n\nYour certificate for {course} expires on {expires}. The course has been assigned to you again. Please complete it by {due} to stay certified.\n\n{link}', email:true, inapp:true},
   nudge:{label:'Reminder from a team lead or trainer', subject:'Reminder from {sender}: {course}', body:'Hi {firstname},\n\n{sender} is reminding you to complete {course}.{duepart}\n\n{link}', email:true, inapp:true},
   liveSession:{label:'Live session reminder', subject:'Upcoming session: {item}', body:'Hi {firstname},\n\nYou are registered for {item} ({course}) on {when}.\n{where}\n\n{link}', email:true, inapp:true},
+  liveInvite:{label:'Live session invitation', subject:'Invitation: {item} on {when}', body:'Hi {firstname},\n\nYou are invited to a live session.\n\nSession: {item}\nCourse: {course}\nWhen: {when} ({duration})\n{where}\n\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
+  liveUpdated:{label:'Live session changed', subject:'Updated: {item} on {when}', body:'Hi {firstname},\n\nThe details of a live session you are invited to have changed.\n\nSession: {item}\nCourse: {course}\nWhen: {when} ({duration})\n{where}\n\nOpen the session in NB Academy:\n{link}', email:true, inapp:true},
+  liveCancelled:{label:'Live session cancelled', subject:'Cancelled: {item}', body:'Hi {firstname},\n\n{item} ({course}) on {when} has been cancelled. {reason}\n\n{link}', email:true, inapp:true},
   passwordReset:{label:'Password reset', subject:'Reset your {site} password', body:'Hi {firstname},\n\nUse this link to choose a new password. It is valid for 2 hours.\n\n{link}\n\nIf you did not ask for this, ignore this email.', email:true, inapp:false}
 };
 const TEMPLATE_VARS = '{firstname} {lastname} {username} {site} {course} {item} {due} {days} {progress} {link} {sender} {learner} {reason} {remarks} {grade} {code} {expires} {when} {where}';
@@ -554,6 +557,7 @@ function defaultSite() {
     email:{enabled:false, host:'', port:587, secure:false, user:'', pass:'', from:'NB Academy <no-reply@example.com>'},
     sso:{enabled:false, label:'Company single sign-on', issuer:'', clientId:'', clientSecret:'', autoCreate:false},
     ldap:{enabled:false, url:'', bindDn:'uid={username},ou=people,dc=example,dc=com', autoCreate:false, emailDomain:''},
+    meetings:{server:'', appId:'nbacademy', secret:''}, // Jitsi server for live sessions held in NB Academy (see README: Live sessions)
     cert:{template:'classic', signatureName:'', signatureTitle:'', body:'has successfully completed'},
     templates:clone(DEFAULT_TEMPLATES), reminders:[7, 3, 1], recertDays:30};
 }
@@ -693,7 +697,7 @@ const EI = (() => {
   }
   return {iconPng, NAMES};
 })();
-const HEADER_ICON = {welcome:'welcome', assigned:'header-book', deadline:'header-bell', overdue:'header-lock', accessRequest:'header-mail', accessApproved:'header-check', accessRejected:'header-lock', graded:'header-check', certificate:'header-award', recert:'header-calendar', nudge:'header-bell', liveSession:'header-calendar', passwordReset:'header-key'};
+const HEADER_ICON = {liveInvite:'header-calendar', liveUpdated:'header-calendar', liveCancelled:'header-calendar', welcome:'welcome', assigned:'header-book', deadline:'header-bell', overdue:'header-lock', accessRequest:'header-mail', accessApproved:'header-check', accessRejected:'header-lock', graded:'header-check', certificate:'header-award', recert:'header-calendar', nudge:'header-bell', liveSession:'header-calendar', passwordReset:'header-key'};
 /* Where emails load their icons from. On the server: /email-assets/... (made absolute when sent). In the browser-only preview: inline images. */
 let emailIconUrl = (name, hex) => `/email-assets/${name}-${hex.slice(1).toUpperCase()}.png`;
 /* ---------- Email rendering: every email shares one look (the site's email colour) ---------- */
@@ -703,7 +707,7 @@ function emailPalette(S) {
   const mix = (hex, w) => '#' + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - w) + 255 * w).toString(16).padStart(2, '0')).join('');
   return {brand:c, brandSoft:mix(c, 0.94), brandLine:mix(c, 0.8)};
 }
-const CTA = {welcome:'Set Your Password', assigned:'Start the course', deadline:'Continue the course', overdue:'Request access', accessRequest:'Review the request', accessApproved:'Continue the course', accessRejected:'Open NB Academy', graded:'See the feedback', certificate:'View your certificate', recert:'Start the course', nudge:'Open the course', liveSession:'View the session', passwordReset:'Choose a new password'};
+const CTA = {liveInvite:'Open the session', liveUpdated:'Open the session', liveCancelled:'Open NB Academy', welcome:'Set Your Password', assigned:'Start the course', deadline:'Continue the course', overdue:'Request access', accessRequest:'Review the request', accessApproved:'Continue the course', accessRejected:'Open NB Academy', graded:'See the feedback', certificate:'View your certificate', recert:'Start the course', nudge:'Open the course', liveSession:'View the session', passwordReset:'Choose a new password'};
 const fillHtml = (tpl, vars) => String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? escHtml(vars[k]) : '');
 /* The same design as the welcome email, for any template: coloured header with the subject, the message, a button for the link, footer */
 function emailLayout(S, key, subject, text, v) {
@@ -1149,9 +1153,49 @@ const MOD_FIELDS = {
   page:['content'], url:['url'], file:['fileId'], assign:['due', 'maxgrade', 'allowFiles'], quiz:['close', 'timelimit', 'attempts', 'maxgrade', 'gradepass', 'pretest'],
   forum:['news'], glossary:['approval'], choice:['options', 'allowUpdate', 'showResults'], lesson:['maxgrade', 'close'],
   workshop:['instructions', 'maxgrade', 'gradinggrade', 'peers', 'subEnd'], certificate:['requireCompletion', 'minGrade', 'requireFeedback', 'validityDays', 'autoIssue'], label:[],
-  video:['fileId', 'captionsId', 'completePct'], scorm:['packageId', 'maxgrade'], live:['start', 'duration', 'mode', 'location', 'link', 'capacity', 'recordingUrl'],
+  video:['fileId', 'captionsId', 'completePct'], scorm:['packageId', 'maxgrade'], live:['start', 'duration', 'mode', 'location', 'link', 'capacity', 'recordingUrl', 'invites'],
   feedback:['questions', 'anonymous']
 };
+/* ---------- Live sessions: email invitations ----------
+   The trainer lists email addresses; each must belong to an NB Academy account. Invitees not yet in the course are
+   enrolled as learners (when the trainer may enrol). Invited learners hold a place. Emails go out from the site's
+   own email address with a link that opens the session in NB Academy. */
+function liveWhere(m) { return m.mode === 'ilt' ? `Location: ${m.location || 'to be confirmed'}` : m.mode === 'room' ? 'Online, in NB Academy: open the link below and join from your browser.' : `Join link: ${m.link || 'shared before the session'}`; }
+function liveVars(h, m) { return {item:m.name, course:h.course(m.courseId)?.fullname || '', when:fmtD(m.start), duration:`${m.duration || 60} minutes`, where:liveWhere(m), reason:'', short:fmtD(m.start)}; }
+const liveEnd = m => (m.start || 0) + (m.duration || 60) * 6e4;
+function parseEmails(raw) { return [...new Set((Array.isArray(raw) ? raw : String(raw || '').split(/[\s,;]+/)).map(x => String(x).trim().replace(/^<|>$/g, '').toLowerCase()).filter(Boolean))]; }
+function setLiveInvites(S, h, env, m, c, raw, changed) {
+  const emails = parseEmails(raw); need(emails.length <= 500, 'Invite at most 500 people to one session.', 400);
+  const bad = emails.filter(e => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)); need(!bad.length, `Not an email address: ${bad.join(', ')}`, 400);
+  const pairs = emails.map(e => [e, S.users.find(u => String(u.email || '').toLowerCase() === e)]);
+  const unknown = pairs.filter(([, u]) => !u).map(([e]) => e);
+  need(!unknown.length, `No NB Academy account uses ${unknown.length === 1 ? 'this email' : 'these emails'}: ${unknown.join(', ')}. Add ${unknown.length === 1 ? 'the person' : 'them'} in Site administration › Users first, or remove ${unknown.length === 1 ? 'it' : 'them'}.`, 400);
+  const off = pairs.filter(([, u]) => u.suspended).map(([e]) => e); need(!off.length, `Suspended ${off.length === 1 ? 'account' : 'accounts'}: ${off.join(', ')}`, 400);
+  const outside = pairs.map(([, u]) => u).filter(u => !h.enrolOf(c.id, u.id));
+  need(!outside.length || h.has('course:enrol', c.id), `Not enrolled in this course: ${outside.map(u => u.email).join(', ')}. Ask an administrator to enrol ${outside.length === 1 ? 'them' : 'them'}, or remove ${outside.length === 1 ? 'the email' : 'these emails'}.`, 400);
+  need(!outside.length || c.status !== 'archived', 'Archived courses do not accept new enrolments.', 400);
+  for (const u of outside) { S.enrol.push({id:env.uid('e'), courseId:c.id, userId:u.id, role:'student', time:env.now(), source:'live invite'}); audit(S, env, h.meId, 'User enrolled', c.shortname, `${h.fullname(u.id)} as Learner (invited to ${m.name})`); }
+  const ids = pairs.map(([, u]) => u.id), removed = (m.invitees || []).filter(id => !ids.includes(id));
+  m.invitees = ids;
+  for (const id of ids) if (h.isLearner(c.id, id) && !S.liveSignups.some(x => x.cmid === m.id && x.userId === id && !x.archived)) S.liveSignups.push({id:env.uid('ls'), cmid:m.id, userId:id, status:'registered', time:env.now(), invited:true});
+  S.liveSignups = S.liveSignups.filter(x => !(x.cmid === m.id && removed.includes(x.userId) && x.invited && x.status === 'registered' && !x.archived));
+  sendLiveInvites(S, h, env, m, changed, removed);
+}
+/* Send what is due: invitations to new invitees, updates when the time or place changed, and a note to anyone removed.
+   Nothing goes out while the activity is hidden or after the session; invitations wait until it is shown. */
+function sendLiveInvites(S, h, env, m, changed, removed) {
+  if (!m.visible || liveEnd(m) < env.now()) return;
+  const vars = liveVars(h, m), sent = new Set(m.invited || []);
+  for (const id of m.invitees || []) { if (!sent.has(id)) { notifyT(S, env, 'liveInvite', id, vars, 'mod', m.id); sent.add(id); } else if (changed) notifyT(S, env, 'liveUpdated', id, vars, 'mod', m.id); }
+  if (changed) for (const x of S.liveSignups) if (x.cmid === m.id && !x.archived && x.status === 'registered' && !sent.has(x.userId)) notifyT(S, env, 'liveUpdated', x.userId, vars, 'mod', m.id);
+  for (const id of removed || []) if (sent.has(id)) { notifyT(S, env, 'liveCancelled', id, {...vars, reason:'You are no longer invited to this session.'}, 'dashboard'); sent.delete(id); }
+  m.invited = [...sent];
+}
+function liveCancelAll(S, h, env, m) {
+  if (!m.visible || liveEnd(m) < env.now()) return;
+  const to = new Set([...(m.invited || []), ...S.liveSignups.filter(x => x.cmid === m.id && !x.archived && x.status === 'registered').map(x => x.userId)]);
+  for (const id of to) notifyT(S, env, 'liveCancelled', id, liveVars(h, m), 'course', m.courseId);
+}
 op('saveMod', (S, h, p, env) => {
   const c = courseOf(S, p.cid); need(h.canEdit(c.id), 'You cannot edit this course.'); need(TYPES[p.type], 'Unknown activity type.', 400);
   const sec = c.sections.find(s => s.id === p.sid); need(sec, 'Choose a section.', 400);
@@ -1160,13 +1204,15 @@ op('saveMod', (S, h, p, env) => {
   m.name = p.type === 'label' ? 'Text and media area' : req(p.name, 'Name', 200);
   m.intro = str(p.intro, 20000); m.visible = !!p.visible;
   const f = p.fields || {};
+  const was = isNew ? null : JSON.stringify([m.start, m.duration, m.mode, m.location, m.link]);
   for (const k of MOD_FIELDS[p.type]) {
     let v = f[k];
+    if (k === 'invites') continue; // handled below (setLiveInvites)
     if (['maxgrade', 'gradinggrade', 'timelimit', 'attempts', 'peers', 'minGrade', 'gradepass', 'validityDays', 'duration', 'capacity', 'completePct'].includes(k)) v = Math.max(0, Number(v) || 0);
     if (['due', 'close', 'subEnd', 'start'].includes(k)) v = v ? Number(v) : null;
     if (['allowFiles', 'news', 'approval', 'allowUpdate', 'requireCompletion', 'pretest', 'requireFeedback', 'anonymous'].includes(k)) v = !!v;
     if (k === 'autoIssue') v = v !== false;
-    if (k === 'mode') v = v === 'ilt' ? 'ilt' : 'vilt';
+    if (k === 'mode') v = v === 'ilt' ? 'ilt' : v === 'room' ? 'room' : 'vilt';
     if (['location', 'link', 'recordingUrl'].includes(k)) { v = str(v, 500).trim(); if ((k === 'link' || k === 'recordingUrl') && v) need(/^https?:\/\//i.test(v), 'Links must start with http:// or https://', 400); }
     if (k === 'captionsId' && v) need(S.files.some(x => x.id === v), 'Upload the captions file first.', 400);
     if (k === 'captionsId' && !v) v = null;
@@ -1186,10 +1232,11 @@ op('saveMod', (S, h, p, env) => {
   if (p.type === 'workshop') { m.phase ||= 1; m.peers = Math.min(5, Math.max(1, m.peers || 2)); m.maxgrade ||= 80; }
   if (p.type === 'scorm') { m.maxgrade ||= 100; if (env.scormExtract) { const r = env.scormExtract(m.packageId, m.id); if (r) { m.launch = r.launch; m.single = r.single; m.title = r.title; m.scormVersion = r.version; m.scormFiles = r.files; } } }
   if (p.type === 'video') m.completePct ||= 90;
-  if (p.type === 'live') { need(m.start, 'Set the session date and time.', 400); m.duration ||= 60; }
+  if (p.type === 'live') { need(m.start, 'Set the session date and time.', 400); m.duration ||= 60; if (m.mode === 'room' && !m.room) m.room = ('nbacademy-' + env.uid('').replace(/[^a-z0-9]/gi, '') + Math.random().toString(36).slice(2, 10)).toLowerCase(); }
   m.requires = (Array.isArray(f.requires) ? f.requires : []).filter(id => id !== m.id && S.mods[id]?.courseId === c.id);
   if (p.type === 'assign' && f.rubric !== undefined) m.rubric = cleanRubric(f.rubric);
   S.mods[m.id] = m;
+  if (p.type === 'live' && f.invites !== undefined) setLiveInvites(S, h, env, m, c, f.invites, !isNew && was !== JSON.stringify([m.start, m.duration, m.mode, m.location, m.link]));
   const cur = h.sectionOf(m); if (!cur || cur.id !== sec.id) { if (cur) cur.mods = cur.mods.filter(x => x !== m.id); sec.mods.push(m.id); }
   log(S, env, h.meId, `${TYPES[p.type].label} ${isNew ? 'created' : 'updated'}: ${m.name}`, c.id);
   audit(S, env, h.meId, isNew ? 'Activity created' : 'Activity edited', `${c.shortname} › ${m.name}`, TYPES[p.type].label);
@@ -1202,8 +1249,8 @@ op('moveMod', (S, h, p) => {
   if (j >= 0 && j < s.mods.length) [s.mods[i], s.mods[j]] = [s.mods[j], s.mods[i]];
   else { const ns = c.sections[si + d]; if (!ns) return; s.mods.splice(i, 1); if (d < 0) ns.mods.push(m.id); else ns.mods.unshift(m.id); }
 });
-op('toggleVis', (S, h, p) => { const m = modOf(S, p.id); need(h.canEdit(m.courseId), 'You cannot edit this course.'); m.visible = !m.visible; return {visible:m.visible}; });
-op('deleteMod', (S, h, p, env) => { const m = modOf(S, p.id); need(h.canEdit(m.courseId), 'You cannot edit this course.'); const s = h.sectionOf(m); if (s) s.mods = s.mods.filter(x => x !== m.id); delete S.mods[m.id]; log(S, env, h.meId, `Activity deleted: ${m.name}`, m.courseId); audit(S, env, h.meId, 'Activity deleted', `${h.course(m.courseId)?.shortname} › ${m.name}`, TYPES[m.type].label); });
+op('toggleVis', (S, h, p, env) => { const m = modOf(S, p.id); need(h.canEdit(m.courseId), 'You cannot edit this course.'); m.visible = !m.visible; if (m.type === 'live' && m.visible) sendLiveInvites(S, h, env, m, false, []); return {visible:m.visible}; });
+op('deleteMod', (S, h, p, env) => { const m = modOf(S, p.id); need(h.canEdit(m.courseId), 'You cannot edit this course.'); if (m.type === 'live') liveCancelAll(S, h, env, m); const s = h.sectionOf(m); if (s) s.mods = s.mods.filter(x => x !== m.id); delete S.mods[m.id]; log(S, env, h.meId, `Activity deleted: ${m.name}`, m.courseId); audit(S, env, h.meId, 'Activity deleted', `${h.course(m.courseId)?.shortname} › ${m.name}`, TYPES[m.type].label); });
 op('toggleDone', (S, h, p, env) => {
   const m = modOf(S, p.id); mustLearn(h, m); need(MANUAL.has(m.type), 'This activity completes automatically.', 400);
   const k = h.meId + ':' + m.id; if (S.completion[k]) delete S.completion[k]; else { S.completion[k] = env.now(); log(S, env, h.meId, `Marked as done: ${m.name}`, m.courseId); checkBadges(S, env, h.meId, m.courseId); }
@@ -1486,8 +1533,9 @@ const VIEW_HOOKS = [];
 function view(S, meId) {
   const h = H(S, meId), me = h.me(); if (!me) return null;
   const site = clone(S.site);
-  if (!h.has('site:config')) { delete site.email; delete site.sso; delete site.ldap; delete site.templates; }
-  else { site.email.passSet = !!site.email.pass; site.email.pass = ''; site.sso.secretSet = !!site.sso.clientSecret; site.sso.clientSecret = ''; }
+  const mt = S.site.meetings || {}, meetReady = !!(mt.server && (mt.secret || mt.secretInEnv));
+  if (!h.has('site:config')) { delete site.email; delete site.sso; delete site.ldap; delete site.templates; site.meetings = {ready:meetReady}; }
+  else { site.email.passSet = !!site.email.pass; site.email.pass = ''; site.sso.secretSet = !!site.sso.clientSecret; site.sso.clientSecret = ''; site.meetings = {...mt, secret:'', secretSet:!!(mt.secret || mt.secretInEnv), ready:meetReady}; }
   const V = {version:VERSION, me:meId, site, roles:clone(S.roles), sysroles:clone(S.sysroles), categories:clone(S.categories), now:Date.now()};
   const manageUsers = h.has('user:manage');
   const team = new Set(h.teamMembers(meId)), scope = h.trainerScope(meId);
@@ -1514,6 +1562,8 @@ function view(S, meId) {
     const vm = clone(m);
     if (!h.canEdit(cid)) stripAnswers(vm);
     if (!viewable.has(cid)) { delete vm.content; delete vm.questions; delete vm.pages; vm.oversightOnly = true; }
+    // Live sessions: only people who manage the session see who is invited; the room name is handed out on joining
+    if (m.type === 'live') { delete vm.room; delete vm.invited; if (h.has('live:manage', cid)) vm.inviteEmails = (m.invitees || []).map(id => h.user(id)?.email).filter(Boolean); else vm.invitedMe = (m.invitees || []).includes(meId); delete vm.invitees; }
     if (m.type === 'choice') {
       const answered = S.choiceAnswers.some(a => a.cmid === m.id && a.userId === meId && !a.archived);
       if (h.has('grade:viewall', cid) || m.showResults === 'always' || (m.showResults === 'after' && answered)) vm.results = m.options.map((_, i) => S.choiceAnswers.filter(a => a.cmid === m.id && a.option === i && !a.archived).length);
@@ -1573,5 +1623,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
   gradeQ, correctText, reviewOf, parseCSV, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });
