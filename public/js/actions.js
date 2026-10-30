@@ -371,5 +371,5 @@ function recordAnswer(t) {
   ui.saveT = setTimeout(() => { if (ui.attempt === A0) B.op('saveQuizAnswers', {aid:A0.aid, answers:A0.answers}).catch(() => {}); }, 1200);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (modalEl.innerHTML) closeModal(); document.querySelectorAll('details[open]').forEach(x => x.removeAttribute('open')); } });
-document.addEventListener('click', e => { document.querySelectorAll('.umenu[open],.ndrop[open]').forEach(dm => { if (!dm.contains(e.target)) dm.removeAttribute('open'); }); }, true);
+document.addEventListener('click', e => { document.querySelectorAll('.umenu[open],.ndrop[open],.pmore[open]').forEach(dm => { if (!dm.contains(e.target)) dm.removeAttribute('open'); }); }, true);
 

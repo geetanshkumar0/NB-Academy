@@ -409,13 +409,17 @@ function navbar() {
   const courseCtx = ['course', 'participants', 'groups', 'grades', 'badges', 'creports', 'csettings', 'mod', 'attempt', 'review', 'discussion', 'grader', 'submit', 'lessonplay', 'wsassess'].includes(v);
   const on = k => (k === v || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && mode !== 'admin') || (k === 'home' && courseCtx && mode === 'admin')) ? 'on' : '';
   const um = h.unreadMessages(), un = h.unreadNotifications();
+  // The first four pages sit in the bar; any others (e.g. Site administration) are in the small ▾ menu after them
+  const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;
   const notes = S.notifications.slice().sort((a, b) => b.time - a.time).slice(0, 8);
   return `<header class="nav"><div class="nav-in">
     <button class="brand" data-go="${homeFor(mode)}" aria-label="${esc(S.site.name)} home">${LOGO}<b>${esc(S.site.name)}</b></button>
-    <nav class="prim" aria-label="Primary">${L.map(([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`).join('')}</nav>
+    <nav class="prim" aria-label="Primary">${L.slice(0, 4).map(tab).join('')}</nav>
+    ${L.length > 4 ? `<details class="pmore"><summary class="${L.slice(4).some(([k]) => on(k)) ? 'on' : ''}" aria-label="More pages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+      <div class="menu">${L.slice(4).map(tab).join('')}</div></details>` : ''}
     <div class="nav-r">
       ${ms.length > 1 ? `<div class="modesw" role="group" aria-label="Switch view">${ms.map(([k, l]) => `<button class="${k === mode ? 'on' : ''}" data-act="setMode" data-m="${k}" aria-pressed="${k === mode}">${l}</button>`).join('')}</div>` : ''}
-      ${isEditorAnywhere() && mode !== 'learner' ? `<label class="switch"><input type="checkbox" id="editmode" ${ui.editing ? 'checked' : ''}> Edit mode</label>` : ''}
+      ${isEditorAnywhere() && mode !== 'learner' ? `<label class="switch" title="Edit mode"><input type="checkbox" id="editmode" aria-label="Edit mode" ${ui.editing ? 'checked' : ''}> Edit mode</label>` : ''}
       <button class="nav-ico" data-go="messages" aria-label="Messages${um ? `, ${um} unread` : ''}"><svg viewBox="0 0 24 24">${SVG.chat}</svg>${um ? `<span class="count">${um}</span>` : ''}</button>
       <details class="ndrop"><summary class="nav-ico" aria-label="Notifications${un ? `, ${un} unread` : ''}"><svg viewBox="0 0 24 24">${SVG.bell}</svg>${un ? `<span class="count">${un}</span>` : ''}</summary>
         <div class="menu"><div class="mhead"><b>Notifications</b>${un ? '<button class="link small" data-act="readAllNotes">Mark all as read</button>' : ''}</div>

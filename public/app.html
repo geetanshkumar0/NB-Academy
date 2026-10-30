@@ -60,12 +60,23 @@ button{font:inherit;color:inherit}
 .brand{display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;color:var(--nav-ink);padding:4px 0}
 .brand b{font-family:var(--f-display);font-size:1.08rem;font-weight:700;letter-spacing:.01em}
 .logo{width:30px;height:30px;flex:none}
-.prim{display:flex;gap:2px;flex-wrap:wrap;flex:1;min-width:0}
+.prim{display:flex;gap:2px;flex-wrap:nowrap;min-width:0;overflow:hidden}
+.pmore{position:relative;margin-left:-4px;margin-right:auto}
+.pmore summary{list-style:none;display:grid;place-items:center;width:30px;height:34px;border-radius:6px;color:var(--nav-muted);cursor:pointer}
+.pmore summary::-webkit-details-marker{display:none}
+.pmore summary:hover,.pmore[open] summary{background:var(--nav-hover);color:var(--nav-ink)}
+.pmore summary.on{color:var(--nav-ink);box-shadow:inset 0 -3px 0 var(--accent);border-radius:6px 6px 0 0}
+.pmore summary svg{width:18px;height:18px}
+.pmore .menu{position:absolute;left:0;top:calc(100% + 8px);min-width:210px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:30;padding:6px}
+.pmore .menu button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--ink);padding:9px 12px;border-radius:6px;cursor:pointer;font:inherit;font-weight:550;white-space:nowrap}
+.pmore .menu button:hover{background:var(--surface-2)}
+.pmore .menu button.on{color:var(--brand);background:var(--brand-soft)}
 .prim button{background:none;border:0;color:var(--nav-muted);padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:550;white-space:nowrap}
 .prim button:hover{background:var(--nav-hover);color:var(--nav-ink)}
 .prim button.on{color:var(--nav-ink);box-shadow:inset 0 -3px 0 var(--accent);border-radius:6px 6px 0 0}
 .nav-r{display:flex;align-items:center;gap:14px;margin-left:auto}
-@media (max-width:760px){.prim{order:3;flex-basis:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -8px}.prim button.on{box-shadow:inset 0 -3px 0 var(--accent)}.switch{font-size:0;gap:0}}
+@media (max-width:1240px){.nav-r .switch{font-size:0;gap:0}.nav-r{gap:10px}}
+@media (max-width:760px){.prim{order:3;flex-basis:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0 -8px}.prim button.on{box-shadow:inset 0 -3px 0 var(--accent)}.switch{font-size:0;gap:0}}
 .switch{display:flex;align-items:center;gap:8px;font-size:.88rem;color:var(--nav-muted);cursor:pointer;user-select:none}
 .switch input{appearance:none;width:34px;height:20px;border-radius:20px;background:var(--nav-hover);border:1px solid var(--nav-muted);position:relative;cursor:pointer;margin:0}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--nav-muted);transition:transform .15s}
