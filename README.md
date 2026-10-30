@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (68 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (69 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -239,7 +239,7 @@ Fill it in and choose it in the same page. **Excel (.xlsx) and CSV files both wo
 ## Building quizzes
 
 Questions are edited directly on the quiz page, one card per question, much like Google Forms:
-- type the question, pick its type (Multiple choice, True / False, Short answer, Number, Paragraph), and click the circle next to the correct answer;
+- type the question, pick its type (Multiple choice, True / False, Short answer, Number, Subjective), and click the circle next to the correct answer;
 - press Enter in an option to add the next one, or use "Add option"; short answers can have several accepted answers;
 - each card has points, move up and down, duplicate (the copy appears right below) and delete;
 - **changes save automatically**, and the card says "Saved", or what is still missing (for example "Click the circle next to the correct answer");
@@ -287,6 +287,10 @@ The video runs on **Jitsi Meet**, free and open source, installed with Docker (h
 3. In NB Academy: Site administration › Email, sign-in and meetings › **Live sessions: video meetings**: enter `https://meet.nobroker.in` and the same secret. (Or set `NB_MEET_URL`, `NB_MEET_APP_ID` and `NB_MEET_SECRET` for the NB Academy container; a secret set this way is never stored in the database.)
 
 If the meeting area shows "refused to connect", the meeting server is forbidding embedding: allow framing from NB Academy's address in its web server settings.
+
+## Subjective questions and grading
+
+A quiz question of type **Subjective (graded by a trainer)** lets the learner write a free answer, with optional guidance for the grader and its own marks. When a learner submits, the course's trainers get a notification that opens the answer (if the course has no trainer, its content moderators are told, otherwise the administrators). Until it is graded, the attempt is listed under **Grading to do** at the top of the Notifications page and in the bell menu, and the quiz shows how many answers wait. The trainer enters a mark and a comment on the answer; when every subjective answer is graded, the learner is told, the score counts, and the reminders are marked done.
 
 ## Uploading quiz questions in bulk
 

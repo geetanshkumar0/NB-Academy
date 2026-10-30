@@ -497,6 +497,7 @@ op('gradeEssay', (S, h, p, env) => {
   const mark = Number(p.mark); need(!isNaN(mark) && mark >= 0 && mark <= rv.mark, `Enter a mark between 0 and ${rv.mark}.`, 400);
   const old = rv.got; a.score = a.score - (rv.got || 0) + mark; rv.got = mark; rv.pending = false; rv.comment = str(p.comment, 2000); rv.gradedBy = h.meId;
   a.pending = Object.values(a.review).some(x => x.pending);
+  if (!a.pending) for (const n of S.notifications) if (n.go === 'review' && n.gid === a.id && !n.read) n.read = true; // graded: the 'To grade' reminders are done
   if (!a.pending) notifyT(S, env, 'graded', a.userId, {item:m.name, course:h.course(m.courseId)?.fullname, grade:`${(a.score / a.max * m.maxgrade).toFixed(2)} / ${m.maxgrade}`, short:`${m.name}: essay graded`}, 'review', a.id);
   audit(S, env, h.meId, old ? 'Essay mark changed' : 'Essay graded', `${h.course(m.courseId).shortname} › ${m.name} › ${h.fullname(a.userId)}`, `${old || 0} → ${mark} of ${rv.mark}`);
   checkBadges(S, env, a.userId, m.courseId);

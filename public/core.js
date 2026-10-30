@@ -36,7 +36,7 @@ const TYPES = {
   label:       {label:'Text and media area', p:'other', desc:'Text shown directly on the course page between activities.'}
 };
 const MANUAL = new Set(['page', 'url', 'file', 'forum', 'glossary']);
-const QTYPES = {mc:'Multiple choice', tf:'True / False', short:'Short answer', num:'Number', essay:'Paragraph (graded by a trainer)'};
+const QTYPES = {mc:'Multiple choice', tf:'True / False', short:'Short answer', num:'Number', essay:'Subjective (graded by a trainer)'};
 const WS_PHASES = {1:'Setup', 2:'Submission', 3:'Assessment', 4:'Grading evaluation', 5:'Closed'};
 
 /* ---------------- Capabilities and roles ---------------- */
@@ -188,6 +188,8 @@ function H(S, meId) {
     }
   };
   h.progress = (cid, uid) => { const ms = h.courseMods(cid).filter(h.trackable); if (!ms.length) return 0; return Math.round(ms.filter(m => h.isDone(m, uid)).length / ms.length * 100); };
+  /* Quiz attempts with subjective answers still to grade, that this person can grade (newest last) */
+  h.gradingQueue = (uid = meId) => S.attempts.filter(a => a.state === 'finished' && a.pending && !a.archived && !a.preview).map(a => ({a, m:S.mods[a.cmid]})).filter(x => x.m && h.has('grade:edit', x.m.courseId, uid) && h.isLearner(x.m.courseId, x.a.userId)).sort((x, y) => x.a.finish - y.a.finish);
   h.needsGrading = m => m.type === 'assign' ? S.submissions.filter(s => s.cmid === m.id && s.status === 'submitted' && s.grade == null && !s.archived && h.isLearner(m.courseId, s.userId)).length
     : m.type === 'quiz' ? S.attempts.filter(a => a.cmid === m.id && a.pending && !a.archived && a.state === 'finished').length : 0;
   h.certEligible = (m, uid) => {
@@ -1387,7 +1389,14 @@ op('submitQuiz', (S, h, p, env) => {
   const m = modOf(S, a.cmid); if (p.answers) a.answers = Object.fromEntries(Object.entries(p.answers).map(([k, v]) => [k, str(v, 500)]));
   let score = 0, max = 0; for (const q of m.questions) { score += gradeQ(q, a.answers[q.id]); max += q.mark; }
   Object.assign(a, {state:'finished', score, max, finish:env.now(), review:reviewOf(m, a.answers)});
-  if (Object.values(a.review).some(r => r.pending)) { a.pending = true; h.enrolled(m.courseId).filter(x => h.role(x.e.role)?.caps?.['grade:edit']).forEach(x => notify(S, env, x.u.id, `Essay to grade: ${m.name}`, `${h.fullname(h.me())} submitted an attempt`, 'mod', m.id)); }
+  if (Object.values(a.review).some(r => r.pending)) {
+    a.pending = true; const n = Object.values(a.review).filter(r => r.pending).length;
+    // Tell the course's trainers; if the course has none, its content moderators, else the administrators
+    let to = h.enrolled(m.courseId).filter(x => !x.u.suspended && x.u.id !== a.userId && h.role(x.e.role)?.caps?.['grade:edit']).map(x => x.u.id);
+    if (!to.length) to = S.users.filter(u => !u.suspended && u.id !== a.userId && S.sysroles.some(r => r.userId === u.id && r.roleId === 'moderator')).map(u => u.id);
+    if (!to.length) to = S.users.filter(u => !u.suspended && u.admin && u.id !== a.userId).map(u => u.id);
+    for (const id of new Set(to)) notify(S, env, id, `To grade: ${m.name}`, `${h.fullname(h.me())} · ${n} subjective answer${n === 1 ? '' : 's'} · ${h.course(m.courseId)?.shortname || ''}`, 'review', a.id);
+  }
   if (m.timelimit && a.finish - a.start > (m.timelimit * 60 + 90) * 1000) a.overdue = true;
   log(S, env, h.meId, `Quiz attempt submitted: ${m.name}`, m.courseId);
   if (!a.preview) checkBadges(S, env, h.meId, m.courseId);

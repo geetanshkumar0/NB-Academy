@@ -410,7 +410,7 @@ function navbar() {
   const pending = h.has('access:approve') ? S.accessRequests.filter(r => r.status === 'pending').length : 0;
   const courseCtx = ['course', 'participants', 'groups', 'grades', 'badges', 'creports', 'csettings', 'mod', 'attempt', 'review', 'discussion', 'grader', 'submit', 'lessonplay', 'wsassess'].includes(v);
   const on = k => (k === v || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
-  const um = h.unreadMessages(), un = h.unreadNotifications();
+  const um = h.unreadMessages(), un = h.unreadNotifications(), gq = h.gradingQueue().length;
   // The first four pages sit in the bar; any others (e.g. Site administration) are in the small ▾ menu after them
   const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;
   const notes = S.notifications.slice().sort((a, b) => b.time - a.time).slice(0, 8);
@@ -423,8 +423,9 @@ function navbar() {
       ${ms.length > 1 ? `<div class="modesw" role="group" aria-label="Switch view">${ms.map(([k, l]) => `<button class="${k === mode ? 'on' : ''}" data-act="setMode" data-m="${k}" aria-pressed="${k === mode}">${l}</button>`).join('')}</div>` : ''}
       ${isEditorAnywhere() && mode !== 'learner' ? `<label class="switch" title="Edit mode"><input type="checkbox" id="editmode" aria-label="Edit mode" ${ui.editing ? 'checked' : ''}> Edit mode</label>` : ''}
       <button class="nav-ico" data-go="messages" aria-label="Messages${um ? `, ${um} unread` : ''}"><svg viewBox="0 0 24 24">${SVG.chat}</svg>${um ? `<span class="count">${um}</span>` : ''}</button>
-      <details class="ndrop"><summary class="nav-ico" aria-label="Notifications${un ? `, ${un} unread` : ''}"><svg viewBox="0 0 24 24">${SVG.bell}</svg>${un ? `<span class="count">${un}</span>` : ''}</summary>
+      <details class="ndrop"><summary class="nav-ico" aria-label="Notifications${un ? `, ${un} unread` : ''}${gq ? `, ${gq} to grade` : ''}"><svg viewBox="0 0 24 24">${SVG.bell}</svg>${un || gq ? `<span class="count">${un || gq}</span>` : ''}</summary>
         <div class="menu"><div class="mhead"><b>Notifications</b>${un ? '<button class="link small" data-act="readAllNotes">Mark all as read</button>' : ''}</div>
+          ${gq ? `<button class="nitem" data-go="notifications" style="background:var(--warn-soft)"><span class="ud"></span><span style="min-width:0"><b class="small" style="display:block">Grading to do: ${gq} quiz attempt${gq === 1 ? '' : 's'}</b><span class="muted small">Subjective answers waiting for a trainer. Open the list.</span></span></button>` : ''}
           ${notes.map(noteItem).join('') || '<div class="empty small">You have no notifications.</div>'}
           <div class="mhead" style="border-top:1px solid var(--line)"><button class="link small" data-go="notifications">See all</button></div></div></details>
       <details class="umenu"><summary aria-label="User menu">${avatar(u)}</summary>

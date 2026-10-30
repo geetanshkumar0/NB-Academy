@@ -681,7 +681,7 @@ function mountPlayers() {
 }
 
 /* ---------- Quiz question editor: one card per question, saved automatically (like Google Forms) ---------- */
-const QB_TYPES = [['mc', 'Multiple choice'], ['tf', 'True / False'], ['short', 'Short answer'], ['num', 'Number'], ['essay', 'Paragraph (graded by a trainer)']];
+const QB_TYPES = [['mc', 'Multiple choice'], ['tf', 'True / False'], ['short', 'Short answer'], ['num', 'Number'], ['essay', 'Subjective (graded by a trainer)']];
 function qbBlank(type = 'mc') { return {type, text:'', mark:1, options:type === 'mc' ? [{text:'Option 1', correct:false}, {text:'Option 2', correct:false}] : undefined, answer:type === 'tf' ? true : type === 'short' ? '' : type === 'num' ? '' : undefined, tol:0, guidance:''}; }
 function qbCard(m, q, key, i, n, isDraft = false) {
   const circle = (on, act, extra = '') => `<button type="button" class="qb-pick ${on ? 'on' : ''}" data-act="${act}" ${extra} aria-pressed="${on}" title="${on ? 'Correct answer' : 'Mark as the correct answer'}"><span></span></button>`;

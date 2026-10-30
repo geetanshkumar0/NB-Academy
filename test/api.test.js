@@ -921,6 +921,35 @@ test('everyone learns only whether email is on, not the settings; the "email is 
   assert.match(ui, /const emailOffNote = \(\) => S\.site\.emailOn \|\| !h\.has\('site:config'\) \? '' :/);
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../public/js/actions-ext.js'), 'utf8'), /S\.site\.email\?\.enabled/);
 });
+test('subjective quiz answers: trainers are told and see them under Grading to do until graded', async () => {
+  const a = await login('admin'), S0 = getState(), sid = S0.courses.find(c => c.id === 'c1').sections[0].id;
+  let r = await op(a, 'saveMod', {cid:'c1', sid, type:'quiz', name:'Explain it', intro:'', visible:true, fields:{gradepass:0, timelimit:0, attempts:0}}); assert.equal(r.status, 200, r.text); const qid = r.json.result.id;
+  r = await op(a, 'saveQuestion', {mid:qid, q:{type:'essay', text:'Explain legal due diligence in two lines.', mark:5, guidance:'Mention documents and title.'}}); assert.equal(r.status, 200, r.text);
+  assert.equal(Core.QTYPES.essay, 'Subjective (graded by a trainer)');
+  const asha = getState().users.find(u => u.username === 'asha'), cl = await login('asha');
+  const st = await op(cl, 'startQuiz', {mid:qid}); r = await op(cl, 'submitQuiz', {aid:st.json.result.id, answers:{[getState().mods[qid].questions[0].id]:'Check documents and clear title.'}}); assert.equal(r.status, 200, r.text);
+  const att = getState().attempts.find(x => x.id === st.json.result.id); assert.equal(att.pending, true);
+  const graders = Core.H(getState(), asha.id).enrolled('c1').filter(x => getState().roles.find(ro => ro.id === x.e.role)?.caps?.['grade:edit']).map(x => x.u.id);
+  const notes = getState().notifications.filter(n => n.go === 'review' && n.gid === att.id);
+  assert.ok(graders.length && graders.every(id => notes.some(n => n.userId === id && !n.read)), 'every trainer of the course is told, with a link to the answer');
+  assert.match(notes[0].subject, /^To grade: Explain it/); assert.ok(!notes.some(n => n.userId === asha.id));
+  const rohan = getState().users.find(u => u.username === 'rohan');
+  assert.ok(Core.H(getState(), rohan.id).gradingQueue().some(x => x.a.id === att.id), 'listed under Grading to do');
+  assert.ok(!Core.H(getState(), asha.id).gradingQueue().length, 'learners have no grading list');
+  r = await op(await login('rohan'), 'gradeEssay', {aid:att.id, qid:getState().mods[qid].questions[0].id, mark:4, comment:'Good'}); assert.equal(r.status, 200, r.text);
+  assert.ok(!Core.H(getState(), rohan.id).gradingQueue().some(x => x.a.id === att.id), 'gone once graded');
+  assert.ok(getState().notifications.filter(n => n.go === 'review' && n.gid === att.id && n.subject.startsWith('To grade')).every(n => n.read), 'the reminders are marked done');
+  // A course with no trainer: its content moderators are told, otherwise the administrators
+  r = await op(a, 'newCourse', {fullname:'No trainer yet', shortname:'NOTR1', catId:getState().categories[0].id, sections:1}); const cid = r.json.result.id;
+  await op(a, 'enrolUser', {cid, userId:asha.id, role:'student'});
+  getState().courses.find(c => c.id === cid).status = 'published'; // a new course starts as a draft
+  r = await op(a, 'saveMod', {cid, sid:getState().courses.find(c => c.id === cid).sections[0].id, type:'quiz', name:'Lonely quiz', intro:'', visible:true, fields:{gradepass:0, timelimit:0, attempts:0}}); const q2 = r.json.result.id;
+  await op(a, 'saveQuestion', {mid:q2, q:{type:'essay', text:'Why?', mark:2}});
+  const st2 = await op(cl, 'startQuiz', {mid:q2}); await op(cl, 'submitQuiz', {aid:st2.json.result.id, answers:{[getState().mods[q2].questions[0].id]:'Because.'}});
+  const S1 = getState(), mods = S1.users.filter(u => !u.suspended && S1.sysroles.some(x => x.userId === u.id && x.roleId === 'moderator')).map(u => u.id);
+  const expect = mods.length ? mods : S1.users.filter(u => u.admin && !u.suspended).map(u => u.id);
+  assert.deepEqual(S1.notifications.filter(n => n.gid === st2.json.result.id).map(n => n.userId).sort(), expect.sort());
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

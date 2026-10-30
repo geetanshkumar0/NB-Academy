@@ -293,8 +293,12 @@ VIEWS.mybadges = () => {
     ${mine.length ? `<div class="badges">${mine.map(i => { const b = S.badges.find(x => x.id === i.badgeId); if (!b) return ''; return `<div class="bcard">${medal(b)}<h3>${esc(b.name)}</h3><p class="muted small">${esc(b.description)}</p><p class="small">${esc(h.course(b.courseId)?.fullname || '')}</p><span class="chip ok">Earned ${fmtDateOnly(i.time)}</span></div>`; }).join('')}</div>` : '<div class="card empty">You have not earned any badges yet. Badges appear here when you meet their criteria in a course.</div>'}`;
 };
 VIEWS.notifications = () => {
-  const ns = S.notifications.slice().sort((a, b) => b.time - a.time);
+  const ns = S.notifications.slice().sort((a, b) => b.time - a.time), gq = h.gradingQueue();
   return `${phead([['Dashboard', 'dashboard'], ['Notifications']], 'Notifications')}
+    ${gq.length ? `<section class="block" style="margin-bottom:20px;border-left:4px solid var(--warn)"><header><h3>Grading to do (${gq.length})</h3><span class="muted small">Quiz attempts with subjective answers waiting for a trainer. Each stays here until it is graded.</span></header>
+      <div class="bb stack" style="gap:0">${gq.map(({a, m}) => { const u = h.user(a.userId), n = Object.values(a.review || {}).filter(r => r.pending).length;
+        return `<div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line);gap:10px"><div class="row" style="flex-wrap:nowrap;min-width:0">${avatar(u, 32)}<div style="min-width:0"><b>${esc(fullname(u))}</b> · ${esc(m.name)}<div class="muted small">${esc(h.course(m.courseId)?.fullname || '')} · submitted ${ago(a.finish)} · ${n} answer${n === 1 ? '' : 's'} to grade</div></div></div>
+          <button class="btn sm primary" data-go="review" data-id="${a.id}">Grade</button></div>`; }).join('')}</div></section>` : ''}
     <div class="spread" style="margin-bottom:12px"><span class="muted small">${ns.length} notifications · ${h.unreadNotifications()} unread</span>${h.unreadNotifications() ? '<button class="btn sm" data-act="readAllNotes">Mark all as read</button>' : ''}</div>
     <div class="block" style="overflow:hidden">${ns.map(noteItem).join('') || '<div class="empty">You have no notifications.</div>'}</div>`;
 };
