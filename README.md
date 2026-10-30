@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (67 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (68 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 

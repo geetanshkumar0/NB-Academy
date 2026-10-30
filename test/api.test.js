@@ -911,6 +911,16 @@ test('Content Moderator: adds users, creates courses and quizzes, has Trainer an
   assert.ok(getState().cohorts[0].leads.includes(nh), 'team lead mapping kept'); assert.ok(!getState().sysroles.some(x => x.userId === nh && x.roleId === 'moderator'));
   assert.ok(getState().roles.some(x => x.id === 'moderator' && x.name === 'Content Moderator'));
 });
+test('everyone learns only whether email is on, not the settings; the "email is not set up" note is for administrators', async () => {
+  const a = await login('admin'); await op(a, 'saveIntegration', {kind:'email', enabled:true, host:'smtp.example.com', port:587, user:'x', from:'NB <x@example.com>'});
+  const sa = await state(a); assert.equal(sa.site.emailOn, true); assert.equal(sa.site.email.pass, '');
+  const sl = await state(await login('asha')); assert.equal(sl.site.emailOn, true); assert.equal(sl.site.email, undefined, 'no settings for non-administrators');
+  await op(a, 'saveIntegration', {kind:'email', enabled:false, host:'smtp.example.com', port:587, user:'x', from:'NB <x@example.com>'});
+  assert.equal((await state(a)).site.emailOn, false);
+  const ui = fs.readFileSync(path.join(__dirname, '../public/js/views-admin.js'), 'utf8');
+  assert.match(ui, /const emailOffNote = \(\) => S\.site\.emailOn \|\| !h\.has\('site:config'\) \? '' :/);
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../public/js/actions-ext.js'), 'utf8'), /S\.site\.email\?\.enabled/);
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

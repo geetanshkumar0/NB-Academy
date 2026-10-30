@@ -128,7 +128,7 @@ Object.assign(A, {
       <div class="field"><label for="nu3">Username</label><input id="nu3" name="username" type="text" required pattern="[A-Za-z0-9._\\-]+" title="Letters, numbers, dot, dash or underscore" autocapitalize="none"></div><div class="field"><label for="nu4">Email address</label><input id="nu4" name="email" type="email" required></div>
       <div class="field"><label for="nu8">Team</label>${teamSelect('nu8', '')}</div>
       <div class="field"><label for="nu5">Starting password (optional)</label><input id="nu5" name="password" type="text" placeholder="Leave blank to use ${esc(C.DEFAULT_PASSWORD)}"><span class="hint">${esc(pwRuleText())}</span></div>
-      <div class="stack" style="gap:6px;align-self:end"><label class="check"><input type="checkbox" name="welcome" checked> Send the welcome email</label>${S.site.email?.enabled ? '' : '<span class="hint">Email is not set up yet, so it will only be kept in the Email log.</span>'}</div></div>
+      <div class="stack" style="gap:6px;align-self:end"><label class="check"><input type="checkbox" name="welcome" checked> Send the welcome email</label>${S.site.emailOn ? '' : '<span class="hint">Email is not set up yet, so it will only be kept in the Email log.</span>'}</div></div>
       <div class="stack" style="gap:10px"><h3>Personas</h3>${personaFields(null)}</div>
       <p class="muted small">The user signs in with the starting password (${esc(C.DEFAULT_PASSWORD)} unless you set one) or the link in the welcome email, then chooses their own password, accepts the platform terms and chooses accessibility preferences at first sign-in. Matching assignment rules run automatically.</p>
       <p class="err" id="nuerr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Create user</button></div></form>`, true)
@@ -175,7 +175,7 @@ Object.assign(F, {
   resetPw: async d => { const r = await act('adminResetPassword', d, null, {silent:true, errEl:'rperr'}); if (r === FAIL) return; closeModal(); render(); toast(r.mode === 'temp' ? 'Temporary password set' : 'Reset link emailed'); },
   testLdap: async d => { try { await B.testLdap(d.username, d.password); closeModal(); toast('The directory accepted the sign-in'); } catch (e) { toast(e.message, true); } },
   newUser: async (d, f) => { const pd = personaData(f); if (!pd.personas.length) { const e = document.getElementById('nuerr'); e.textContent = 'Choose at least one persona.'; e.hidden = false; return; }
-    const emailOn = !!S.site.email?.enabled, welcome = checked(f, 'welcome');
+    const emailOn = !!S.site.emailOn, welcome = checked(f, 'welcome');
     const r = await act('newUser', {...d, ...pd, admin:pd.personas.includes('admin'), welcome}, emailOn || !welcome ? 'User created' : `User created. Email is not set up, so no welcome email was sent: share the username and the password ${d.password ? 'you set' : C.DEFAULT_PASSWORD} with them.`, {silent:true, errEl:'nuerr'}); if (r !== FAIL) { closeModal(); render(); } },
   personas: async (d, f) => { const pd = personaData(f); if (!pd.personas.length) { const e = document.getElementById('perr'); e.textContent = 'Choose at least one persona.'; e.hidden = false; return; }
     const r = await act('setPersonas', {userId:d.userId, ...pd}, 'Personas saved', {silent:true, errEl:'perr'}); if (r !== FAIL) { ui.mode = null; render(); } }

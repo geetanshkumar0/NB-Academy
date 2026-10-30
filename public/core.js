@@ -1596,6 +1596,7 @@ function view(S, meId) {
   const h = H(S, meId), me = h.me(); if (!me) return null;
   const site = clone(S.site);
   const mt = S.site.meetings || {}, meetReady = !!(mt.server && (mt.secret || mt.secretInEnv));
+  site.emailOn = !!S.site.email?.enabled; // whether emails go out: everyone may know this, only administrators see the settings
   if (!h.has('site:config')) { delete site.email; delete site.sso; delete site.ldap; delete site.templates; site.meetings = {ready:meetReady}; }
   else { site.email.passSet = !!site.email.pass; site.email.pass = ''; site.sso.secretSet = !!site.sso.clientSecret; site.sso.clientSecret = ''; site.meetings = {...mt, secret:'', secretSet:!!(mt.secret || mt.secretInEnv), ready:meetReady}; }
   const V = {version:VERSION, me:meId, site, roles:clone(S.roles), sysroles:clone(S.sysroles), categories:clone(S.categories), now:Date.now()};
