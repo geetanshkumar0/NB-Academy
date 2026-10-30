@@ -950,6 +950,15 @@ test('subjective quiz answers: trainers are told and see them under Grading to d
   const expect = mods.length ? mods : S1.users.filter(u => u.admin && !u.suspended).map(u => u.id);
   assert.deepEqual(S1.notifications.filter(n => n.gid === st2.json.result.id).map(n => n.userId).sort(), expect.sort());
 });
+test('brand colours: #FB3753 and black by default; the old default is moved over, custom colours are kept', async () => {
+  assert.deepEqual(Core.defaultSite().branding, {logo:null, primary:'#FB3753', accent:'#000000'});
+  const old = {site:{branding:{logo:null, primary:'#0e6175', accent:'#d2831a'}}, users:[], cohorts:[], rules:[]};
+  assert.ok(Core.tidyData(old).some(x => /#FB3753/.test(x))); assert.deepEqual(old.site.branding, {logo:null, primary:'#FB3753', accent:'#000000'});
+  const custom = {site:{branding:{logo:null, primary:'#123456', accent:'#abcdef'}}, users:[], cohorts:[], rules:[]};
+  Core.tidyData(custom); assert.equal(custom.site.branding.primary, '#123456');
+  const css = (await call('GET', '/')).text;
+  assert.match(css, /--nav:#FB3753; --nav-ink:#000000;/, 'header #FB3753 with black text'); assert.match(css, /--brand:#FB3753; --brand-ink:#000000;/);
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
@@ -1015,11 +1024,11 @@ test('a demo site started without --demo is cleaned: backup first, then only rea
 test('the browser tab icon is the NB logo, served from the page and at /favicon.ico', async () => {
   const page = await call('GET', '/');
   const m = page.text.match(/<link rel="icon" id="favicon" type="image\/svg\+xml" href="data:image\/svg\+xml,([^"]*)">/);
-  assert.ok(m, 'favicon link in the page head'); assert.match(decodeURIComponent(m[1]), /fill="#d2831a"\/><path [^>]+\/><\/svg>$/);
+  assert.ok(m, 'favicon link in the page head'); assert.match(decodeURIComponent(m[1]), /fill="#000000"\/><path [^>]+\/><\/svg>$/);
   for (const u of ['/favicon.ico', '/favicon.svg']) {
     const r = await call('GET', u);
     assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /image\/svg\+xml/);
-    assert.match(r.text, /<rect width="32" height="32" rx="7" fill="#d2831a"\/>/);
+    assert.match(r.text, /<rect width="32" height="32" rx="7" fill="#000000"\/>/);
   }
 });
 

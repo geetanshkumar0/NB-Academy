@@ -73,7 +73,7 @@ function lessonPageForm(m, pg, kind) {
     ${q ? `<div class="field"><label for="lpo">Answers</label><textarea id="lpo" name="options" rows="5" required placeholder="*Correct answer | feedback shown after answering&#10;Wrong answer | why it is wrong">${esc(opts)}</textarea><span class="hint">One answer per line. Start the correct one with *. Add feedback after a | character.</span></div>` : ''}
     <p class="err" id="lperr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save page</button></div></form>`, true);
 }
-const BADGE_COLORS = ['#0e6175', '#d2831a', '#ad2f68', '#21795f', '#7a4fb0', '#2c66ad'];
+const BADGE_COLORS = ['#FB3753', '#000000', '#ad2f68', '#21795f', '#7a4fb0', '#2c66ad'];
 function badgeForm(cid, b) {
   const v = b || {name:'', description:'', color:BADGE_COLORS[0], criteria:{type:'activities', mods:[]}};
   const ms = h.courseMods(cid).filter(h.trackable);

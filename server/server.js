@@ -288,7 +288,7 @@ function shell() {
   const cut = frag.indexOf('<div id="app">');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="nb-mode" content="server">${frag.slice(0, cut)}</head><body>${frag.slice(cut)}</body></html>`;
 }
-const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#d2831a"/><path d="M7 23V9l7 9V9M18 9h4.5a3 3 0 0 1 0 6H18zm0 6h5a3.2 3.2 0 0 1 0 6.5h-5z" fill="none" stroke="#0d3843" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#000000"/><path d="M7 23V9l7 9V9M18 9h4.5a3 3 0 0 1 0 6H18zm0 6h5a3.2 3.2 0 0 1 0 6.5h-5z" fill="none" stroke="#FB3753" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 let SHELL = shell();
 const MIME = {'.js':'text/javascript; charset=utf-8'};
 const INLINE_TYPES = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|text\/plain|text\/vtt|video\/(mp4|webm)|audio\/(mpeg|wav|ogg))$/;

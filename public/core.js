@@ -553,6 +553,8 @@ function tidyData(S) {
   const gone = (S.rules || []).filter(r => r.match?.type === 'company');
   if (gone.length) { S.rules = S.rules.filter(r => !gone.includes(r)); out.push(`Removed ${gone.length} assignment rule${gone.length === 1 ? '' : 's'} that matched on company: ${gone.map(r => r.name).join(', ')}`); }
   for (const r of S.rules || []) if (r.match?.type === 'department') { const to = ren(r.match.value); if (to) { r.match.value = to; out.push(`Rule "${r.name}" now applies to team "${to}"`); } }
+  // Brand colours: the old default (teal and orange) becomes the new default (#FB3753 and black); custom colours stay
+  const br = S.site?.branding; if (br && br.primary === '#0e6175' && br.accent === '#d2831a') { br.primary = '#FB3753'; br.accent = '#000000'; out.push('Brand colours changed to #FB3753 and black'); }
   if (Array.isArray(S.site?.teams)) {
     const before = S.site.teams.length, list = [];
     for (const t of S.site.teams) { const v = ren(t) || t; if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v); }
@@ -563,7 +565,7 @@ function tidyData(S) {
 function normTeam(S, v) { const x = String(v ?? '').trim(); if (!x) return ''; const key = t => t.toLowerCase().replace(/\s+/g, ' '); const hit = teamsOf(S).find(t => key(t) === key(x)); if (!hit) throw new OpError(`"${x}" is not one of the teams. Choose a team from the list.`, 400); return hit; }
 function defaultSite() {
   return {name:'NB Academy', tagline:'Courses, assessments and progress tracking for every learner.', demo:false, url:'',
-    branding:{logo:null, primary:'#0e6175', accent:'#d2831a'},
+    branding:{logo:null, primary:'#FB3753', accent:'#000000'},
     emailTheme:{color:'#FB3753'}, teams:TEAMS.slice(),
     terms:{version:1, text:'## Acceptable use\n- Use this platform only for work-related learning.\n- Keep your password private and do not share your account.\n- Complete assigned training honestly and by its due date.\n\n## Your data\nWe record your course progress, scores, time spent and certificates to manage training and meet compliance requirements. Your team lead and trainers can see progress for the courses and cohorts mapped to them.'},
     security:{minLength:8, upper:true, lower:true, digit:true, special:false, lockoutAttempts:5, lockoutMinutes:30, sessionTimeout:60, mfa:'off'},
@@ -1448,7 +1450,7 @@ op('saveBadge', (S, h, p, env) => {
   need(crit.type !== 'activities' || mods.length, 'Pick at least one activity.', 400);
   let b = p.bid ? S.badges.find(x => x.id === p.bid && x.courseId === c.id) : null;
   if (!b) { b = {id:env.uid('b'), courseId:c.id, created:env.now()}; S.badges.push(b); }
-  Object.assign(b, {name:req(p.name, 'Badge name', 80), description:str(p.description, 500), color:/^#[0-9a-f]{6}$/i.test(p.color) ? p.color : '#0e6175', criteria:{type:crit.type, mods}});
+  Object.assign(b, {name:req(p.name, 'Badge name', 80), description:str(p.description, 500), color:/^#[0-9a-f]{6}$/i.test(p.color) ? p.color : '#FB3753', criteria:{type:crit.type, mods}});
   h.students(c.id).forEach(s => checkBadges(S, env, s.id, c.id));
   return {id:b.id};
 });

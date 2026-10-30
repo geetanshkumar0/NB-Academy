@@ -5,7 +5,7 @@ const winAnsi = s => String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').r
 const esc = s => winAnsi(s).replace(/[\\()]/g, '\\$&');
 // Approximate Helvetica widths for centring (units per 1000)
 const widthOf = (s, size, bold) => winAnsi(s).split('').reduce((a, ch) => a + (/[il.,:;'|!]/.test(ch) ? 280 : /[mwMW]/.test(ch) ? 850 : /[A-Z0-9]/.test(ch) ? 670 : ch === ' ' ? 280 : 540), 0) * size / 1000 * (bold ? 1.06 : 1);
-const hexRgb = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0x0e6175; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map(x => x.toFixed(3)).join(' '); };
+const hexRgb = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0xFB3753; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map(x => x.toFixed(3)).join(' '); };
 
 function certificatePdf(o) {
   const c = [], text = (s, x, y, font, size, rgb = '0.11 0.16 0.19') => c.push(`BT ${rgb} rg /${font} ${size} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${esc(s)}) Tj ET`);

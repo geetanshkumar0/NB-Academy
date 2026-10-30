@@ -78,7 +78,7 @@ function logoHTML(size) {
 }
 let LOGO = DEFAULT_LOGO;
 function medal(b, size = '') {
-  const col = /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#0e6175';
+  const col = /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#FB3753';
   const ini = esc((b.name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase());
   return `<svg class="medal ${size}" viewBox="0 0 84 96" role="img" aria-label="${esc(b.name)} badge"><path d="M28 60 18 94l14-8 10 10 4-30zM56 60l10 34-14-8-10 10-4-30z" fill="${col}" opacity=".55"/><circle cx="42" cy="40" r="34" fill="${col}"/><circle cx="42" cy="40" r="27" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2" stroke-dasharray="3 4"/><text x="42" y="48" text-anchor="middle" font-family="system-ui,sans-serif" font-size="22" font-weight="800" fill="#fff">${ini}</text></svg>`;
 }
@@ -265,7 +265,7 @@ async function act(name, payload, okMsg, opts = {}) {
 /* ---------- Branding and accessibility ---------- */
 function shade(hex, f) { const n = parseInt(hex.slice(1), 16); const c = [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => Math.round(f < 0 ? v * (1 + f) : v + (255 - v) * f)); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); }
 // Browser tab icon: the site's uploaded logo if there is one, otherwise the NB mark in the brand colours.
-function faviconSvg(accent = '#d2831a', nav = '#0d3843') { return DEFAULT_LOGO.replace(' class="logo"', ' xmlns="http://www.w3.org/2000/svg"').replace(' aria-hidden="true"', '').replace('var(--accent)', accent).replace('var(--nav)', nav); }
+function faviconSvg(accent = '#000000', nav = '#FB3753') { return DEFAULT_LOGO.replace(' class="logo"', ' xmlns="http://www.w3.org/2000/svg"').replace(' aria-hidden="true"', '').replace('var(--accent)', accent).replace('var(--nav)', nav); }
 function applyFavicon(b) {
   let el = document.getElementById('favicon'); if (!el) { el = document.createElement('link'); el.id = 'favicon'; el.rel = 'icon'; document.head.appendChild(el); }
   let href = '';
@@ -277,7 +277,7 @@ function applyFavicon(b) {
 function applyBranding() {
   const b = (S?.site || window.__site || {}).branding; let st = document.getElementById('brandcss');
   try { applyFavicon(b); } catch (e) {}
-  if (!b || (b.primary === '#0e6175' && b.accent === '#d2831a')) { if (st) st.textContent = ''; return; }
+  if (!b || (b.primary.toLowerCase() === '#fb3753' && b.accent === '#000000') || (b.primary === '#0e6175' && b.accent === '#d2831a')) { if (st) st.textContent = ''; return; }
   if (!st) { st = document.createElement('style'); st.id = 'brandcss'; document.head.appendChild(st); }
   const p = b.primary, a = b.accent;
   st.textContent = `:root{--brand:${p};--brand-soft:${shade(p, .86)};--nav:${shade(p, -.45)};--nav-hover:${shade(p, -.3)};--accent:${a};--accent-soft:${shade(a, .85)}}
