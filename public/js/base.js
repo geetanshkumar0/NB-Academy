@@ -69,11 +69,16 @@ const SVG = {
 };
 const icon = (type, size = '') => `<span class="ic ${size} p-${C.TYPES[type]?.p || 'other'}" aria-hidden="true"><svg viewBox="0 0 24 24">${SVG[type] || SVG.label}</svg></span>`;
 const lockIcon = () => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2;vertical-align:-3px">${SVG.lock}</svg>`;
-const DEFAULT_LOGO = `<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M7 23V9l7 9V9M18 9h4.5a3 3 0 0 1 0 6H18zm0 6h5a3.2 3.2 0 0 1 0 6.5h-5z" fill="none" stroke="var(--nav)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-function logoHTML(size) {
+const DEFAULT_LOGO = `<img class="logo" src="${BRAND_ASSETS.icon.src}" alt="">`;
+/* The logo: an uploaded site logo if there is one; otherwise the NoBroker Academy logo from brand-assets.js —
+   the full logo (white lettering) on #FB3753 backgrounds (onBrand), the red mark alone elsewhere. */
+const WORDMARK = () => `<img class="logo-word" src="${BRAND_ASSETS.wordmark.src}" alt="NoBroker Academy" width="${BRAND_ASSETS.wordmark.w / 2}" height="${BRAND_ASSETS.wordmark.h / 2}">`;
+const hasUploadedLogo = () => !!((S?.site || window.__site || {}).branding || {}).logo;
+function logoHTML(size, onBrand) {
   const b = (S?.site || window.__site || {}).branding || {};
   const st = size ? ` style="width:${size}px;height:${size}px"` : '';
   if (b.logo) { const src = B.server ? '/api/logo' : (S && fileOf(b.logo) ? B.fileUrl(fileOf(b.logo)) : ''); if (src) return `<img class="logo" src="${esc(src)}" alt=""${st}>`; }
+  if (onBrand) return WORDMARK();
   return size ? DEFAULT_LOGO.replace('class="logo"', `class="logo"${st}`) : DEFAULT_LOGO;
 }
 let LOGO = DEFAULT_LOGO;
@@ -265,13 +270,12 @@ async function act(name, payload, okMsg, opts = {}) {
 /* ---------- Branding and accessibility ---------- */
 function shade(hex, f) { const n = parseInt(hex.slice(1), 16); const c = [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => Math.round(f < 0 ? v * (1 + f) : v + (255 - v) * f)); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); }
 // Browser tab icon: the site's uploaded logo if there is one, otherwise the NB mark in the brand colours.
-function faviconSvg(accent = '#000000', nav = '#FB3753') { return DEFAULT_LOGO.replace(' class="logo"', ' xmlns="http://www.w3.org/2000/svg"').replace(' aria-hidden="true"', '').replace('var(--accent)', accent).replace('var(--nav)', nav); }
 function applyFavicon(b) {
   let el = document.getElementById('favicon'); if (!el) { el = document.createElement('link'); el.id = 'favicon'; el.rel = 'icon'; document.head.appendChild(el); }
   let href = '';
   if (b?.logo) href = B.server ? '/api/logo?v=' + encodeURIComponent(b.logo) : (S && fileOf(b.logo) ? B.fileUrl(fileOf(b.logo)) : '');
   if (href) { el.removeAttribute('type'); }
-  else { el.type = 'image/svg+xml'; href = 'data:image/svg+xml,' + encodeURIComponent(faviconSvg(b?.accent || undefined, b?.primary ? shade(b.primary, -.45) : undefined)); }
+  else { el.type = 'image/png'; href = BRAND_ASSETS.icon.src; } // the red NoBroker mark
   if (el.getAttribute('href') !== href) el.setAttribute('href', href);
 }
 function applyBranding() {
@@ -280,9 +284,14 @@ function applyBranding() {
   if (!b || (b.primary.toLowerCase() === '#fb3753' && b.accent === '#000000') || (b.primary === '#0e6175' && b.accent === '#d2831a')) { if (st) st.textContent = ''; return; }
   if (!st) { st = document.createElement('style'); st.id = 'brandcss'; document.head.appendChild(st); }
   const p = b.primary, a = b.accent;
-  st.textContent = `:root{--brand:${p};--brand-soft:${shade(p, .86)};--nav:${shade(p, -.45)};--nav-hover:${shade(p, -.3)};--accent:${a};--accent-soft:${shade(a, .85)}}
-  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--brand:${shade(p, .45)};--brand-soft:${shade(p, -.6)};--nav:${shade(p, -.72)};--nav-hover:${shade(p, -.6)};--accent:${shade(a, .2)}}}
-  :root[data-theme="dark"]{--brand:${shade(p, .45)};--brand-soft:${shade(p, -.6)};--nav:${shade(p, -.72)};--nav-hover:${shade(p, -.6)};--accent:${shade(a, .2)}}`;
+  // Readable text on a colour: whichever of black or white contrasts more. Header text stays white unless the colour is very light.
+  const lum = hx => { const n = parseInt(hx.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((t, v, i) => t + v * [.2126, .7152, .0722][i], 0); };
+  const ink = hx => (lum(hx) + .05) / .05 > 1.05 / (lum(hx) + .05) ? '#000000' : '#ffffff', navInk = lum(p) > .5 ? '#000000' : '#ffffff';
+  const head = `--nav:${p};--nav-hover:${shade(p, -.12)};--nav-ink:${navInk};--nav-muted:${navInk === '#ffffff' ? shade(p, .85) : shade(p, -.75)}`; // the header is the primary colour in light and dark mode
+  const darkAccent = lum(a) < .05 ? '#ffffff' : shade(a, .2);
+  st.textContent = `:root{${head};--brand:${p};--brand-ink:${ink(p)};--brand-soft:${shade(p, .86)};--brand-text:${lum(p) > .18 ? shade(p, -.25) : p};--accent:${a};--accent-ink:${ink(a)};--accent-soft:${shade(a, .85)}}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${head};--brand:${shade(p, .2)};--brand-ink:${ink(shade(p, .2))};--brand-soft:${shade(p, -.6)};--brand-text:${shade(p, .45)};--accent:${darkAccent};--accent-ink:${ink(darkAccent)}}}
+  :root[data-theme="dark"]{${head};--brand:${shade(p, .2)};--brand-ink:${ink(shade(p, .2))};--brand-soft:${shade(p, -.6)};--brand-text:${shade(p, .45)};--accent:${darkAccent};--accent-ink:${ink(darkAccent)}}`;
 }
 function applyPrefs() {
   const pr = h?.me()?.prefs || {}; const r = document.documentElement;
@@ -415,7 +424,7 @@ function navbar() {
   const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;
   const notes = S.notifications.slice().sort((a, b) => b.time - a.time).slice(0, 8);
   return `<header class="nav"><div class="nav-in">
-    <button class="brand" data-go="${homeFor(mode)}" aria-label="${esc(S.site.name)} home">${LOGO}<b>${esc(S.site.name)}</b></button>
+    <button class="brand" data-go="${homeFor(mode)}" aria-label="${esc(S.site.name)} home">${hasUploadedLogo() ? `${LOGO}<b>${esc(S.site.name)}</b>` : WORDMARK()}</button>
     <nav class="prim" aria-label="Primary">${L.slice(0, 4).map(tab).join('')}</nav>
     ${L.length > 4 ? `<details class="pmore"><summary class="${L.slice(4).some(([k]) => on(k)) ? 'on' : ''}" aria-label="More pages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
       <div class="menu">${L.slice(4).map(tab).join('')}</div></details>` : ''}

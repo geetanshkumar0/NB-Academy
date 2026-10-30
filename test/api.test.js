@@ -955,7 +955,8 @@ test('brand colours: primary #FB3753 and accent black, set once on existing site
   const old = {site:{branding:{logo:null, primary:'#0e6175', accent:'#d2831a'}}, users:[], cohorts:[], rules:[]};
   assert.ok(Core.tidyData(old).some(x => /#FB3753/.test(x))); assert.deepEqual(old.site.branding, {logo:null, primary:'#FB3753', accent:'#000000'});
   const custom = {site:{branding:{logo:'f1', primary:'#123456', accent:'#abcdef'}}, users:[], cohorts:[], rules:[]};
-  Core.tidyData(custom); assert.deepEqual(custom.site.branding, {logo:'f1', primary:'#FB3753', accent:'#000000'}, 'set once over saved colours; the logo stays');
+  Core.tidyData(custom); assert.deepEqual(custom.site.branding, {logo:null, primary:'#FB3753', accent:'#000000'}, 'colours and the new logo set once over what was saved');
+  custom.site.branding.logo = 'f2'; Core.tidyData(custom); assert.equal(custom.site.branding.logo, 'f2', 'a logo uploaded later is kept');
   custom.site.branding.primary = '#123456'; assert.deepEqual(Core.tidyData(custom), []); assert.equal(custom.site.branding.primary, '#123456', 'colours chosen later in Branding are kept');
   const css = (await call('GET', '/')).text;
   assert.match(css, /--nav:#FB3753; --nav-ink:#ffffff;/, 'header #FB3753 with light text, as before'); assert.match(css, /--brand:#FB3753; --brand-ink:#000000;/);
@@ -1022,14 +1023,13 @@ test('a demo site started without --demo is cleaned: backup first, then only rea
   assert.doesNotMatch(await run([]), /Demo data removed/, 'only once');
 });
 
-test('the browser tab icon is the NB logo, served from the page and at /favicon.ico', async () => {
-  const page = await call('GET', '/');
-  const m = page.text.match(/<link rel="icon" id="favicon" type="image\/svg\+xml" href="data:image\/svg\+xml,([^"]*)">/);
-  assert.ok(m, 'favicon link in the page head'); assert.match(decodeURIComponent(m[1]), /fill="#000000"\/><path [^>]+\/><\/svg>$/);
-  for (const u of ['/favicon.ico', '/favicon.svg']) {
-    const r = await call('GET', u);
-    assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /image\/svg\+xml/);
-    assert.match(r.text, /<rect width="32" height="32" rx="7" fill="#000000"\/>/);
+test('the browser tab icon is the red NoBroker mark, in the page and at /favicon.ico', async () => {
+  const BA = require('../public/js/brand-assets.js'), page = await call('GET', '/');
+  assert.ok(page.text.includes(`<link rel="icon" id="favicon" type="image/png" href="${BA.icon.src}">`), 'favicon link in the page head');
+  assert.ok(page.text.includes('<script src="js/brand-assets.js"></script>\n<script src="js/base.js"></script>'), 'brand images load before the app');
+  for (const u of ['/favicon.ico', '/favicon.png']) {
+    const r = await call('GET', u); assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /image\/png/);
+    assert.ok(r.buf.equals(Buffer.from(BA.icon.src.split(',')[1], 'base64')));
   }
+  assert.match(BA.wordmark.src, /^data:image\/png;base64,/); assert.equal(BA.icon.w, 128);
 });
-

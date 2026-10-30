@@ -556,6 +556,8 @@ function tidyData(S) {
   // Brand colours: the old default (teal and orange) becomes the new default (#FB3753 and black); custom colours stay
   // Brand colours: primary #FB3753 and accent black, set once (October 2026) over whatever was saved before; later changes in Branding stay
   const br = S.site?.branding; if (br && S.site.brandColours !== 2) { S.site.brandColours = 2; if (br.primary !== '#FB3753' || br.accent !== '#000000') { br.primary = '#FB3753'; br.accent = '#000000'; out.push('Brand colours set: primary #FB3753, accent black'); } }
+  // The NoBroker Academy logo (brand-assets.js) replaces a logo uploaded before, once; a logo uploaded later in Branding is kept
+  if (br && S.site.brandLogo !== 2) { S.site.brandLogo = 2; if (br.logo) { br.logo = null; out.push('Site logo: replaced by the NoBroker Academy logo'); } }
   if (Array.isArray(S.site?.teams)) {
     const before = S.site.teams.length, list = [];
     for (const t of S.site.teams) { const v = ren(t) || t; if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v); }

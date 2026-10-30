@@ -288,7 +288,8 @@ function shell() {
   const cut = frag.indexOf('<div id="app">');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="nb-mode" content="server">${frag.slice(0, cut)}</head><body>${frag.slice(cut)}</body></html>`;
 }
-const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#000000"/><path d="M7 23V9l7 9V9M18 9h4.5a3 3 0 0 1 0 6H18zm0 6h5a3.2 3.2 0 0 1 0 6.5h-5z" fill="none" stroke="#FB3753" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const BRAND_ASSETS = require('../public/js/brand-assets.js');
+const FAVICON_PNG = Buffer.from(BRAND_ASSETS.icon.src.split(',')[1], 'base64'); // the red NoBroker mark
 let SHELL = shell();
 const MIME = {'.js':'text/javascript; charset=utf-8'};
 const INLINE_TYPES = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|text\/plain|text\/vtt|video\/(mp4|webm)|audio\/(mpeg|wav|ogg))$/;
@@ -354,11 +355,11 @@ async function handle(req, res) {
     if (req.method === 'GET' && p === '/health') return send(res, 200, {ok:true, users:S.users.length, courses:S.courses.length, queuedEmails:S.outbox.filter(m => m.status === 'queued').length});
     if (req.method === 'GET' && /^\/cert\/[A-Za-z0-9]+\.pdf$/.test(p)) { const pdf = certPdfFor(p.slice(6, -4)); return pdf ? send(res, 200, pdf, {'Content-Type':'application/pdf', 'Content-Disposition':`inline; filename="certificate-${p.slice(6, -4)}.pdf"`}) : sendErr(res, 404, 'Certificate not found.'); }
     if (req.method === 'GET' && p.startsWith('/cert/')) return send(res, 200, certPage(decodeURIComponent(p.slice(6))), {'Content-Type':'text/html; charset=utf-8'});
-    if (req.method === 'GET' && (p === '/favicon.ico' || p === '/favicon.svg')) {
-      // Tab icon: the uploaded site logo if set, otherwise the NB mark (same as the navbar logo).
+    if (req.method === 'GET' && (p === '/favicon.ico' || p === '/favicon.png')) {
+      // Tab icon: the uploaded site logo if set, otherwise the red NoBroker mark.
       const id = S.site.branding?.logo, f = id && S.files.find(x => x.id === id);
       if (f && fs.existsSync(store.filePath(id))) return send(res, 200, fs.readFileSync(store.filePath(id)), {'Content-Type':f.type, 'Cache-Control':'public, max-age=300', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"});
-      return send(res, 200, FAVICON_SVG, {'Content-Type':'image/svg+xml', 'Cache-Control':'public, max-age=86400'});
+      return send(res, 200, FAVICON_PNG, {'Content-Type':'image/png', 'Cache-Control':'public, max-age=86400'});
     }
     if (req.method === 'GET' && p === '/api/logo') { const id = S.site.branding?.logo, f = id && S.files.find(x => x.id === id); if (!f || !fs.existsSync(store.filePath(id))) return sendErr(res, 404, 'No logo.'); return send(res, 200, fs.readFileSync(store.filePath(id)), {'Content-Type':f.type, 'Cache-Control':'public, max-age=300', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"}); }
     if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [], codes:S.courses.filter(c => c.visible && c.status !== 'draft').slice(0, 8).map(c => c.shortname),

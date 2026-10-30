@@ -30,7 +30,7 @@ function viewLogin() {
       ${window.__demo !== false ? `<div class="stack" style="gap:10px"><div class="spread"><span class="eyebrow">Demo accounts</span><span class="chip demo">password: demo</span></div>
         <div class="demo-list">${demo.map(([un, d]) => `<button data-act="quickLogin" data-u="${un}">${avatar({id:'u' + un, firstname:un, lastname:''}, 30)}<span><b style="text-transform:capitalize">${un}</b><br><span class="muted small">${d}</span></span></button>`).join('')}</div></div>` : ''}`;
   return `<div class="login">
-    <section class="login-art"><div class="row">${logoHTML()}<b style="font-family:var(--f-display);font-size:1.1rem">${esc(site.name)}</b></div>
+    <section class="login-art"><div class="row">${hasUploadedLogo() ? `${logoHTML()}<b style="font-family:var(--f-display);font-size:1.1rem">${esc(site.name)}</b>` : logoHTML(0, true)}</div>
       <div class="stack"><h1>Learn, practise, and track every step.</h1><p>${esc(site.tagline)}</p></div>
       <div class="codes">${(window.__codes || ['DA101', 'BS201', 'TE110', 'SAFE100']).map(c => `<span>${esc(c)}</span>`).join('')}</div></section>
     <section class="login-form">${form}</section></div>`;
