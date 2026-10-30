@@ -950,14 +950,15 @@ test('subjective quiz answers: trainers are told and see them under Grading to d
   const expect = mods.length ? mods : S1.users.filter(u => u.admin && !u.suspended).map(u => u.id);
   assert.deepEqual(S1.notifications.filter(n => n.gid === st2.json.result.id).map(n => n.userId).sort(), expect.sort());
 });
-test('brand colours: #FB3753 and black by default; the old default is moved over, custom colours are kept', async () => {
+test('brand colours: primary #FB3753 and accent black, set once on existing sites; header text stays light', async () => {
   assert.deepEqual(Core.defaultSite().branding, {logo:null, primary:'#FB3753', accent:'#000000'});
   const old = {site:{branding:{logo:null, primary:'#0e6175', accent:'#d2831a'}}, users:[], cohorts:[], rules:[]};
   assert.ok(Core.tidyData(old).some(x => /#FB3753/.test(x))); assert.deepEqual(old.site.branding, {logo:null, primary:'#FB3753', accent:'#000000'});
-  const custom = {site:{branding:{logo:null, primary:'#123456', accent:'#abcdef'}}, users:[], cohorts:[], rules:[]};
-  Core.tidyData(custom); assert.equal(custom.site.branding.primary, '#123456');
+  const custom = {site:{branding:{logo:'f1', primary:'#123456', accent:'#abcdef'}}, users:[], cohorts:[], rules:[]};
+  Core.tidyData(custom); assert.deepEqual(custom.site.branding, {logo:'f1', primary:'#FB3753', accent:'#000000'}, 'set once over saved colours; the logo stays');
+  custom.site.branding.primary = '#123456'; assert.deepEqual(Core.tidyData(custom), []); assert.equal(custom.site.branding.primary, '#123456', 'colours chosen later in Branding are kept');
   const css = (await call('GET', '/')).text;
-  assert.match(css, /--nav:#FB3753; --nav-ink:#000000;/, 'header #FB3753 with black text'); assert.match(css, /--brand:#FB3753; --brand-ink:#000000;/);
+  assert.match(css, /--nav:#FB3753; --nav-ink:#ffffff;/, 'header #FB3753 with light text, as before'); assert.match(css, /--brand:#FB3753; --brand-ink:#000000;/);
 });
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;

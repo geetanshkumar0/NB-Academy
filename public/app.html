@@ -2,10 +2,10 @@
 <link rel="icon" id="favicon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23000000%22%2F%3E%3Cpath%20d%3D%22M7%2023V9l7%209V9M18%209h4.5a3%203%200%200%201%200%206H18zm0%206h5a3.2%203.2%200%200%201%200%206.5h-5z%22%20fill%3D%22none%22%20stroke%3D%22%23FB3753%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E">
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* NB Academy styles. Colours: #FB3753 and black (header #FB3753 with black text). Layout: a sticky navbar over a light grey canvas. Course pages split into a course-index rail and a content column; activities are colour-coded by purpose (content, assessment, collaboration). */
+/* NB Academy styles. Colours: primary #FB3753, accent black (header #FB3753 with light text). Layout: a sticky navbar over a light grey canvas. Course pages split into a course-index rail and a content column; activities are colour-coded by purpose (content, assessment, collaboration). */
 :root{
   --bg:#f5f5f6; --surface:#ffffff; --surface-2:#ececee; --ink:#000000; --muted:#545458; --line:#dcdce0;
-  --nav:#FB3753; --nav-ink:#000000; --nav-muted:#2b0a10; --nav-hover:#e8203d;
+  --nav:#FB3753; --nav-ink:#ffffff; --nav-muted:#ffe6ea; --nav-hover:#e8203d;
   --brand:#FB3753; --brand-ink:#000000; --brand-soft:#ffe1e6; --brand-text:#c8102e;
   --accent:#000000; --accent-ink:#ffffff; --accent-soft:#f1f1f1;
   --ok:#23764a; --ok-soft:#dff1e6; --warn:#985900; --warn-soft:#fbeed6; --bad:#b0342b; --bad-soft:#f8e0dc;
@@ -19,7 +19,7 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0e1418; --surface:#162027; --surface-2:#1d2a32; --ink:#e3eaef; --muted:#97a7b3; --line:#2a3842;
-  --nav:#FB3753; --nav-ink:#000000; --nav-muted:#2b0a10; --nav-hover:#e8203d;
+  --nav:#FB3753; --nav-ink:#ffffff; --nav-muted:#ffe6ea; --nav-hover:#e8203d;
   --brand:#ff5c73; --brand-ink:#000000; --brand-soft:#3d1520; --brand-text:#ff8a9b;
   --accent:#ffffff; --accent-ink:#000000; --accent-soft:#2a2a2a;
   --ok:#6ac68e; --ok-soft:#163124; --warn:#efaa48; --warn-soft:#3a2b14; --bad:#ee7d72; --bad-soft:#3d1c1a;
@@ -28,7 +28,7 @@
 }}
 :root[data-theme="dark"]{
   --bg:#0e1418; --surface:#162027; --surface-2:#1d2a32; --ink:#e3eaef; --muted:#97a7b3; --line:#2a3842;
-  --nav:#FB3753; --nav-ink:#000000; --nav-muted:#2b0a10; --nav-hover:#e8203d;
+  --nav:#FB3753; --nav-ink:#ffffff; --nav-muted:#ffe6ea; --nav-hover:#e8203d;
   --brand:#ff5c73; --brand-ink:#000000; --brand-soft:#3d1520; --brand-text:#ff8a9b;
   --accent:#ffffff; --accent-ink:#000000; --accent-soft:#2a2a2a;
   --ok:#6ac68e; --ok-soft:#163124; --warn:#efaa48; --warn-soft:#3a2b14; --bad:#ee7d72; --bad-soft:#3d1c1a;
@@ -298,7 +298,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .login-art h1{font-size:clamp(2rem,4vw,3rem);color:var(--nav-ink)}
 .login-art p{color:var(--nav-muted);max-width:42ch;font-size:1.05rem}
 .codes{display:flex;flex-wrap:wrap;gap:8px}
-.codes span{font-family:var(--f-mono);font-size:.78rem;border:1px solid rgba(0,0,0,.3);padding:4px 10px;border-radius:4px;color:var(--nav-ink)}
+.codes span{font-family:var(--f-mono);font-size:.78rem;border:1px solid rgba(255,255,255,.4);padding:4px 10px;border-radius:4px;color:var(--nav-ink)}
 .login-form{padding:48px max(24px,env(safe-area-inset-right,0px)) 48px 24px;display:flex;flex-direction:column;gap:22px;justify-content:center;max-width:480px;width:100%;margin:0 auto}
 .demo-list{display:flex;flex-direction:column;gap:6px}
 .demo-list button{display:flex;align-items:center;gap:12px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:8px 12px;cursor:pointer;text-align:left}

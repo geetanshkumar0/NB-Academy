@@ -554,7 +554,8 @@ function tidyData(S) {
   if (gone.length) { S.rules = S.rules.filter(r => !gone.includes(r)); out.push(`Removed ${gone.length} assignment rule${gone.length === 1 ? '' : 's'} that matched on company: ${gone.map(r => r.name).join(', ')}`); }
   for (const r of S.rules || []) if (r.match?.type === 'department') { const to = ren(r.match.value); if (to) { r.match.value = to; out.push(`Rule "${r.name}" now applies to team "${to}"`); } }
   // Brand colours: the old default (teal and orange) becomes the new default (#FB3753 and black); custom colours stay
-  const br = S.site?.branding; if (br && br.primary === '#0e6175' && br.accent === '#d2831a') { br.primary = '#FB3753'; br.accent = '#000000'; out.push('Brand colours changed to #FB3753 and black'); }
+  // Brand colours: primary #FB3753 and accent black, set once (October 2026) over whatever was saved before; later changes in Branding stay
+  const br = S.site?.branding; if (br && S.site.brandColours !== 2) { S.site.brandColours = 2; if (br.primary !== '#FB3753' || br.accent !== '#000000') { br.primary = '#FB3753'; br.accent = '#000000'; out.push('Brand colours set: primary #FB3753, accent black'); } }
   if (Array.isArray(S.site?.teams)) {
     const before = S.site.teams.length, list = [];
     for (const t of S.site.teams) { const v = ren(t) || t; if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v); }
