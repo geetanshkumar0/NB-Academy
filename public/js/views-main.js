@@ -109,7 +109,7 @@ const actLabel = m => ({assign:'Add submission', quiz:'Attempt quiz', workshop:'
 
 VIEWS.dashboard = () => {
   const mode = currentMode();
-  if (mode === 'teamlead') return VIEWS.team({}); if (mode === 'trainer') return VIEWS.trainer({}); if (mode === 'admin') return VIEWS.analytics({});
+  if (mode === 'teamlead') return VIEWS.team({}); if (mode === 'trainer') return VIEWS.trainer({}); if (mode === 'admin') return VIEWS.analytics({}); if (mode === 'moderator') return VIEWS.home({});
   const u = me(), mine = myAssignments(), ev = events([-14, 30]).filter(x => x.learner);
   const cnt = k => mine.filter(x => x.st === k).length;
   const tiles = [['notstarted', 'Assigned · not started', 'assigned'], ['inprogress', 'In progress', 'progress'], ['completed', 'Completed', 'done'], ['overdue', 'Overdue · locked', 'overdue']];
@@ -162,7 +162,7 @@ function miniCal() {
 VIEWS.mycourses = (p) => {
   const mode = currentMode();
   if (mode !== 'learner') {
-    const cs = h.myCourseIds().map(id => h.course(id)).filter(c => c && h.canView(c.id) && (mode === 'admin' || (h.enrolOf(c.id) && !h.isLearner(c.id))));
+    const cs = h.myCourseIds().map(id => h.course(id)).filter(c => c && h.canView(c.id) && (mode === 'admin' || mode === 'moderator' || (h.enrolOf(c.id) && !h.isLearner(c.id))));
     return `${phead([['My courses']], mode === 'trainer' ? 'Courses I deliver' : 'Courses')}<div class="spread" style="margin-bottom:18px"><span class="muted small">${cs.length} courses</span><input type="search" id="msearch" data-filter="#mcards" placeholder="Search courses" aria-label="Search courses" style="max-width:260px"></div>
       <div class="cgridcards" id="mcards">${cs.map(c => courseCard(c)).join('') || '<div class="empty">No courses are tagged to you yet.</div>'}</div>`;
   }

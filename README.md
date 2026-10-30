@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (66 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (67 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -244,6 +244,14 @@ Questions are edited directly on the quiz page, one card per question, much like
 - each card has points, move up and down, duplicate (the copy appears right below) and delete;
 - **changes save automatically**, and the card says "Saved", or what is still missing (for example "Click the circle next to the correct answer");
 - creating a new quiz takes you straight to an empty question card.
+
+## Content Moderators
+
+**Content Moderator** is an access type between Trainer and Administrator, for the team that builds training. A content moderator can add and edit users (and upload them in bulk), create courses, upload course content, build quizzes (including bulk question upload) and use the question bank, in every course. They also have all Trainer and Team Lead access, for every course and cohort. They switch between Content Moderator, Trainer and Team Lead with the view switcher.
+
+They cannot change site settings, roles or Live sessions, delete courses or users, log in as other people, or change the account of an administrator or another content moderator. Only administrators can grant or remove Content Moderator access.
+
+**Edit access**: in Site administration › Users, each person has an **Edit access** button showing what they can do now (Learner, Trainer, Team Lead, Content Moderator, Administrator) and letting you change it. The Access column of the list shows the same.
 
 ## Live sessions
 

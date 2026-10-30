@@ -180,7 +180,7 @@ const LocalBackend = (() => {
     async init() {
       if (!DB) {
         try { const raw = get(KEY); DB = raw ? JSON.parse(raw) : null; FILES = JSON.parse(get(FKEY) || '{}'); } catch (e) { DB = null; }
-        if (!DB || DB.version !== C.VERSION) fresh(); else if (C.tidyData(DB).length) persist();
+        if (!DB || DB.version !== C.VERSION) fresh(); else { const added = C.BUILTIN_ROLES.filter(r => !DB.roles.some(x => x.id === r.id)); added.forEach(r => DB.roles.push(C.clone(r))); if (C.tidyData(DB).length || added.length) persist(); }
         SID = get(SKEY); if (SID && !DB.users.some(u => u.id === SID)) SID = null;
       }
       if (C.tick(DB, env)) persist();
@@ -315,7 +315,8 @@ function modes() {
   if (ps.includes('learner')) m.push(['learner', 'Learner']);
   if (ps.includes('teamlead')) m.push(['teamlead', 'Team Lead']);
   if (ps.includes('trainer')) m.push(['trainer', 'Trainer']);
-  if (ps.includes('admin') || canSiteAdmin() || h.has('analytics:site') || h.has('access:approve')) m.push(['admin', 'Admin']);
+  if (ps.includes('moderator')) m.push(['moderator', 'Content Moderator']);
+  if (ps.includes('admin') || (!ps.includes('moderator') && canSiteAdmin()) || h.has('analytics:site') || h.has('access:approve')) m.push(['admin', 'Admin']);
   if (!m.length) m.push(['learner', 'Learner']);
   return m;
 }
@@ -325,7 +326,7 @@ function currentMode() {
   return ui.mode;
 }
 function setMode(m) { ui.mode = m; try { localStorage.setItem('nb.mode.' + S.me, m); } catch (e) {} if (m !== 'admin' && m !== 'trainer') ui.editing = false; go(homeFor(m)); }
-const homeFor = m => ({learner:'dashboard', teamlead:'team', trainer:'trainer', admin:'analytics'}[m] || 'dashboard');
+const homeFor = m => ({learner:'dashboard', teamlead:'team', trainer:'trainer', moderator:'home', admin:'analytics'}[m] || 'dashboard');
 
 /* ---------- Rendering ---------- */
 const app = document.getElementById('app');
@@ -402,12 +403,13 @@ function navbar() {
   const L = {learner:[['dashboard', 'Dashboard'], ['mycourses', 'My learning'], ['home', 'Library'], ['calendar', 'Calendar']],
     teamlead:[['team', 'Team workspace'], ['calendar', 'Calendar']],
     trainer:[['trainer', 'Trainer workspace'], ['mycourses', 'My courses'], ['calendar', 'Calendar']],
+    moderator:[['home', 'Courses'], ['admin', 'Site administration']],
     admin:[['analytics', 'Analytics'], ...(h.has('access:approve') ? [['approvals', 'Approvals']] : []), ['home', 'Courses'], ['sessions', 'Live sessions'], ...(canSiteAdmin() ? [['admin', 'Site administration']] : [])]}[mode];
   // Anyone invited to a live session also gets the Live sessions tab
   if (mode !== 'admin' && (S.sessions || []).length) L.splice(L.length - 1, 0, ['sessions', 'Live sessions']);
   const pending = h.has('access:approve') ? S.accessRequests.filter(r => r.status === 'pending').length : 0;
   const courseCtx = ['course', 'participants', 'groups', 'grades', 'badges', 'creports', 'csettings', 'mod', 'attempt', 'review', 'discussion', 'grader', 'submit', 'lessonplay', 'wsassess'].includes(v);
-  const on = k => (k === v || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && mode !== 'admin') || (k === 'home' && courseCtx && mode === 'admin')) ? 'on' : '';
+  const on = k => (k === v || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
   const um = h.unreadMessages(), un = h.unreadNotifications();
   // The first four pages sit in the bar; any others (e.g. Site administration) are in the small ▾ menu after them
   const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;

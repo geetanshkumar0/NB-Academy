@@ -52,20 +52,20 @@ op('mfaEnable', (S, h, p, env) => { const u = h.me(); need(u.mfaPending, 'Start 
 op('mfaDisable', (S, h, p, env) => {
   const u = h.user(p.id || h.meId); need(u, 'User not found.', 404);
   if (u.id === h.meId) { need(!Core.mfaRequired(S, u), 'Two-step sign-in is required for your account by the site security policy.', 400); need(verifyTotp(u.mfaSecret, p.code, env.now()), 'That code is not correct.', 400); }
-  else need(h.has('user:manage'), 'You cannot change this account.');
+  else need(h.has('user:manage') && h.mayManage(u.id), 'You cannot change this account.');
   u.mfaEnabled = false; delete u.mfaSecret; audit(S, env, h.meId, 'Two-step sign-in turned off', u.username);
 });
 
 /* ---------------- User administration ---------------- */
-op('unlockUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot unlock accounts.'); const u = h.user(p.id); need(u, 'User not found.', 404); u.lockedUntil = null; u.failedLogins = 0; audit(S, env, h.meId, 'Account unlocked', u.username); });
+op('unlockUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot unlock accounts.'); const u = h.user(p.id); need(u, 'User not found.', 404); need(h.mayManage(u.id), 'Only administrators can unlock this account.'); u.lockedUntil = null; u.failedLogins = 0; audit(S, env, h.meId, 'Account unlocked', u.username); });
 op('adminResetPassword', (S, h, p, env) => {
-  need(h.has('user:manage'), 'You cannot reset passwords.'); const u = h.user(p.id); need(u && (!u.admin || h.isAdmin()), 'User not found.', 404);
+  need(h.has('user:manage'), 'You cannot reset passwords.'); const u = h.user(p.id); need(u && h.mayManage(u.id), 'User not found.', 404);
   if (p.mode === 'temp') { checkPassword(S, p.password); Object.assign(u, env.hash(String(p.password))); u.mustChangePassword = true; }
   else { const tok = makeToken(S, env, u.id, 'reset', 24 * 3600e3); notifyT(S, env, 'passwordReset', u.id, {link:linkTo(S, 'setpassword', tok)}); }
   u.lockedUntil = null; u.failedLogins = 0; audit(S, env, h.meId, 'Password reset by administrator', u.username, p.mode === 'temp' ? 'Temporary password set' : 'Reset link emailed');
   return {mode:p.mode === 'temp' ? 'temp' : 'email'};
 });
-op('resendWelcome', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot do this.'); const u = h.user(p.id); need(u, 'User not found.', 404); Core._.welcomeUser(S, env, u); });
+op('resendWelcome', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot do this.'); const u = h.user(p.id); need(u, 'User not found.', 404); need(h.mayManage(u.id), 'Only administrators can do this for this account.'); Core._.welcomeUser(S, env, u); });
 
 /* ---------------- Site settings ---------------- */
 const hex = v => /^#[0-9a-f]{6}$/i.test(v) ? v : null;
@@ -133,16 +133,22 @@ op('retryEmail', (S, h, p) => { need(h.has('site:config'), 'Not allowed.'); cons
 const uids = (S, a) => [...new Set((Array.isArray(a) ? a : []).filter(id => S.users.some(u => u.id === id)))];
 /* ---------------- Personas: what a person does on the site (learner, trainer, team lead, administrator) ---------------- */
 function applyPersonas(S, h, env, u, p) {
-  const want = new Set((Array.isArray(p.personas) ? p.personas : []).filter(x => ['learner', 'trainer', 'teamlead', 'admin'].includes(x)));
+  const want = new Set((Array.isArray(p.personas) ? p.personas : []).filter(x => ['learner', 'trainer', 'teamlead', 'moderator', 'admin'].includes(x)));
   if (u.builtinAdmin) ['learner', 'trainer', 'teamlead', 'admin'].forEach(x => want.add(x)); // the super administrator always holds every persona
   need(want.size, 'Choose at least one persona.', 400);
   if (want.has('admin') !== !!u.admin) { need(h.isAdmin(), 'Only site administrators can grant or remove administrator access.'); need(!(u.id === h.meId && !want.has('admin')), 'You cannot remove your own administrator access.', 400); need(!(u.builtinAdmin && !want.has('admin')), 'This is a built-in site administrator set in the server configuration, so administrator access cannot be removed here.', 400); need(!(u.admin && !want.has('admin')) || h.isSuperAdmin(), 'Only the super administrator can remove administrator access.'); u.admin = want.has('admin'); }
+  const isMod = S.sysroles.some(r => r.userId === u.id && r.roleId === 'moderator');
+  if (want.has('moderator') !== isMod) {
+    need(h.isAdmin(), 'Only site administrators can grant or remove Content Moderator access.');
+    if (want.has('moderator')) S.sysroles.push({id:env.uid('sr'), userId:u.id, roleId:'moderator'}); else S.sysroles = S.sysroles.filter(r => !(r.userId === u.id && r.roleId === 'moderator'));
+  }
   u.personas = ['learner', 'trainer'].filter(x => want.has(x));
   const tl = S.sysroles.find(r => r.userId === u.id && r.roleId === 'teamlead');
   if (want.has('teamlead') && !tl) S.sysroles.push({id:env.uid('sr'), userId:u.id, roleId:'teamlead'});
   if (!want.has('teamlead') && tl) S.sysroles = S.sysroles.filter(r => r !== tl);
   const ids = v => new Set((Array.isArray(v) ? v : []).filter(id => S.cohorts.some(c => c.id === id)));
-  const member = ids(p.memberOf), leads = want.has('teamlead') ? ids(p.leads) : new Set(), trains = want.has('trainer') ? ids(p.trains) : new Set();
+  const cur = key => S.cohorts.filter(c => c[key].includes(u.id)).map(c => c.id);
+  const member = ids(p.memberOf), leads = want.has('teamlead') ? ids(p.leads ?? cur('leads')) : new Set(), trains = want.has('trainer') ? ids(p.trains ?? cur('trainers')) : new Set();
   const joined = [];
   for (const c of S.cohorts) {
     const set = (key, on) => { const has = c[key].includes(u.id); if (on && !has) { c[key].push(u.id); if (key === 'members') joined.push(c); } if (!on && has) c[key] = c[key].filter(x => x !== u.id); };
@@ -150,11 +156,11 @@ function applyPersonas(S, h, env, u, p) {
     set('leads', leads.has(c.id)); set('trainers', trains.has(c.id));
   }
   // Trainer for specific courses: course enrolments with the Trainer role
-  const tc = new Set(want.has('trainer') ? (Array.isArray(p.trainerCourses) ? p.trainerCourses : []).filter(id => S.courses.some(c => c.id === id)) : []);
+  const tc = new Set(want.has('trainer') ? (Array.isArray(p.trainerCourses) ? p.trainerCourses : p.trainerCourses === undefined ? S.enrol.filter(e => e.userId === u.id && e.role === 'trainer').map(e => e.courseId) : []).filter(id => S.courses.some(c => c.id === id)) : []);
   for (const e of S.enrol.filter(e => e.userId === u.id && e.role === 'trainer' && !tc.has(e.courseId))) S.enrol = S.enrol.filter(x => x !== e);
   for (const cid of tc) { const e = S.enrol.find(x => x.userId === u.id && x.courseId === cid); if (!e) S.enrol.push({id:env.uid('e'), courseId:cid, userId:u.id, role:'trainer', time:env.now()}); else if (e.role === 'student' || e.role === 'teacher') e.role = 'trainer'; }
   if (joined.length) applyRules(S, env, u.id);
-  const names = {learner:'Learner', trainer:'Trainer', teamlead:'Team Lead', admin:'Administrator'};
+  const names = {learner:'Learner', trainer:'Trainer', teamlead:'Team Lead', moderator:'Content Moderator', admin:'Administrator'};
   audit(S, env, h.meId, 'Personas set', u.username, [...want].map(x => names[x]).join(', '));
 }
 const _newUser = OPS.newUser;
@@ -166,7 +172,7 @@ op('newUser', (S, h, p, env) => {
 op('setPersonas', (S, h, p, env) => {
   need(h.has('user:manage'), 'You cannot change what people do on the site.');
   const u = S.users.find(x => x.id === p.userId); need(u, 'User not found.', 404);
-  need(!u.admin || h.isAdmin(), 'Only administrators can change an administrator.');
+  need(h.mayManage(u.id) || u.id === h.meId && h.isAdmin(), 'Only administrators can change the access of an administrator or content moderator.');
   applyPersonas(S, h, env, u, p);
 });
 /* ---------------- Super administrator: remove administrator access ---------------- */

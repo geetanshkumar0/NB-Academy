@@ -37,7 +37,7 @@ VIEWS.team = () => {
   const perMember = [...members].map(id => h.user(id)).filter(Boolean).map(u => { const rr = C.learnerRows(S, h, {users:new Set([u.id])}); return {u, s:C.summarize(rr)}; });
   return `${phead([['Team workspace']], 'Team workspace')}
     <div class="spread" style="margin-bottom:16px"><div class="row"><label class="row small">Cohort <select id="teamcohort" class="sel-sm">${['<option value="">All my cohorts</option>', ...cohorts.map(c => `<option value="${c.id}" ${t.cohort === c.id ? 'selected' : ''}>${esc(c.name)} (${c.members.length})</option>`)].join('')}</select></label></div>
-      <span class="muted small">${h.isSuperAdmin() ? 'As super administrator you see every cohort.' : 'You see only the cohorts mapped to you.'} Team leads cannot create courses, manage users or assign courses.</span></div>
+      <span class="muted small">${h.seesAll() ? 'You see every cohort.' : 'You see only the cohorts mapped to you.'} Team leads cannot create courses, manage users or assign courses.</span></div>
     ${kpis(sm)}<div class="card" style="margin:16px 0 22px">${distBar(sm)}</div>
     <div class="spread" style="margin-bottom:10px"><h2>Team progress</h2><div class="row">
       <select id="teamfilter" class="sel-sm" aria-label="Filter">${[['all', 'All'], ['atrisk', 'At risk'], ['overdue', 'Overdue'], ['inprogress', 'In progress'], ['notstarted', 'Not started'], ['completed', 'Completed']].map(([k, l]) => `<option value="${k}" ${t.filter === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -53,15 +53,15 @@ VIEWS.team = () => {
 /* ---------- Trainer workspace ---------- */
 VIEWS.trainer = () => {
   // The super administrator sees every active course here; trainers see the courses tagged to them
-  const cids = h.isSuperAdmin() ? S.courses.filter(c => c.status !== 'archived').map(c => c.id) : S.enrol.filter(e => e.userId === S.me && ['trainer', 'editingteacher', 'teacher'].includes(e.role)).map(e => e.courseId).filter(id => h.course(id));
+  const cids = h.seesAll() ? S.courses.filter(c => c.status !== 'archived').map(c => c.id) : S.enrol.filter(e => e.userId === S.me && ['trainer', 'editingteacher', 'teacher'].includes(e.role)).map(e => e.courseId).filter(id => h.course(id));
   if (!h.isTrainer()) return notFound('The Trainer workspace is for people with the Trainer persona.');
   const queue = cids.flatMap(cid => h.courseMods(cid).filter(m => (m.type === 'assign' || m.type === 'quiz') && h.needsGrading(m)).map(m => ({m, n:h.needsGrading(m), c:h.course(cid)})));
   const sessions = cids.flatMap(cid => h.courseMods(cid).filter(m => m.type === 'live' && m.start && m.start + (m.duration || 60) * 6e4 > now() - 7 * D).map(m => ({m, c:h.course(cid)}))).sort((a, b) => a.m.start - b.m.start);
   const overdue = C.learnerRows(S, h, {courses:new Set(cids)}).filter(r => r.status === 'overdue');
-  const myCohorts = h.isSuperAdmin() ? S.cohorts : h.cohortsTrained();
+  const myCohorts = h.seesAll() ? S.cohorts : h.cohortsTrained();
   return `${phead([['Trainer workspace']], 'Trainer workspace')}
-    <div class="spread" style="margin-bottom:16px"><span class="muted small">${h.isSuperAdmin() ? 'As super administrator you see every active course and cohort here.' : 'Courses and cohorts tagged to you.'} Trainers deliver and assess; administrators create and edit course content.</span><button class="btn primary" data-act="assignModal">Assign training</button></div>
-    <h2 style="margin-bottom:10px">${h.isSuperAdmin() ? 'All courses' : 'My courses'}</h2>
+    <div class="spread" style="margin-bottom:16px"><span class="muted small">${h.seesAll() ? 'You see every active course and cohort here.' : 'Courses and cohorts tagged to you.'} Trainers deliver and assess; administrators create and edit course content.</span><button class="btn primary" data-act="assignModal">Assign training</button></div>
+    <h2 style="margin-bottom:10px">${h.seesAll() ? 'All courses' : 'My courses'}</h2>
     <div class="tw" style="margin-bottom:24px"><table><thead><tr><th>Course</th><th class="n">Enrolled</th><th class="n">Completed</th><th class="n">Completion</th><th class="n">Overdue</th><th class="n">Avg days to complete</th><th class="n">Avg grade</th><th></th></tr></thead><tbody>
     ${cids.length ? '' : '<tr><td colspan="8" class="muted">No courses are tagged to you as a trainer yet. An administrator can add them on your profile under Personas.</td></tr>'}${cids.map(cid => { const c = h.course(cid), rr = C.learnerRows(S, h, {courses:new Set([cid])}), s = C.summarize(rr); const tot = rr.map(r => r.total).filter(x => x != null);
       return `<tr><td><button class="link" data-go="course" data-id="${c.id}">${esc(c.fullname)}</button><br><span class="muted small mono">${esc(c.shortname)}</span></td><td class="n">${s.total}</td><td class="n">${s.completed}</td><td class="n">${fmtPct(s.completionRate)}</td><td class="n">${s.overdue ? `<span style="color:var(--bad)">${s.overdue}</span>` : 0}</td><td class="n">${s.avgDays == null ? '–' : s.avgDays.toFixed(1)}</td><td class="n">${tot.length ? fmtPct(tot.reduce((a, b) => a + b, 0) / tot.length) : '–'}</td>
@@ -71,7 +71,7 @@ VIEWS.trainer = () => {
       <section class="stack"><h2>Overdue learners in my courses</h2>${rowTable(overdue, {actions:true, id:'trover', empty:'No overdue learners.'})}<p class="muted small">Overdue courses are locked. Learners request access and an administrator approves it with a new due date.</p></section>
     </div><aside class="stack" style="gap:20px">
       <section class="block"><header><h3>Live sessions</h3></header><div class="bb stack" style="gap:12px">${sessions.map(x => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${icon('live', 'sm')}<div><button class="link" data-go="mod" data-id="${x.m.id}">${esc(x.m.name)}</button><div class="muted small">${fmtDate(x.m.start)} · ${x.m.mode === 'ilt' ? 'In person' : 'Online'} · ${x.m.registered || 0} registered</div></div></div>`).join('') || '<p class="muted small">No upcoming sessions.</p>'}</div></section>
-      <section class="block"><header><h3>${h.isSuperAdmin() ? 'All cohorts' : 'My cohorts'}</h3></header><div class="bb stack" style="gap:10px">${myCohorts.map(c => `<div><b>${esc(c.name)}</b><div class="muted small">${c.members.length} members · ${c.members.slice(0, 4).map(id => esc(h.user(id)?.firstname || '')).join(', ')}${c.members.length > 4 ? '…' : ''}</div></div>`).join('') || '<p class="muted small">No cohorts mapped to you.</p>'}</div></section></aside></div>`;
+      <section class="block"><header><h3>${h.seesAll() ? 'All cohorts' : 'My cohorts'}</h3></header><div class="bb stack" style="gap:10px">${myCohorts.map(c => `<div><b>${esc(c.name)}</b><div class="muted small">${c.members.length} members · ${c.members.slice(0, 4).map(id => esc(h.user(id)?.firstname || '')).join(', ')}${c.members.length > 4 ? '…' : ''}</div></div>`).join('') || '<p class="muted small">No cohorts mapped to you.</p>'}</div></section></aside></div>`;
 };
 
 /* ---------- Assign training (trainers within scope; administrators globally) ---------- */

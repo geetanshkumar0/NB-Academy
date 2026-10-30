@@ -89,6 +89,7 @@ const BUILTIN_ROLES = [
   {id:'editingteacher', name:'Course author', builtin:true, desc:'Builds and edits course content. Use when someone other than the administrator authors courses.', caps:capSet(['course:view','course:viewhidden','course:update','course:manageactivities','course:viewparticipants','course:enrol','group:manage','grade:viewall','grade:edit','report:view','forum:post','forum:addnews','forum:deleteany','glossary:approve','badges:manage','badges:award','backup:course','course:assign','attempts:manage','live:manage','message:send'])},
   {id:'teacher', name:'Non-editing teacher', builtin:true, desc:'Grades and supports learners but cannot change course content.', caps:capSet(['course:view','course:viewhidden','course:viewparticipants','grade:viewall','grade:edit','report:view','forum:post','forum:deleteany','glossary:approve','badges:award','message:send'])},
   {id:'student', name:'Learner', builtin:true, desc:'Takes part in courses. Tracked for completion, deadlines and grades.', caps:capSet(['course:view','course:viewparticipants','mod:submit','forum:post','message:send'])},
+  {id:'moderator', name:'Content Moderator', builtin:true, desc:'Site role. Adds users, creates courses, builds course content and quizzes, and has Trainer and Team Lead access for every course and cohort. Cannot change site settings or roles, delete courses or users, log in as others, or manage administrators.', caps:capSet(['course:view','course:viewhidden','course:update','course:manageactivities','course:viewparticipants','course:enrol','group:manage','grade:viewall','grade:edit','report:view','forum:post','forum:addnews','forum:deleteany','glossary:approve','badges:manage','badges:award','backup:course','course:assign','attempts:manage','live:manage','message:send','user:manage','user:upload','course:create','qbank:manage','team:view'])},
   {id:'teamlead', name:'Team Lead', builtin:true, desc:'Site role. Monitors the cohorts mapped to them: progress, deadlines, at-risk learners and reminders. Cannot create courses, manage users or assign courses.', caps:capSet(['team:view','message:send'])}
 ];
 
@@ -224,13 +225,18 @@ function H(S, meId) {
   };
   h.requestOf = (cid, uid = meId) => S.accessRequests.filter(r => r.courseId === cid && r.userId === uid).sort((a, b) => b.time - a.time)[0] || null;
   /* Cohort scope */
-  h.cohortsLed = (uid = meId) => h.user(uid)?.builtinAdmin ? S.cohorts : S.cohorts.filter(c => c.leads.includes(uid));
+  /* Super administrators and content moderators see every course and cohort in the Trainer and Team Lead views */
+  h.seesAll = (uid = meId) => !!h.user(uid)?.builtinAdmin || h.sysrole('moderator', uid);
+  h.isModerator = (uid = meId) => !h.user(uid)?.suspended && h.sysrole('moderator', uid);
+  /* Who may change someone's account: administrators, managers and moderators only by an administrator */
+  h.mayManage = uid => { const u = h.user(uid); if (!u) return false; if (uid === meId) return true; return u.admin || h.sysrole('manager', uid) || h.sysrole('moderator', uid) ? h.isAdmin() : h.has('user:manage'); };
+  h.cohortsLed = (uid = meId) => h.seesAll(uid) ? S.cohorts : S.cohorts.filter(c => c.leads.includes(uid));
   h.cohortsTrained = (uid = meId) => S.cohorts.filter(c => c.trainers.includes(uid));
   h.teamMembers = (uid = meId) => [...new Set(h.cohortsLed(uid).flatMap(c => c.members))];
   h.trainerScope = (uid = meId) => new Set([...h.cohortsTrained(uid).flatMap(c => c.members), ...S.enrol.filter(e => h.has('course:assign', e.courseId, uid)).flatMap(e => h.students(e.courseId).map(u => u.id))]);
   h.sysrole = (roleId, uid = meId) => S.sysroles.some(r => r.userId === uid && r.roleId === roleId);
-  h.isTeamLead = (uid = meId) => !!h.user(uid)?.builtinAdmin || h.has('team:view', null, uid) && (h.sysrole('teamlead', uid) || h.cohortsLed(uid).length > 0);
-  h.isTrainer = (uid = meId) => !!h.user(uid)?.builtinAdmin || !!h.user(uid)?.personas?.includes('trainer') || h.cohortsTrained(uid).length > 0 || S.enrol.some(e => e.userId === uid && ['trainer', 'editingteacher', 'teacher'].includes(e.role));
+  h.isTeamLead = (uid = meId) => !!h.user(uid)?.builtinAdmin || h.isModerator(uid) || h.has('team:view', null, uid) && (h.sysrole('teamlead', uid) || h.cohortsLed(uid).length > 0);
+  h.isTrainer = (uid = meId) => !!h.user(uid)?.builtinAdmin || h.isModerator(uid) || !!h.user(uid)?.personas?.includes('trainer') || h.cohortsTrained(uid).length > 0 || S.enrol.some(e => e.userId === uid && ['trainer', 'editingteacher', 'teacher'].includes(e.role));
   h.learnsAnything = (uid = meId) => S.enrol.some(e => e.userId === uid && h.role(e.role)?.caps?.['mod:submit']);
   h.learnerPersona = (uid = meId) => !!h.user(uid)?.builtinAdmin || !!h.user(uid)?.personas?.includes('learner') || h.learnsAnything(uid);
   /* Personas a person can switch between: learner, trainer, team lead, administrator */
@@ -238,6 +244,7 @@ function H(S, meId) {
   h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; if (u.builtinAdmin) return ['learner', 'trainer', 'teamlead', 'admin']; const out = [];
     if (h.learnerPersona(uid) || (!u.admin && !h.sysrole('manager', uid) && !h.isTrainer(uid) && !h.isTeamLead(uid))) out.push('learner');
     if (h.isTrainer(uid)) out.push('trainer'); if (h.isTeamLead(uid)) out.push('teamlead');
+    if (h.isModerator(uid)) out.push('moderator');
     if (u.admin || h.sysrole('manager', uid)) out.push('admin'); return out; };
   h.unreadMessages = () => S.messages.filter(x => x.to === meId && !x.read).length + (S.chats || []).filter(c => h.inChat(c)).reduce((n, c) => n + h.chatUnread(c), 0);
   /* Super administrator: the built-in administrators from server/site-admins.js */
@@ -968,7 +975,7 @@ op('touch', (S, h, p, env) => {
 op('heartbeat', (S, h, p) => { const e = h.enrolOf(p.cid); if (e && h.isLearner(p.cid)) e.timeSpent = (e.timeSpent || 0) + Math.min(120, Math.max(0, Number(p.secs) || 0)); });
 op('updateProfile', (S, h, p, env) => {
   const u = h.user(p.id); need(u, 'User not found.', 404); const manage = h.has('user:manage');
-  need(u.id === h.meId || manage, 'You cannot edit this profile.');
+  need(u.id === h.meId || manage, 'You cannot edit this profile.'); need(h.mayManage(u.id), 'Only administrators can change an administrator or content moderator account.');
   if (manage) { u.firstname = req(p.firstname, 'First name', 100); u.lastname = req(p.lastname, 'Last name', 100); const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; u.department = normTeam(S, p.team ?? p.department); }
   if (p.password) {
     if (u.id === h.meId && !h.isAdmin()) need(env.verify(u, String(p.current || '')), 'Your current password is not correct.', 400);
@@ -1027,13 +1034,14 @@ op('newUser', (S, h, p, env) => {
 op('deleteUser', (S, h, p, env) => {
   need(h.has('user:manage'), 'You cannot delete users.'); const u = h.user(p.id); need(u, 'User not found.', 404);
   need(u.id !== h.meId, 'You cannot delete your own account.', 400); need(!u.admin || h.isAdmin(), 'Only administrators can delete administrators.');
+  need(h.isAdmin() || h.sysrole('manager'), 'Content moderators can add and edit users but not delete them. Suspend the account instead, or ask an administrator.'); need(h.mayManage(u.id), 'Only administrators can delete this account.');
   need(!u.builtinAdmin, 'This is a built-in site administrator set in the server configuration. Remove it from server/site-admins.js to delete it.', 400);
   need(!u.admin || h.isSuperAdmin(), 'Only the super administrator can delete administrators.');
   S.users = S.users.filter(x => x.id !== u.id); S.enrol = S.enrol.filter(e => e.userId !== u.id); S.sysroles = S.sysroles.filter(r => r.userId !== u.id);
   S.groups.forEach(g => g.members = g.members.filter(m => m !== u.id)); S.cohorts.forEach(c => { c.members = c.members.filter(m => m !== u.id); c.leads = c.leads.filter(m => m !== u.id); c.trainers = c.trainers.filter(m => m !== u.id); });
   log(S, env, h.meId, `User deleted: ${u.username}`); audit(S, env, h.meId, 'User deleted', u.username);
 });
-op('suspendUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot suspend users.'); const u = h.user(p.id); need(u && u.id !== h.meId && !u.builtinAdmin && (!u.admin || h.isSuperAdmin()), u?.admin ? 'Only the super administrator can suspend administrators.' : 'This account cannot be suspended.', u?.admin && !u.builtinAdmin ? 403 : 400); u.suspended = !!p.on; log(S, env, h.meId, `${p.on ? 'Suspended' : 'Reactivated'} ${u.username}`); audit(S, env, h.meId, p.on ? 'User suspended' : 'User reactivated', u.username); });
+op('suspendUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot suspend users.'); const u = h.user(p.id); need(!u || h.mayManage(u.id), 'Only administrators can suspend this account.'); need(u && u.id !== h.meId && !u.builtinAdmin && (!u.admin || h.isSuperAdmin()), u?.admin ? 'Only the super administrator can suspend administrators.' : 'This account cannot be suspended.', u?.admin && !u.builtinAdmin ? 403 : 400); u.suspended = !!p.on; log(S, env, h.meId, `${p.on ? 'Suspended' : 'Reactivated'} ${u.username}`); audit(S, env, h.meId, p.on ? 'User suspended' : 'User reactivated', u.username); });
 op('loginAsCheck', (S, h, p) => { need(h.has('user:loginas'), 'You cannot log in as other users.'); const u = h.user(p.id); need(u && !u.admin, 'You cannot log in as this user.', 400); return {id:u.id}; });
 op('setSysRole', (S, h, p, env) => {
   need(h.has('role:manage'), 'You cannot assign site roles.'); need(h.user(p.userId) && h.role(p.roleId), 'User or role not found.', 404);
@@ -1068,6 +1076,7 @@ op('uploadUsers', (S, h, p, env) => {
     if (r.errors.length) { res.skipped++; res.errors.push(`Line ${r.line}: ${r.errors.join('; ')}`); continue; }
     let u = findUser(S, r.username);
     let isNew = false;
+    if (u && !h.mayManage(u.id)) { res.skipped++; continue; } // administrators' and moderators' accounts are changed by administrators only
     if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:r.firstname, lastname:r.lastname, email:u.builtinAdmin ? u.email : r.email, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
     else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
     for (const e of r.enrols) {

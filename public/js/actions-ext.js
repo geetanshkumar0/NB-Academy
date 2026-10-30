@@ -21,6 +21,11 @@ Object.assign(A, {
     try { const r = await B.liveJoin(d.id); ui.liveRoom = {mid:d.id, url:r.url}; if (r.state) setState(r.state); go('liveroom', {id:d.id}); }
     catch (e) { toast(e.message, 'err'); }
   },
+  editAccess: d => { const u = h.user(d.u); if (!u) return;
+    openModal(`Edit access: ${fullname(u)}`, `<form data-form="editAccess" class="stack"><input type="hidden" name="userId" value="${u.id}">
+      <p class="muted small" style="margin:0">Current access: <b>${h.personas(u.id).map(k => PERSONAS.find(x => x[0] === k)?.[1] || k).join(', ') || 'none'}</b>. Change what ${esc(u.firstname)} can do, then save.</p>
+      ${personaFields(u)}<span class="err" id="eaerr" hidden></span>
+      <div class="row"><button class="btn primary" type="submit">Save access</button><button class="btn ghost" type="button" data-act="closeModal">Cancel</button></div></form>`, true); },
   liveLeave: d => { ui.liveRoom = null; if (d.sid) go('session', {id:d.sid}); else go('mod', {id:d.id}); },
   sessJoin: async d => {
     if (!B.server) return toast('Video rooms work on the NB Academy server. This browser-only preview cannot hold a meeting.');
@@ -234,13 +239,18 @@ Object.assign(F, {
 document.addEventListener('change', e => { if (e.target.name !== 'mode' || !e.target.form || e.target.form.dataset.form !== 'chat') return; const el = e.target.form.querySelector('[data-chatpick]'); if (el) el.hidden = e.target.value !== 'custom'; });
 
 /* ---------- Personas: shared by "Add a new user" and the user profile ---------- */
-const PERSONAS = [['learner', 'Learner', 'Takes assigned training and courses'], ['trainer', 'Trainer', 'Delivers and grades courses and cohorts tagged to them'], ['teamlead', 'Team Lead', 'Monitors and reminds the cohorts mapped to them'], ['admin', 'Administrator', 'Manages the whole site']];
+const PERSONAS = [['learner', 'Learner', 'Takes assigned training and courses'], ['trainer', 'Trainer', 'Delivers and grades courses and cohorts tagged to them'], ['teamlead', 'Team Lead', 'Monitors and reminds the cohorts mapped to them'], ['moderator', 'Content Moderator', 'Adds users, creates courses, uploads content and builds quizzes; Trainer and Team Lead access everywhere'], ['admin', 'Administrator', 'Manages the whole site']];
 function personaFields(u) {
   const on = new Set(u ? h.personas(u.id) : ['learner']);
+  // Content moderators have Trainer and Team Lead access built in: tick those only when also given on their own
+  if (u && h.isModerator(u.id) && !u.builtinAdmin) {
+    if (!(u.personas || []).includes('trainer') && !h.cohortsTrained(u.id).length && !S.enrol.some(e => e.userId === u.id && ['trainer', 'editingteacher', 'teacher'].includes(e.role))) on.delete('trainer');
+    if (!h.sysrole('teamlead', u.id) && !S.cohorts.some(c => c.leads.includes(u.id))) on.delete('teamlead');
+  }
   const inC = key => u ? S.cohorts.filter(c => c[key].includes(u.id)).map(c => c.id) : [];
   const coItems = S.cohorts.map(c => [c.id, c.name, [c.department, `${c.members.length} members`].filter(Boolean).join(' · ')]);
   const tCourses = u ? S.enrol.filter(e => e.userId === u.id && e.role === 'trainer').map(e => e.courseId) : [];
-  const box = ([k, l, sub]) => (k === 'admin' && !h.isAdmin()) ? '' : u?.builtinAdmin ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="${k}"> <span><b>${l}</b><br><span class="muted small">Always on for the super administrator</span></span></label>` : (k === 'admin' && (u?.builtinAdmin || (u?.admin && !h.isSuperAdmin())) ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="admin"> <span><b>${l}</b><br><span class="muted small">${u.builtinAdmin ? 'Super administrator: set in the server configuration' : 'Only the super administrator can remove this'}</span></span></label>` : `<label class="check persona"><input type="checkbox" name="personas" value="${k}" ${on.has(k) ? 'checked' : ''}> <span><b>${l}</b><br><span class="muted small">${sub}</span></span></label>`);
+  const box = ([k, l, sub]) => ((k === 'admin' || k === 'moderator') && !h.isAdmin()) ? '' : u?.builtinAdmin ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="${k}"> <span><b>${l}</b><br><span class="muted small">Always on for the super administrator</span></span></label>` : (k === 'admin' && (u?.builtinAdmin || (u?.admin && !h.isSuperAdmin())) ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="admin"> <span><b>${l}</b><br><span class="muted small">${u.builtinAdmin ? 'Super administrator: set in the server configuration' : 'Only the super administrator can remove this'}</span></span></label>` : `<label class="check persona"><input type="checkbox" name="personas" value="${k}" ${on.has(k) ? 'checked' : ''}> <span><b>${l}</b><br><span class="muted small">${sub}</span></span></label>`);
   const sec = (k, html) => `<div class="field full" data-pfor="${k}" ${on.has(k) ? '' : 'hidden'}>${html}</div>`;
   return `<div class="personagrid">${PERSONAS.map(box).join('')}</div>
     <p class="muted small" style="margin:0">People with more than one persona switch between them with the view switcher in the top bar.</p>
@@ -517,3 +527,8 @@ document.addEventListener('change', e => {
   if (t.name === 'invitee') { spCount(); if (document.getElementById('sp-only')?.checked) spFilter(); }
   if (t.id === 'ss-mode') document.querySelectorAll('[data-smode]').forEach(x => { x.hidden = x.dataset.smode !== t.value; });
 });
+
+F.editAccess = async (d, f) => {
+  const r = await act('setPersonas', {userId:d.userId, ...personaData(f)}, null, {silent:true, errEl:'eaerr'}); if (r === FAIL) return;
+  closeModal(); render(); const u = h.user(d.userId); toast(`Access updated: ${fullname(u)} is now ${h.personas(u.id).map(k => PERSONAS.find(x => x[0] === k)?.[1] || k).join(', ')}.`);
+};

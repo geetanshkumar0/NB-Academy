@@ -872,6 +872,45 @@ test('Live sessions tab: admins schedule for any registered users, invitations b
   assert.equal((await call('POST', '/api/live/join', {sid}, ca)).status, 400);
   await op(a, 'saveIntegration', {kind:'meetings', server:'', appId:'nbacademy'});
 });
+test('Content Moderator: adds users, creates courses and quizzes, has Trainer and Team Lead access; cannot touch admins or site settings', async () => {
+  const a = await login('admin'); let S0 = getState();
+  let r = await op(a, 'newUser', {firstname:'Mona', lastname:'Mod', username:'mona.mod', email:'mona.mod@example.com', welcome:false, password:'Mod@12345', personas:['moderator']});
+  assert.equal(r.status, 200, r.text); const mid = r.json.result.id;
+  const H = Core.H(getState(), mid);
+  assert.ok(['trainer', 'teamlead', 'moderator'].every(x => H.personas(mid).includes(x)), 'moderators have Trainer and Team Lead access built in'); assert.ok(!H.personas(mid).includes('admin'));
+  assert.ok(getState().sysroles.some(x => x.userId === mid && x.roleId === 'moderator'));
+  assert.equal(H.cohortsLed(mid).length, getState().cohorts.length, 'team lead view covers every cohort');
+  getState().users.find(u => u.id === mid).mustChangePassword = false; getState().users.find(u => u.id === mid).termsAccepted = 99; getState().users.find(u => u.id === mid).prefsSet = true;
+  const m = await login('mona.mod', 'Mod@12345');
+  // Can: add users, upload users, create courses, add a quiz with questions in any course, assign training
+  r = await op(m, 'newUser', {firstname:'New', lastname:'Hire', username:'new.hire1', email:'new.hire1@example.com', welcome:false, personas:['learner']}); assert.equal(r.status, 200, r.text); const nh = r.json.result.id;
+  r = await op(m, 'uploadUsers', {csv:'username,firstname,lastname,email\nnew.hire2,New,Two,new.hire2@example.com', defaultPassword:'Pass@2026'}); assert.equal(r.status, 200, r.text); assert.equal(r.json.result.created, 1);
+  r = await op(m, 'newCourse', {fullname:'Legal basics', shortname:'LEG101', catId:getState().categories[0].id, sections:2}); assert.equal(r.status, 200, r.text); const cid = r.json.result.id;
+  const sid = getState().courses.find(c => c.id === cid).sections[0].id;
+  r = await op(m, 'saveMod', {cid, sid, type:'quiz', name:'Legal check', intro:'', visible:true, fields:{gradepass:60, timelimit:0, attempts:0}}); assert.equal(r.status, 200, r.text);
+  r = await op(m, 'importQuestions', {mid:r.json.result.id, rows:[['Question Text', 'A', 'B', 'Correct Answer'], ['Is it legal?', 'Yes', 'No', 'A']]}); assert.equal(r.status, 200, r.text);
+  r = await op(m, 'saveMod', {cid:'c1', sid:getState().courses.find(c => c.id === 'c1').sections[0].id, type:'page', name:'Moderator page', intro:'', visible:true, fields:{content:'Hello'}}); assert.equal(r.status, 200, 'can build any course: ' + r.text);
+  r = await op(m, 'setPersonas', {userId:nh, personas:['learner', 'trainer']}); assert.equal(r.status, 200, r.text);
+  // Cannot: make admins or moderators, change an admin's account, delete users, site settings, log in as others, delete courses
+  const admin = getState().users.find(u => u.username === 'admin');
+  assert.equal((await op(m, 'newUser', {firstname:'X', lastname:'Y', username:'x.admin', email:'x.admin@example.com', admin:true, welcome:false})).status, 403);
+  assert.equal((await op(m, 'setPersonas', {userId:nh, personas:['learner', 'moderator']})).status, 403);
+  assert.equal((await op(m, 'setPersonas', {userId:nh, personas:['admin']})).status, 403);
+  assert.equal((await op(m, 'updateProfile', {id:admin.id, firstname:'Hacked', lastname:'x', email:admin.email, password:'Hacked@123'})).status, 403, 'cannot change an administrator, including the password');
+  assert.notEqual((await op(m, 'adminResetPassword', {id:admin.id, mode:'temp'})).status, 200);
+  assert.equal((await op(m, 'suspendUser', {id:admin.id, on:true})).status, 403);
+  assert.equal((await op(m, 'deleteUser', {id:nh})).status, 403, 'moderators add and edit users but do not delete them');
+  assert.equal((await op(m, 'siteSettings', {name:'X'})).status, 403); assert.equal((await op(m, 'loginAsCheck', {id:nh})).status, 400);
+  assert.equal((await op(m, 'deleteCourse', {id:cid})).status, 403);
+  // Another moderator's account is also for administrators only
+  r = await op(a, 'setPersonas', {userId:nh, personas:['moderator']}); assert.equal(r.status, 200, r.text);
+  assert.equal((await op(m, 'updateProfile', {id:nh, firstname:'Z', lastname:'Z', email:'new.hire1@example.com'})).status, 403);
+  // Edit access keeps cohort mappings that are not sent; removing moderator access takes the role away
+  const co = getState().cohorts[0]; co.leads.push(nh);
+  r = await op(a, 'setPersonas', {userId:nh, personas:['learner', 'teamlead']}); assert.equal(r.status, 200, r.text);
+  assert.ok(getState().cohorts[0].leads.includes(nh), 'team lead mapping kept'); assert.ok(!getState().sysroles.some(x => x.userId === nh && x.roleId === 'moderator'));
+  assert.ok(getState().roles.some(x => x.id === 'moderator' && x.name === 'Content Moderator'));
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
