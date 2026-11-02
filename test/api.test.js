@@ -971,6 +971,19 @@ test('quiz editor: changing a question to another type (e.g. Subjective) redraws
   const r = await op(a, 'saveQuestion', {mid:m.json.result.id, q:{type:'essay', text:'Describe it.', mark:3, options:[{text:'x', correct:true}, {text:'y'}]}}); assert.equal(r.status, 200, r.text);
   const q = getState().mods[m.json.result.id].questions[0]; assert.equal(q.type, 'essay'); assert.equal(q.options, undefined);
 });
+test('slow connections: one request may carry several consecutive pieces, and pieces can be retried one by one', async () => {
+  const a = await login('admin'), piece = 256 * 1024, data = Buffer.alloc(piece * 5 + 999); for (let i = 0; i < data.length; i++) data[i] = (i * 13 + 5) & 255;
+  let r = await call('POST', '/api/upload/start', {name:'Slow link.zip', type:'application/zip', size:data.length, piece}, a); assert.equal(r.status, 200, r.text); const {id, pieces} = r.json; assert.equal(pieces, 6);
+  const send = (i, n) => call('POST', `/api/upload/piece?id=${id}&index=${i}${n ? `&count=${n}` : ''}`, data.subarray(i * piece, Math.min(data.length, (i + (n || 1)) * piece)), a, {'Content-Type':'application/octet-stream'});
+  assert.equal((await send(0, 3)).status, 200, 'three pieces in one request');
+  assert.equal((await call('POST', `/api/upload/piece?id=${id}&index=3&count=2`, data.subarray(3 * piece, 4 * piece), a, {'Content-Type':'application/octet-stream'})).status, 400, 'a short body is refused');
+  assert.equal((await call('POST', `/api/upload/piece?id=${id}&index=5&count=2`, data.subarray(5 * piece), a, {'Content-Type':'application/octet-stream'})).status, 400, 'past the end is refused');
+  assert.equal((await send(3)).status, 200); assert.equal((await send(4, 2)).status, 200, 'the last group includes the short final piece');
+  r = await call('POST', `/api/upload/finish?id=${id}`, {}, a); assert.equal(r.status, 200, r.text);
+  const fid = r.json.result.id; assert.ok(fs.readFileSync(_store().filePath(fid)).equals(data), 'the file is put back together exactly');
+  const ui = fs.readFileSync(path.join(__dirname, '../public/js/base.js'), 'utf8');
+  assert.match(ui, /UPLOAD_SINGLE_MAX = 1024 \* 1024, UPLOAD_PIECE = 1024 \* 1024/, 'anything over 1 MB goes in 1 MB pieces');
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

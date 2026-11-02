@@ -93,7 +93,10 @@ const SERVER = document.querySelector('meta[name="nb-mode"]')?.content === 'serv
 class ApiError extends Error { constructor(m, s) { super(m); this.status = s; } }
 /* In the browser-only preview there is no server to fetch email icons from, so emails carry them inline */
 function inlineEmailIcons() { const memo = {}; C.setEmailIconUrl((n, hex) => { if (!memo[n + hex]) { const b = C.emailIcon(n, hex); let t = ''; for (let i = 0; i < b.length; i += 8192) t += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); memo[n + hex] = 'data:image/png;base64,' + btoa(t); } return memo[n + hex]; }); }
-const UPLOAD_SINGLE_MAX = 16 * 1024 * 1024, UPLOAD_PIECE = 8 * 1024 * 1024, UPLOAD_PARALLEL = 4;
+/* Uploads: files up to 1 MB go in one request. Larger files go in 1 MB pieces, 4 connections at once, grouped so each
+   request takes about 15 seconds at the speed measured so far (1 to 8 pieces): small requests on slow connections, so
+   none runs into a proxy time limit (often 60 s), larger ones on fast connections, which stay fast from far away. */
+const UPLOAD_SINGLE_MAX = 1024 * 1024, UPLOAD_PIECE = 1024 * 1024, UPLOAD_PARALLEL = 4, UPLOAD_MAX_GROUP = 8, UPLOAD_TARGET_S = 15, UPLOAD_TRIES = 6;
 /* One POST with upload progress (fetch() cannot report upload progress) */
 function xhrPost(url, body, headers, {onProgress, signal} = {}) {
   return new Promise((resolve, reject) => {
@@ -133,17 +136,29 @@ const ServerBackend = {
   async upload(file, {onProgress, signal} = {}) {
     if (file.size <= UPLOAD_SINGLE_MAX) return xhrPost('/api/upload?name=' + encodeURIComponent(file.name), file, {'Content-Type':file.type || 'application/octet-stream'}, {onProgress:(l) => onProgress?.(l, file.size), signal});
     const start = await this.req('POST', '/api/upload/start', {name:file.name, type:file.type || 'application/octet-stream', size:file.size, piece:UPLOAD_PIECE});
-    const {id, piece, pieces} = start, loaded = new Array(pieces).fill(0), report = () => onProgress?.(loaded.reduce((a, b) => a + b, 0), file.size);
+    const {id, piece, pieces} = start, inflight = new Map(); let done = 0; const report = () => { let t = done; for (const v of inflight.values()) t += v; onProgress?.(Math.min(t, file.size), file.size); };
     const abortAll = new AbortController(); const stop = () => abortAll.abort(); signal?.addEventListener('abort', stop);
-    let next = 0, failure = null;
-    const sendPiece = async i => {
-      const blob = file.slice(i * piece, Math.min(file.size, (i + 1) * piece));
-      for (let attempt = 1; ; attempt++) {
-        try { await xhrPost(`/api/upload/piece?id=${id}&index=${i}`, blob, {'Content-Type':'application/octet-stream'}, {onProgress:l => { loaded[i] = l; report(); }, signal:abortAll.signal}); loaded[i] = blob.size; report(); return; }
-        catch (e) { loaded[i] = 0; report(); if (e.cancelled || abortAll.signal.aborted || (e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) || attempt >= 4) throw e; await new Promise(r => setTimeout(r, 800 * attempt)); }
+    let next = 0, failure = null, group = 1, rate = 0; const retry = [], tries = {};
+    const bytesOf = (i, n) => Math.min(file.size, (i + n) * piece) - i * piece;
+    const sendRange = async (i, n) => {
+      const blob = file.slice(i * piece, i * piece + bytesOf(i, n)), key = i + ':' + n, t0 = performance.now();
+      try {
+        await xhrPost(`/api/upload/piece?id=${id}&index=${i}&count=${n}`, blob, {'Content-Type':'application/octet-stream'}, {onProgress:l => { inflight.set(key, l); report(); }, signal:abortAll.signal});
+        inflight.delete(key); done += blob.size; report();
+        // Speed of one connection, smoothed; the next requests are sized to take about UPLOAD_TARGET_S seconds
+        const r = blob.size / Math.max(.2, (performance.now() - t0) / 1000); rate = rate ? rate * .6 + r * .4 : r;
+        group = Math.max(1, Math.min(UPLOAD_MAX_GROUP, Math.floor(rate * UPLOAD_TARGET_S / piece)));
+      } catch (e) {
+        inflight.delete(key); report();
+        if (e.cancelled || abortAll.signal.aborted || (e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429)) throw e;
+        group = 1; rate = rate / 2; // something cut the request off: go small
+        if (n > 1) { for (let k = n - 1; k >= 0; k--) retry.unshift([i + k, 1]); return; } // retry the range one piece at a time
+        tries[i] = (tries[i] || 0) + 1; if (tries[i] >= UPLOAD_TRIES) throw e;
+        await new Promise(r => setTimeout(r, 1000 * tries[i])); retry.unshift([i, 1]);
       }
     };
-    const worker = async () => { while (!failure && next < pieces) { const i = next++; try { await sendPiece(i); } catch (e) { failure ||= e; abortAll.abort(); } } };
+    const worker = async () => { while (!failure) { let r = retry.shift(); if (!r) { if (next >= pieces) { if (inflight.size) { await new Promise(res => setTimeout(res, 300)); continue; } break; } const n = Math.min(group, pieces - next); r = [next, n]; next += n; }
+      try { await sendRange(...r); } catch (e) { failure ||= e; abortAll.abort(); } } };
     try {
       await Promise.all(Array.from({length:Math.min(UPLOAD_PARALLEL, pieces)}, worker));
       if (failure) throw failure;

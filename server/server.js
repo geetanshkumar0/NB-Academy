@@ -510,12 +510,14 @@ async function handle(req, res) {
       if (!u || u.uid !== me.uid) return sendErr(res, 404, 'This upload was not found. Please choose the file again.');
       if (p === '/api/upload/abort') { upDrop(id); return send(res, 200, {ok:true}); }
       if (p === '/api/upload/piece') {
-        const i = Number(url.searchParams.get('index'));
-        if (!Number.isInteger(i) || i < 0 || i >= u.pieces) return sendErr(res, 400, 'Bad piece number.');
-        const want = i === u.pieces - 1 ? u.size - i * u.piece : u.piece, body = await readBody(req, PIECE_MAX);
-        if (body.length !== want) return sendErr(res, 400, `Piece ${i + 1} has ${body.length} bytes; expected ${want}.`);
+        // One request carries 'count' consecutive pieces (default 1): the browser sends small requests on slow
+        // connections, so each finishes well inside proxy time limits, and larger ones on fast connections
+        const i = Number(url.searchParams.get('index')), n = Number(url.searchParams.get('count') || 1);
+        if (!Number.isInteger(i) || i < 0 || i >= u.pieces || !Number.isInteger(n) || n < 1 || i + n > u.pieces || n * u.piece > PIECE_MAX) return sendErr(res, 400, 'Bad piece number.');
+        const want = Math.min(u.size, (i + n) * u.piece) - i * u.piece, body = await readBody(req, PIECE_MAX);
+        if (body.length !== want) return sendErr(res, 400, `Pieces ${i + 1}–${i + n} have ${body.length} bytes; expected ${want}.`);
         const fd = fs.openSync(upPart(id), 'r+'); try { fs.writeSync(fd, body, 0, body.length, i * u.piece); } finally { fs.closeSync(fd); }
-        const now = upRead(id) || u; if (!now.got.includes(i)) now.got.push(i); now.touched = Date.now(); upWrite(id, now); // read again: other pieces may have landed meanwhile
+        const now = upRead(id) || u; for (let k = i; k < i + n; k++) if (!now.got.includes(k)) now.got.push(k); now.touched = Date.now(); upWrite(id, now); // read again: other pieces may have landed meanwhile
         return send(res, 200, {received:now.got.length, pieces:now.pieces});
       }
       const missing = []; for (let i = 0; i < u.pieces; i++) if (!u.got.includes(i)) missing.push(i + 1);
