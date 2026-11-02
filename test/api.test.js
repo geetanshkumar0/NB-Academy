@@ -957,6 +957,8 @@ test('brand colours: primary #FB3753 and accent black, set once on existing site
   const custom = {site:{branding:{logo:'f1', primary:'#123456', accent:'#abcdef'}}, users:[], cohorts:[], rules:[]};
   Core.tidyData(custom); assert.deepEqual(custom.site.branding, {logo:null, primary:'#FB3753', accent:'#000000'}, 'colours and the new logo set once over what was saved');
   custom.site.branding.logo = 'f2'; Core.tidyData(custom); assert.equal(custom.site.branding.logo, 'f2', 'a logo uploaded later is kept');
+  const upgraded = {site:{brandColours:2, brandLogo:2, branding:{logo:'f9', primary:'#FB3753', accent:'#000000'}}, users:[], cohorts:[], rules:[]};
+  assert.ok(Core.tidyData(upgraded).some(x => /built-in NoBroker Academy logo/.test(x))); assert.equal(upgraded.site.branding.logo, null, 'the November 2026 logo replaces an upload once more'); assert.equal(upgraded.site.brandLogo, 3);
   custom.site.branding.primary = '#123456'; assert.deepEqual(Core.tidyData(custom), []); assert.equal(custom.site.branding.primary, '#123456', 'colours chosen later in Branding are kept');
   const css = (await call('GET', '/')).text;
   assert.match(css, /--nav:#FB3753; --nav-ink:#ffffff;/, 'header #FB3753 with light text, as before'); assert.match(css, /--brand:#FB3753; --brand-ink:#000000;/);

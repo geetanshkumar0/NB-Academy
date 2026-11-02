@@ -417,6 +417,8 @@ function render() {
   afterRender();
 }
 function afterRender() {
+  // An uploaded logo in the header: the site name goes next to it only when the logo is roughly square (a wide logo is a wordmark)
+  const up = document.querySelector('.brand img.logo-up'); if (up) { const fit = () => { const nm = up.parentElement.querySelector('.brand-name'); if (nm) nm.hidden = up.naturalWidth > up.naturalHeight * 1.6; }; if (up.complete && up.naturalWidth) fit(); else { up.addEventListener('load', fit, {once:true}); up.addEventListener('error', () => { const nm = up.parentElement.querySelector('.brand-name'); if (nm) nm.hidden = false; }, {once:true}); } }
   if (typeof qbAutosize === 'function') document.querySelectorAll('.qb-card').forEach(qbAutosize);
   if (ui.view.name === 'attempt' && ui.attempt) { const q = S.mods[ui.attempt.cmid]; if (q?.timelimit && !ui.timer) { tick(); ui.timer = setInterval(tick, 1000); } }
   const qt = document.getElementById('qtype'); if (qt) toggleQFields();
@@ -440,7 +442,7 @@ function navbar() {
   const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;
   const notes = S.notifications.slice().sort((a, b) => b.time - a.time).slice(0, 8);
   return `<header class="nav"><div class="nav-in">
-    <button class="brand" data-go="${homeFor(mode)}" aria-label="${esc(S.site.name)} home">${hasUploadedLogo() ? `${LOGO}<b>${esc(S.site.name)}</b>` : WORDMARK()}</button>
+    <button class="brand" data-go="${homeFor(mode)}" aria-label="${esc(S.site.name)} home">${hasUploadedLogo() ? `${LOGO.replace('class="logo"', 'class="logo logo-up"')}<b class="brand-name" hidden>${esc(S.site.name)}</b>` : WORDMARK()}</button>
     <nav class="prim" aria-label="Primary">${L.slice(0, 4).map(tab).join('')}</nav>
     ${L.length > 4 ? `<details class="pmore"><summary class="${L.slice(4).some(([k]) => on(k)) ? 'on' : ''}" aria-label="More pages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
       <div class="menu">${L.slice(4).map(tab).join('')}</div></details>` : ''}

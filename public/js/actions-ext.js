@@ -121,7 +121,7 @@ Object.assign(A, {
   testLdap: () => openModal('Test LDAP sign-in', `<form data-form="testLdap" class="stack"><div class="field"><label for="tlu">Directory username</label><input id="tlu" name="username" type="text" required autocapitalize="none"></div><div class="field"><label for="tlp">Password</label><input id="tlp" name="password" type="password" required></div><p class="muted small">Save the settings first. The password is only used for this test.</p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Test</button></div></form>`),
   resetTemplate: d => act('saveTemplate', {key:d.k, reset:true}, 'Default restored'),
   retryEmail: d => act('retryEmail', {id:d.id}, 'Queued for sending'),
-  clearLogo: () => act('saveBranding', {logo:null}, 'Default mark restored'),
+  clearLogo: () => act('saveBranding', {logo:null}, 'Built-in NoBroker Academy logo restored'),
   openToken: async d => { await A.logout(); ui.token = await B.tokenInfo(d.t); ui.token.raw = d.t; ui.loginView = 'token'; render(); },
   newUser: () => openModal('Add a new user', `<form data-form="newUser" class="stack"><div class="fgrid">
       <div class="field"><label for="nu1">First name</label><input id="nu1" name="firstname" type="text" required></div><div class="field"><label for="nu2">Last name</label><input id="nu2" name="lastname" type="text" required></div>
