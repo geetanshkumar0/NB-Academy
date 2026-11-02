@@ -274,13 +274,13 @@ document.addEventListener('change', e => {
 /* ---------- Quiz question editor (cards that save themselves) ---------- */
 const qbTimers = new Map();
 function qbRead(card) {
-  const key = card.dataset.qcard, mid = card.dataset.mid, type = card.querySelector('.qb-type').value, old = (S.mods[mid]?.questions || []).find(x => x.id === key);
+  const key = card.dataset.qcard, mid = card.dataset.mid, type = card.dataset.qtype || card.querySelector('.qb-type').value, old = (S.mods[mid]?.questions || []).find(x => x.id === key);
   const q = {type, text:card.querySelector('.qb-text').value.trim(), mark:card.querySelector('.qb-mark').value, bankId:old?.bankId};
   if (type === 'mc') q.options = [...card.querySelectorAll('.qb-opt')].filter(r => r.querySelector('.qb-opt-text')).map(r => ({text:r.querySelector('.qb-opt-text').value, correct:r.querySelector('.qb-pick').classList.contains('on')}));
   if (type === 'tf') q.answer = card.querySelector('.qb-pick.on')?.dataset.v !== 'false';
   if (type === 'short') q.answer = [...card.querySelectorAll('.qb-alt')].map(x => x.value.trim()).filter(Boolean).join('|');
   if (type === 'num') { q.answer = card.querySelector('.qb-num').value; q.tol = card.querySelector('.qb-tol').value; }
-  if (type === 'essay') q.guidance = card.querySelector('.qb-guide').value;
+  if (type === 'essay') q.guidance = card.querySelector('.qb-guide')?.value || '';
   return q;
 }
 function qbProblem(q) {

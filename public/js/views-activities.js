@@ -695,7 +695,7 @@ function qbCard(m, q, key, i, n, isDraft = false) {
       <div class="qb-opt qb-addopt"><span class="qb-check ghost" aria-hidden="true">✓</span><button type="button" class="link" data-act="qbAddAlt">Add another accepted answer</button></div></div><p class="qb-hint">Answers are not case-sensitive.</p>`; }
   else if (q.type === 'num') body = `<div class="qb-row"><label class="qb-field">Correct answer<input class="qb-num" type="number" step="any" value="${esc(q.answer ?? '')}" placeholder="e.g. 42"></label><label class="qb-field">Allowed margin (±)<input class="qb-tol" type="number" step="any" min="0" value="${esc(q.tol ?? 0)}"></label></div>`;
   else body = `<p class="qb-hint" style="margin-top:0">Learners write a longer answer. A trainer grades it in the quiz results.</p><textarea class="qb-guide" rows="2" placeholder="Marking guidance for trainers (optional)">${esc(q.guidance || '')}</textarea>`;
-  return `<article class="qb-card" data-qcard="${esc(key)}" data-mid="${m.id}" ${isDraft ? 'data-draft="1"' : ''}>
+  return `<article class="qb-card" data-qcard="${esc(key)}" data-mid="${m.id}" data-qtype="${esc(q.type)}" ${isDraft ? 'data-draft="1"' : ''}>
     <div class="qb-head"><span class="qb-num-badge">${i + 1}</span><textarea class="qb-text" rows="1" placeholder="Question" aria-label="Question ${i + 1}">${esc(q.text || '')}</textarea>
       <select class="qb-type" aria-label="Question type">${QB_TYPES.map(([k, l]) => `<option value="${k}" ${k === q.type ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     ${q.bankId ? '<p class="qb-hint"><span class="chip">Question bank</span> Edits to this question in the question bank update it here.</p>' : ''}

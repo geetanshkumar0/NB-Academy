@@ -961,6 +961,16 @@ test('brand colours: primary #FB3753 and accent black, set once on existing site
   const css = (await call('GET', '/')).text;
   assert.match(css, /--nav:#FB3753; --nav-ink:#ffffff;/, 'header #FB3753 with light text, as before'); assert.match(css, /--brand:#FB3753; --brand-ink:#000000;/);
 });
+test('quiz editor: changing a question to another type (e.g. Subjective) redraws it without options', async () => {
+  const views = fs.readFileSync(path.join(__dirname, '../public/js/views-activities.js'), 'utf8'), acts = fs.readFileSync(path.join(__dirname, '../public/js/actions-ext.js'), 'utf8');
+  assert.match(views, /<article class="qb-card"[^`]*data-qtype="\$\{esc\(q\.type\)\}"/, 'each card records the type it shows');
+  assert.match(acts, /type = card\.dataset\.qtype \|\| card\.querySelector\('\.qb-type'\)\.value/, 'the card is read as the type it shows, not the newly chosen one');
+  // A subjective question is saved with no options
+  const a = await login('admin'), sid = getState().courses.find(c => c.id === 'c1').sections[0].id;
+  const m = await op(a, 'saveMod', {cid:'c1', sid, type:'quiz', name:'Type switch', intro:'', visible:true, fields:{gradepass:0, timelimit:0, attempts:0}});
+  const r = await op(a, 'saveQuestion', {mid:m.json.result.id, q:{type:'essay', text:'Describe it.', mark:3, options:[{text:'x', correct:true}, {text:'y'}]}}); assert.equal(r.status, 200, r.text);
+  const q = getState().mods[m.json.result.id].questions[0]; assert.equal(q.type, 'essay'); assert.equal(q.options, undefined);
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
