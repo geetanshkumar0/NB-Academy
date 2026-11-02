@@ -984,6 +984,21 @@ test('slow connections: one request may carry several consecutive pieces, and pi
   const ui = fs.readFileSync(path.join(__dirname, '../public/js/base.js'), 'utf8');
   assert.match(ui, /UPLOAD_SINGLE_MAX = 1024 \* 1024, UPLOAD_PIECE = 1024 \* 1024/, 'anything over 1 MB goes in 1 MB pieces');
 });
+test('server storage: administrators see free disk space; uploads are refused clearly when the disk is nearly full', async () => {
+  const a = await login('admin');
+  let r = await call('POST', '/api/admin/storage', {}, a); assert.equal(r.status, 200, r.text); assert.ok(r.json.free > 0 && r.json.total >= r.json.free); assert.equal(typeof r.json.pendingUploads, 'number');
+  assert.equal((await call('POST', '/api/admin/storage', {}, await login('asha'))).status, 403);
+  r = await call('POST', '/api/upload/start', {name:'Left over.zip', type:'application/zip', size:3 * 1048576, piece:1048576}, a); assert.equal(r.status, 200);
+  const before = (await call('POST', '/api/admin/storage', {}, a)).json.pendingUploads; assert.ok(before >= 1);
+  assert.equal((await call('POST', '/api/admin/storage/clean', {}, a)).json.pendingUploads, before, 'recent uploads are kept (they may still be running)');
+  const real = fs.statfsSync; fs.statfsSync = () => ({bavail:50, bsize:1048576, blocks:1000});
+  try {
+    r = await call('POST', '/api/upload/start', {name:'Big.zip', type:'application/zip', size:60 * 1048576, piece:1048576}, a);
+    assert.equal(r.status, 507); assert.match(r.json.error, /almost out of disk space \(50 MB free\)/);
+  } finally { fs.statfsSync = real; }
+  const ui = fs.readFileSync(path.join(__dirname, '../public/js/base.js'), 'utf8');
+  assert.match(ui, /The web server in front of NB Academy refused the upload \(error \$\{x\.status\}\)/, 'a bare 5xx from the web server in front gets an explanation');
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

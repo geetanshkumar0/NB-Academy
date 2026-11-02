@@ -224,6 +224,13 @@ const upPart = id => path.join(upDir(), id + '.part'), upMeta = id => path.join(
 const upRead = id => { if (!/^up_[a-f0-9]{24}$/.test(id)) return null; try { return JSON.parse(fs.readFileSync(upMeta(id), 'utf8')); } catch (e) { return null; } };
 const upWrite = (id, u) => fs.writeFileSync(upMeta(id), JSON.stringify(u));
 const upDrop = id => { fs.rmSync(upPart(id), {force:true}); fs.rmSync(upMeta(id), {force:true}); };
+/* Disk space where NB Academy keeps its data, and unfinished uploads waiting there (Site administration › General) */
+function storageInfo() {
+  let free = null, total = null; try { const s = fs.statfsSync(DATA); free = s.bavail * s.bsize; total = s.blocks * s.bsize; } catch (e) {}
+  let pending = 0, pendingBytes = 0; try { for (const f of fs.readdirSync(upDir())) if (f.endsWith('.part')) { pending++; pendingBytes += (fs.statSync(path.join(upDir(), f)).blocks || 0) * 512; } } catch (e) {}
+  return {free, total, pendingUploads:pending, pendingBytes};
+}
+const mbText = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round(b / 1048576) + ' MB';
 function upClean() { // forget pieced uploads untouched for a day
   try { const old = Date.now() - 24 * 3600e3; for (const f of fs.readdirSync(upDir())) if (f.endsWith('.json')) { const id = f.slice(0, -5), u = upRead(id); if (!u || u.touched < old) upDrop(id); } } catch (e) {}
 }
@@ -480,6 +487,11 @@ async function handle(req, res) {
       if (b.op === 'heartbeat' || b.op === 'touch' || b.op === 'saveProgress') return send(res, 200, {result});
       return send(res, 200, {result, state:Core.view(S, me.uid)});
     }
+    if (p === '/api/admin/storage' || p === '/api/admin/storage/clean') {
+      if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');
+      if (p.endsWith('/clean')) { const old = Date.now() - 15 * 6e4; try { for (const f of fs.readdirSync(upDir())) if (f.endsWith('.json')) { const id = f.slice(0, -5), u = upRead(id); if (!u || u.touched < old) upDrop(id); } } catch (e) {} }
+      return send(res, 200, storageInfo());
+    }
     if (p === '/api/live/join') {
       const b = await readJSON(req), mt = meetingConfig();
       if (!mt.server || !mt.secret) return sendErr(res, 503, 'Video meetings are not set up yet. An administrator needs to add the meeting server in Site administration › Email, sign-in and meetings.');
@@ -500,6 +512,7 @@ async function handle(req, res) {
       if (size > MAX_UPLOAD) return sendErr(res, 413, `The file is larger than ${Math.round(MAX_UPLOAD / 1048576)} MB.`);
       if (piece < 256 * 1024 || piece > PIECE_MAX) return sendErr(res, 400, 'Bad piece size.');
       upClean(); fs.mkdirSync(upDir(), {recursive:true});
+      const st = storageInfo(); if (st.free != null && st.free < size + 200 * 1048576) return sendErr(res, 507, `The server is almost out of disk space (${mbText(st.free)} free), so this ${mbText(size)} file cannot be stored. Ask whoever runs the server to free up disk space, then try again.`);
       const id = 'up_' + crypto.randomBytes(12).toString('hex'), pieces = Math.ceil(size / piece);
       const fd = fs.openSync(upPart(id), 'w'); fs.ftruncateSync(fd, size); fs.closeSync(fd);
       upWrite(id, {uid:me.uid, name:String(b.name || 'file').slice(0, 200), type:String(b.type || 'application/octet-stream').split(';')[0].slice(0, 100), size, piece, pieces, got:[], touched:Date.now()});

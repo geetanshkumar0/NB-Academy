@@ -16,6 +16,7 @@ const ADMIN = {};
 ADMIN.general = () => `<div class="stats" style="margin-bottom:22px">
     <div class="stat"><b>${S.users.length}</b><span class="muted small">Users</span></div><div class="stat"><b>${S.courses.length}</b><span class="muted small">Courses</span></div>
     <div class="stat"><b>${S.enrol.length}</b><span class="muted small">Enrolments</span></div><div class="stat"><b>${S.cohorts.length}</b><span class="muted small">Cohorts</span></div></div>
+  ${B.server ? `<section class="card stack" style="max-width:680px;margin-bottom:22px"><div class="spread"><h2>Server storage</h2><button class="btn sm" data-act="checkStorage">Check server storage</button></div><div id="storageres" class="small muted">Free disk space on the server, and unfinished uploads waiting there. Check this if uploads fail.</div></section>` : ''}
   <form data-form="siteSettings" class="card stack" style="max-width:680px"><h2>Site settings</h2>
     <div class="field"><label for="sf1">Full site name</label><input id="sf1" name="name" type="text" value="${esc(S.site.name)}" required></div>
     <div class="field"><label for="sf2">Front page summary</label><textarea id="sf2" name="tagline" rows="3">${esc(S.site.tagline)}</textarea></div>

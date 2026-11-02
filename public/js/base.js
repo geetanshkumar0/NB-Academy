@@ -108,6 +108,7 @@ function xhrPost(url, body, headers, {onProgress, signal} = {}) {
       if (x.status >= 200 && x.status < 300) return resolve(data);
       if (x.status === 413 && !data.error) return reject(new ApiError('This file is larger than the web server in front of NB Academy allows. Ask whoever runs the server to raise the upload limit (for nginx: client_max_body_size 1g;) and try again.', 413));
       if ((x.status === 502 || x.status === 504) && !data.error) return reject(new ApiError('The server took too long to answer. Try again in a moment.', x.status));
+      if (x.status >= 500 && !data.error) return reject(new ApiError(`The web server in front of NB Academy refused the upload (error ${x.status}). This usually means it could not store the upload temporarily, most often because the server's disk is full. Ask whoever runs the server to check the free disk space and that nginx's client_body_temp folder is writable. Site administration › General › Check server storage shows the space NB Academy sees.`, x.status));
       reject(new ApiError(data.error || `Upload failed (${x.status})`, x.status)); };
     x.onerror = () => reject(new ApiError('The upload stopped: the connection to the server was lost. Check your internet connection and try again.', 0));
     x.onabort = () => reject(Object.assign(new ApiError('Upload cancelled.', 0), {cancelled:true}));

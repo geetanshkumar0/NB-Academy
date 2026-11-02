@@ -532,3 +532,14 @@ F.editAccess = async (d, f) => {
   const r = await act('setPersonas', {userId:d.userId, ...personaData(f)}, null, {silent:true, errEl:'eaerr'}); if (r === FAIL) return;
   closeModal(); render(); const u = h.user(d.userId); toast(`Access updated: ${fullname(u)} is now ${h.personas(u.id).map(k => PERSONAS.find(x => x[0] === k)?.[1] || k).join(', ')}.`);
 };
+/* Site administration › General: free disk space on the server, and leftover unfinished uploads */
+{ const show = r => { const mb = b => b == null ? 'unknown' : b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round(b / 1048576) + ' MB', low = r.free != null && r.free < 1073741824;
+    const el = document.getElementById('storageres'); if (!el) return;
+    el.classList.remove('muted'); el.innerHTML = `<div class="stats"><div class="stat"><b style="${low ? 'color:var(--bad)' : ''}">${mb(r.free)}</b><span class="muted small">Free disk space${r.total ? ` of ${mb(r.total)}` : ''}</span></div><div class="stat"><b>${r.pendingUploads}</b><span class="muted small">Unfinished uploads (${mb(r.pendingBytes)})</span></div></div>
+      ${low ? '<p style="color:var(--bad)"><b>The server is running out of disk space.</b> Uploads fail when it is full. Ask whoever runs the server to free up space.</p>' : '<p class="muted">Enough free space for uploads. If uploads still fail with an error from the web server, ask whoever runs it to check that its temporary upload folder (nginx: client_body_temp) is writable and on a disk with free space.</p>'}
+      ${r.pendingUploads ? '<button class="btn sm" data-act="cleanUploads">Remove unfinished uploads</button>' : ''}`; };
+  Object.assign(A, {
+    checkStorage: async () => { try { show(await B.req('POST', '/api/admin/storage', {})); } catch (e) { toast(e.message, true); } },
+    cleanUploads: async () => { try { show(await B.req('POST', '/api/admin/storage/clean', {})); toast('Unfinished uploads older than 15 minutes removed'); } catch (e) { toast(e.message, true); } },
+  });
+}
