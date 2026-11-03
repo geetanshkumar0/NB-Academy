@@ -525,6 +525,7 @@ function itemAnalysis(S, m) {
     const correct = rows.filter(r => r.rv.got >= r.rv.mark && r.rv.mark > 0).length;
     const avg = rows.length ? rows.reduce((s, r) => s + (r.rv.got || 0), 0) / rows.length / (q.mark || 1) * 100 : null;
     let options = null;
+    if (q.type === 'mcm') options = q.options.map((o, i) => ({key:String(i), text:o.text, correct:!!o.correct, n:answered.filter(r => String(r.ans).split(',').includes(String(i))).length}));
     if (q.type === 'mc' || q.type === 'tf') { const opts = q.type === 'mc' ? q.options.map((o, i) => ({key:String(i), text:o.text, correct:!!o.correct})) : [{key:'true', text:'True', correct:q.answer === true}, {key:'false', text:'False', correct:q.answer === false}]; options = opts.map(o => ({...o, n:answered.filter(r => String(r.ans) === o.key).length})); }
     return {id:q.id, text:q.text, type:q.type, attempts:rows.length, answered:answered.length, facility:rows.length ? correct / rows.length * 100 : null, avg, options};
   });
@@ -539,7 +540,7 @@ op('saveBankQuestion', (S, h, p, env) => {
   // reuse quiz validation by running the same checks inline
   const q = {type:p.q?.type, text:req(p.q?.text, 'Question text', 4000), mark:Math.max(0.5, Number(p.q?.mark) || 1)};
   need(Core.QTYPES[q.type], 'Unknown question type.', 400);
-  if (q.type === 'mc') { q.options = (p.q.options || []).map(o => ({text:str(o.text, 500).trim(), correct:!!o.correct})).filter(o => o.text); need(q.options.length >= 2 && q.options.filter(o => o.correct).length === 1, 'Add at least two choices and mark exactly one as correct with *.', 400); q.options.forEach(o => { if (!o.correct) delete o.correct; }); }
+  if (q.type === 'mc' || q.type === 'mcm') { q.options = (p.q.options || []).map(o => ({text:str(o.text, 500).trim(), correct:!!o.correct})).filter(o => o.text); const nc = q.options.filter(o => o.correct).length; need(q.options.length >= 2 && (q.type === 'mc' ? nc === 1 : nc >= 1), q.type === 'mc' ? 'Add at least two choices and mark exactly one as correct with *.' : 'Add at least two choices and mark every correct one with *.', 400); q.options.forEach(o => { if (!o.correct) delete o.correct; }); }
   if (q.type === 'tf') q.answer = !!p.q.answer;
   if (q.type === 'short') q.answer = req(p.q.answer, 'Accepted answer', 500);
   if (q.type === 'num') { need(p.q.answer !== '' && !isNaN(Number(p.q.answer)), 'Enter the correct numerical answer.', 400); q.answer = Number(p.q.answer); q.tol = Math.abs(Number(p.q.tol) || 0); }

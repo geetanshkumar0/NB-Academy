@@ -36,7 +36,7 @@ const TYPES = {
   label:       {label:'Text and media area', p:'other', desc:'Text shown directly on the course page between activities.'}
 };
 const MANUAL = new Set(['page', 'url', 'file', 'forum', 'glossary']);
-const QTYPES = {mc:'Multiple choice', tf:'True / False', short:'Short answer', num:'Number', essay:'Subjective (graded by a trainer)'};
+const QTYPES = {mc:'Multiple choice', mcm:'Multiple choice (more than one answer)', tf:'True / False', short:'Short answer', num:'Number', essay:'Subjective (graded by a trainer)'};
 const WS_PHASES = {1:'Setup', 2:'Submission', 3:'Assessment', 4:'Grading evaluation', 5:'Closed'};
 
 /* ---------------- Capabilities and roles ---------------- */
@@ -777,15 +777,17 @@ function notifyT(S, env, key, userId, vars, go, gid) {
 function gradeQ(q, a) {
   if (a == null || a === '') return 0;
   if (q.type === 'mc') return Number(a) === q.options.findIndex(o => o.correct) ? q.mark : 0;
+  // More than one answer: the answer is the ticked options, e.g. "0,2"; full marks only for exactly the correct set
+  if (q.type === 'mcm') { const sel = new Set(String(a).split(',').filter(x => x !== '').map(Number)), want = q.options.map((o, i) => o.correct ? i : -1).filter(i => i >= 0); return sel.size === want.length && want.every(i => sel.has(i)) ? q.mark : 0; }
   if (q.type === 'tf') return (a === 'true') === q.answer ? q.mark : 0;
   if (q.type === 'short') return String(q.answer).split('|').map(s => s.trim().toLowerCase()).includes(String(a).trim().toLowerCase()) ? q.mark : 0;
   if (q.type === 'num') { const v = parseFloat(a); return !isNaN(v) && Math.abs(v - q.answer) <= (q.tol || 0) ? q.mark : 0; }
   return 0; // essays are graded by a trainer
 }
-const correctText = q => q.type === 'essay' ? 'Graded by a trainer' : q.type === 'mc' ? q.options.find(o => o.correct)?.text : q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'short' ? String(q.answer).split('|')[0] : `${q.answer}${q.tol ? ` ± ${q.tol}` : ''}`;
+const correctText = q => q.type === 'essay' ? 'Graded by a trainer' : q.type === 'mc' ? q.options.find(o => o.correct)?.text : q.type === 'mcm' ? q.options.filter(o => o.correct).map(o => o.text).join(', ') : q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'short' ? String(q.answer).split('|')[0] : `${q.answer}${q.tol ? ` ± ${q.tol}` : ''}`;
 function reviewOf(m, answers) {
   const out = {};
-  for (const q of m.questions || []) out[q.id] = {text:q.text, type:q.type, mark:q.mark, got:gradeQ(q, answers[q.id]), right:correctText(q), options:q.type === 'mc' ? q.options.map(o => ({text:o.text, correct:!!o.correct})) : null, answerTf:q.type === 'tf' ? q.answer : null, pending:q.type === 'essay' && answers[q.id] != null && answers[q.id] !== ''};
+  for (const q of m.questions || []) out[q.id] = {text:q.text, type:q.type, mark:q.mark, got:gradeQ(q, answers[q.id]), right:correctText(q), options:q.type === 'mc' || q.type === 'mcm' ? q.options.map(o => ({text:o.text, correct:!!o.correct})) : null, answerTf:q.type === 'tf' ? q.answer : null, pending:q.type === 'essay' && answers[q.id] != null && answers[q.id] !== ''};
   return out;
 }
 
@@ -1316,7 +1318,9 @@ op('saveQuestion', (S, h, p) => {
   const m = modOf(S, p.mid); need(h.canEdit(m.courseId), 'You cannot edit this quiz.'); need(m.type === 'quiz', 'Not a quiz.', 400);
   const q = {id:/^[a-z0-9_]{2,40}$/i.test(String(p.q?.id || '')) ? p.q.id : 'q' + Math.random().toString(36).slice(2, 8), type:p.q?.type, text:req(p.q?.text, 'Question text', 4000), mark:Math.max(0.5, Number(p.q?.mark) || 1)};
   need(QTYPES[q.type], 'Unknown question type.', 400);
-  if (q.type === 'mc') { q.options = (p.q.options || []).map(o => ({text:str(o.text, 500).trim(), correct:!!o.correct})).filter(o => o.text); need(q.options.length >= 2, 'Add at least two choices, one per line.', 400); need(q.options.filter(o => o.correct).length === 1, 'Mark exactly one choice as correct by putting * in front of it.', 400); q.options.forEach(o => { if (!o.correct) delete o.correct; }); }
+  if (q.type === 'mc' || q.type === 'mcm') { q.options = (p.q.options || []).map(o => ({text:str(o.text, 500).trim(), correct:!!o.correct})).filter(o => o.text); need(q.options.length >= 2, 'Add at least two choices, one per line.', 400);
+    if (q.type === 'mc') need(q.options.filter(o => o.correct).length === 1, 'Mark exactly one choice as correct by putting * in front of it.', 400); else need(q.options.some(o => o.correct), 'Mark every correct choice (at least one).', 400);
+    q.options.forEach(o => { if (!o.correct) delete o.correct; }); }
   if (q.type === 'tf') q.answer = !!p.q.answer;
   if (q.type === 'short') q.answer = req(p.q.answer, 'Accepted answer', 500);
   if (q.type === 'num') { need(p.q.answer !== '' && !isNaN(Number(p.q.answer)), 'Enter the correct numerical answer.', 400); q.answer = Number(p.q.answer); q.tol = Math.abs(Number(p.q.tol) || 0); }
@@ -1349,13 +1353,19 @@ function parseQuestionRows(rows) {
     const filled = options.filter(([, v]) => v); if (filled.length < 2) return bad('Give at least two options.');
     if (filled.some(([, v]) => v.length > 500)) return bad('An option is longer than 500 characters.');
     if (!ans) return bad('The Correct Answer is empty.');
-    let pick = null; const L = ans.replace(/^option\s*/i, '').replace(/[).\s]+$/, '').toUpperCase();
-    if (/^[A-F]$/.test(L)) { pick = options.find(([x]) => x === L); if (!pick) return bad(`Correct Answer "${ans}" has no option column.`); if (!pick[1]) return bad(`Correct Answer "${ans}" points to an empty option.`); }
-    else if (/^[A-F](\s*[,/&+]\s*[A-F])+$/i.test(ans)) return bad(`Only one correct answer is allowed per question (found "${ans}").`);
-    else { const hits = filled.filter(([, v]) => v.toLowerCase() === ans.toLowerCase()); if (hits.length !== 1) return bad(`Correct Answer "${ans}" is not a letter A–F and does not match one option.`); pick = hits[0]; }
+    // One letter (B) = one correct answer; several (A,C / A, C / A & C / A and C) = more than one correct answer
+    let picks = null; const L = ans.replace(/^options?\s*/i, '').replace(/[).\s]+$/, '').toUpperCase();
+    const letters = /^[A-F]$/.test(L) ? [L] : /^[A-F](\s*(,|;|\/|&|\+|AND)\s*[A-F])+$/.test(L) ? L.split(/\s*(?:,|;|\/|&|\+|AND)\s*/) : null;
+    if (letters) {
+      if (new Set(letters).size !== letters.length) return bad(`Correct Answer "${ans}" lists a letter twice.`);
+      picks = letters.map(x => options.find(([o]) => o === x)); const miss = letters.find((x, k) => !picks[k]); if (miss) return bad(`Correct Answer "${ans}": there is no option column ${miss}.`);
+      const empty = picks.find(o => !o[1]); if (empty) return bad(`Correct Answer "${ans}" points to an empty option (${empty[0]}).`);
+    } else { const hits = filled.filter(([, v]) => v.toLowerCase() === ans.toLowerCase()); if (hits.length !== 1) return bad(`Correct Answer "${ans}" is not a letter A–F (or letters such as A,C) and does not match one option.`); picks = [hits[0]]; }
+    if (picks.length >= filled.length) return bad('Every option is marked correct; leave at least one wrong option.');
     const seen = new Set(); for (const [, v] of filled) { if (seen.has(v.toLowerCase())) return bad(`Two options are the same ("${v}").`); seen.add(v.toLowerCase()); }
     const mark = ci.mark >= 0 && r[ci.mark] !== '' && r[ci.mark] != null ? Number(r[ci.mark]) : 1; if (!(mark > 0) || mark > 100) return bad('Marks must be a number from 0.5 to 100.');
-    questions.push({row, type:'mc', text, mark:Math.max(0.5, mark), options:filled.map(([x, v]) => ({text:v, correct:x === pick[0]}))});
+    const right = new Set(picks.map(o => o[0]));
+    questions.push({row, type:picks.length > 1 ? 'mcm' : 'mc', text, mark:Math.max(0.5, mark), options:filled.map(([x, v]) => ({text:v, correct:right.has(x)}))});
   });
   if (!questions.length && !errors.length) errors.push({row:hi + 2, error:'No questions found under the header row.'});
   return {questions, errors};
@@ -1631,7 +1641,7 @@ function view(S, meId) {
   V.groups = clone(S.groups.filter(g => viewable.has(g.courseId) && (h.has('group:manage', g.courseId) || h.has('grade:viewall', g.courseId) || g.members.includes(meId))));
   V.mods = {};
   const stripAnswers = vm => {
-    if (vm.questions && vm.type === 'quiz') vm.questions = vm.questions.map(q => ({id:q.id, type:q.type, text:q.text, mark:q.mark, ...(q.type === 'mc' ? {options:q.options.map(o => ({text:o.text}))} : {}), ...(q.type === 'essay' ? {guidance:q.guidance} : {})}));
+    if (vm.questions && vm.type === 'quiz') vm.questions = vm.questions.map(q => ({id:q.id, type:q.type, text:q.text, mark:q.mark, ...(q.type === 'mc' || q.type === 'mcm' ? {options:q.options.map(o => ({text:o.text}))} : {}), ...(q.type === 'essay' ? {guidance:q.guidance} : {})}));
     if (vm.pages) vm.pages = vm.pages.map(pg => ({id:pg.id, kind:pg.kind, title:pg.title, body:pg.body, ...(pg.options ? {options:pg.options.map(o => ({text:o.text}))} : {})}));
   };
   for (const cid of new Set([...viewable, ...overseeCourses])) for (const m of h.courseMods(cid)) {

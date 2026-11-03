@@ -50,12 +50,12 @@ function modForm(type, cid, sid, m) {
 }
 function questionForm(m, q) {
   const v = q || {type:'mc', mark:1};
-  const opts = v.type === 'mc' ? (v.options || []).map(o => (o.correct ? '*' : '') + o.text).join('\n') : '';
+  const opts = v.type === 'mc' || v.type === 'mcm' ? (v.options || []).map(o => (o.correct ? '*' : '') + o.text).join('\n') : '';
   openModal(q ? 'Edit question' : `Add a question to ${m.name}${(m.questions || []).length ? ` (question ${(m.questions || []).length + 1})` : ''}`, `<form data-form="question" class="stack"><input type="hidden" name="mid" value="${m.id}"><input type="hidden" name="qid" value="${v.id || ''}">
     <div class="fgrid"><div class="field"><label for="qtype">Question type</label><select id="qtype" name="type">${Object.entries(C.QTYPES).map(([k, l]) => `<option value="${k}" ${k === v.type ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label for="qmark">Default mark</label><input id="qmark" name="mark" type="number" min="0.5" step="0.5" value="${v.mark}" required></div>
     <div class="field full"><label for="qtext">Question text</label><textarea id="qtext" name="text" rows="3" required>${esc(v.text || '')}</textarea></div>
-    <div class="field full" data-for="mc"><label for="qopts">Choices</label><textarea id="qopts" name="options" rows="5" placeholder="One choice per line. Start the correct choice with *">${esc(opts)}</textarea><span class="hint">One choice per line. Put * before the correct choice, e.g. *Paris</span></div>
+    <div class="field full" data-for="mc mcm"><label for="qopts">Choices</label><textarea id="qopts" name="options" rows="5" placeholder="One choice per line. Start the correct choice with *">${esc(opts)}</textarea><span class="hint">One choice per line. Put * before the correct choice, e.g. *Paris (for more than one answer, put * before each correct choice)</span></div>
     <div class="field full" data-for="tf"><span class="lbl">Correct answer</span><div class="row"><label class="check"><input type="radio" name="tf" value="true" ${v.answer !== false ? 'checked' : ''}> True</label><label class="check"><input type="radio" name="tf" value="false" ${v.answer === false ? 'checked' : ''}> False</label></div></div>
     <div class="field full" data-for="short"><label for="qshort">Accepted answers</label><input id="qshort" name="short" type="text" value="${v.type === 'short' ? esc(v.answer) : ''}"><span class="hint">Separate alternatives with | (not case-sensitive)</span></div>
     <div class="field" data-for="num"><label for="qnum">Answer</label><input id="qnum" name="num" type="number" step="any" value="${v.type === 'num' ? v.answer : ''}"></div>
@@ -63,7 +63,7 @@ function questionForm(m, q) {
     <p class="err" id="qerr" hidden></p>
     <div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button>${q ? '' : '<button class="btn" type="submit" name="next" value="1">Save and add another</button>'}<button class="btn primary" type="submit">${q ? 'Save changes' : 'Save question'}</button></div></form>`, true);
 }
-function toggleQFields() { const t = document.getElementById('qtype').value; document.querySelectorAll('[data-for]').forEach(el => el.hidden = el.dataset.for !== t); }
+function toggleQFields() { const t = document.getElementById('qtype').value; document.querySelectorAll('[data-for]').forEach(el => el.hidden = !el.dataset.for.split(' ').includes(t)); }
 function lessonPageForm(m, pg, kind) {
   const v = pg || {kind, title:'', body:'', options:[]}; const q = v.kind === 'question';
   const opts = (v.options || []).map(o => `${o.correct ? '*' : ''}${o.text}${o.feedback ? ' | ' + o.feedback : ''}`).join('\n');
@@ -238,7 +238,7 @@ const F = {
   gradeSub: async d => { if (await act('grade', d, 'Grade saved', {silent:true}) === FAIL) return; const m = S.mods[d.mid], st = h.students(m.courseId), i = st.findIndex(x => x.id === d.uid), next = st[i + 1]; if (next) go('grader', {id:m.id, u:next.id}); else go('mod', {id:m.id}); },
   question: async d => {
     const q = {id:d.qid || undefined, type:d.type, text:d.text, mark:d.mark};
-    if (d.type === 'mc') q.options = d.options.split('\n').map(s => s.trim()).filter(Boolean).map(l => l.startsWith('*') ? {text:l.slice(1).trim(), correct:true} : {text:l});
+    if (d.type === 'mc' || d.type === 'mcm') q.options = d.options.split('\n').map(s => s.trim()).filter(Boolean).map(l => l.startsWith('*') ? {text:l.slice(1).trim(), correct:true} : {text:l});
     if (d.type === 'tf') q.answer = d.tf === 'true';
     if (d.type === 'short') q.answer = d.short;
     if (d.type === 'num') { q.answer = d.num; q.tol = d.tol; }
@@ -364,8 +364,11 @@ document.addEventListener('input', e => {
     box.querySelectorAll('[data-group]').forEach(g => g.hidden = !g.querySelector('[data-s]:not([hidden])')); }
 });
 function recordAnswer(t) {
-  if (!ui.attempt) return; ui.attempt.answers[t.dataset.q] = t.value;
-  const s = document.getElementById('qs-' + t.dataset.q); if (s) s.textContent = t.value !== '' ? 'Answer saved' : 'Not yet answered';
+  if (!ui.attempt) return;
+  // Tick boxes (more than one answer): the answer is every ticked option, e.g. "0,2"
+  const v = t.type === 'checkbox' ? [...document.querySelectorAll(`input[type=checkbox][data-q="${t.dataset.q}"]:checked`)].map(x => x.value).join(',') : t.value;
+  ui.attempt.answers[t.dataset.q] = v;
+  const s = document.getElementById('qs-' + t.dataset.q); if (s) s.textContent = v !== '' ? 'Answer saved' : 'Not yet answered';
   const g = document.getElementById('qnavgrid'); if (g) g.innerHTML = qnavButtons();
   clearTimeout(ui.saveT); const A0 = ui.attempt;
   ui.saveT = setTimeout(() => { if (ui.attempt === A0) B.op('saveQuizAnswers', {aid:A0.aid, answers:A0.answers}).catch(() => {}); }, 1200);

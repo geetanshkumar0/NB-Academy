@@ -814,8 +814,8 @@ test('quiz questions upload in bulk (Sno | Question Text | A–F | Correct Answe
   assert.deepEqual(qs.map(q => [q.type, q.mark, q.options.length, q.options.find(o => o.correct).text]), [['mc', 1, 4, 'Verification of property documents'], ['mc', 1, 4, '6'], ['mc', 1, 6, 'Chennai']]);
   assert.equal(new Set(getState().mods[quiz.id].questions.map(q => q.id)).size, before + 3, 'every question gets its own id');
   // One bad row: nothing is added, and the message names the rows
-  r = await op(a, 'importQuestions', {mid:quiz.id, rows:[head, rows[1], [2, 'Broken', 'x', 'y', '', '', '', '', 'D'], [3, 'Two answers', 'x', 'y', 'z', '', '', '', 'A,B']]});
-  assert.equal(r.status, 400); assert.match(r.json.error, /row 3: Correct Answer "D" points to an empty option/); assert.match(r.json.error, /row 4: Only one correct answer/);
+  r = await op(a, 'importQuestions', {mid:quiz.id, rows:[head, rows[1], [2, 'Broken', 'x', 'y', '', '', '', '', 'D'], [3, 'All right', 'x', 'y', '', '', '', '', 'A,B']]});
+  assert.equal(r.status, 400); assert.match(r.json.error, /row 3: Correct Answer "D" points to an empty option/); assert.match(r.json.error, /row 4: Every option is marked correct/);
   assert.equal(getState().mods[quiz.id].questions.length, before + 3);
   assert.equal((await op(a, 'importQuestions', {mid:quiz.id, rows:[['Name', 'Email'], ['x', 'y']]})).status, 400, 'a file without the right header is refused');
   // Replace, and a learner cannot upload
@@ -1000,6 +1000,28 @@ test('server storage: administrators see free disk space; uploads are refused cl
   } finally { fs.statfsSync = real; }
   const ui = fs.readFileSync(path.join(__dirname, '../public/js/base.js'), 'utf8');
   assert.match(ui, /The web server in front of NB Academy refused the upload \(error \$\{x\.status\}\)/, 'a bare 5xx from the web server in front gets an explanation');
+});
+test('questions with more than one correct answer: upload (A,C), editor validation, tick-box marking, review and item analysis', async () => {
+  const a = await login('admin'), sid = getState().courses.find(c => c.id === 'c1').sections[0].id;
+  let r = await op(a, 'saveMod', {cid:'c1', sid, type:'quiz', name:'Select all that apply', intro:'', visible:true, fields:{gradepass:0, timelimit:0, attempts:0}}); const mid = r.json.result.id;
+  const head = ['Sno', 'Question Text', 'A', 'B', 'C', 'D', 'Correct Answer'];
+  // Several letters in any common style make a 'more than one answer' question; one letter stays single-answer
+  const p = Core.parseQuestionRows([head, [1, 'Which are documents?', 'Sale deed', 'Paint', 'EC', 'Sofa', 'A,C'], [2, 'Pick two', 'w', 'x', 'y', 'z', 'b & d'], [3, 'And again', 'w', 'x', 'y', '', 'A and C'], [4, 'One', 'w', 'x', '', '', 'B'], [5, 'Bad', 'w', 'x', '', '', 'A,C'], [6, 'Twice', 'w', 'x', 'y', '', 'A,A']]);
+  assert.deepEqual(p.questions.map(q => [q.type, q.options.filter(o => o.correct).map(o => o.text).join('+')]), [['mcm', 'Sale deed+EC'], ['mcm', 'x+z'], ['mcm', 'w+y'], ['mc', 'x']]);
+  assert.deepEqual(p.errors.map(e => e.row), [6, 7]); assert.match(p.errors[0].error, /points to an empty option \(C\)/); assert.match(p.errors[1].error, /lists a letter twice/);
+  r = await op(a, 'importQuestions', {mid, rows:[head, [1, 'Which are documents?', 'Sale deed', 'Paint', 'EC', 'Sofa', 'A,C'], [2, 'One', 'w', 'x', '', '', 'B']]}); assert.equal(r.status, 200, r.text);
+  const [q1, q2] = getState().mods[mid].questions; assert.equal(q1.type, 'mcm'); assert.equal(Core.QTYPES.mcm, 'Multiple choice (more than one answer)');
+  // The editor's save accepts any number of correct choices for this type, and still exactly one for single-answer
+  assert.equal((await op(a, 'saveQuestion', {mid, q:{type:'mcm', text:'None ticked', mark:1, options:[{text:'a'}, {text:'b'}]}})).status, 400);
+  assert.equal((await op(a, 'saveQuestion', {mid, q:{type:'mc', text:'Two ticked', mark:1, options:[{text:'a', correct:true}, {text:'b', correct:true}]}})).status, 400);
+  // Learners: only exactly the correct set scores
+  assert.equal(Core.gradeQ(q1, '0,2'), 1); assert.equal(Core.gradeQ(q1, '2,0'), 1); assert.equal(Core.gradeQ(q1, '0'), 0); assert.equal(Core.gradeQ(q1, '0,1,2'), 0); assert.equal(Core.gradeQ(q1, ''), 0);
+  const cl = await login('asha'), lq = (await state(cl)).mods[mid].questions[0]; assert.equal(lq.type, 'mcm'); assert.deepEqual(lq.options, [{text:'Sale deed'}, {text:'Paint'}, {text:'EC'}, {text:'Sofa'}], 'learners do not see which are correct');
+  const st = await op(cl, 'startQuiz', {mid}); r = await op(cl, 'submitQuiz', {aid:st.json.result.id, answers:{[q1.id]:'0,2', [q2.id]:'1'}}); assert.equal(r.status, 200, r.text);
+  const at = getState().attempts.find(x => x.id === st.json.result.id); assert.equal(at.score, 2); assert.equal(at.review[q1.id].right, 'Sale deed, EC'); assert.equal(at.review[q1.id].options.filter(o => o.correct).length, 2);
+  const it = Core.itemAnalysis(getState(), getState().mods[mid]).items.find(x => x.id === q1.id); assert.deepEqual(it.options.map(o => o.n), [1, 0, 1, 0], 'item analysis counts each ticked option');
+  // The upload template no longer limits Correct Answer to one letter
+  const x = fs.readFileSync(path.join(__dirname, '../public/js/actions-ext.js'), 'utf8'); assert.doesNotMatch(x, /<formula1>"A,B,C,D,E,F"<\/formula1>/); assert.match(x, /e\.g\. A,C/);
 });
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;

@@ -168,7 +168,7 @@ Object.assign(F, {
   rule: async (d, f) => { const [tt, tid] = d.target.split(':'); if (await act('saveRule', {id:d.id || null, name:d.name, matchType:d.matchType, matchValue:d.matchType === 'cohort' ? d.cohortValue : d.matchValue, targetType:tt, targetId:tid, days:d.days, active:checked(f, 'active')}, 'Rule saved', {silent:true, errEl:'ruerr'}) !== FAIL) { closeModal(); render(); } },
   bank: async d => {
     const q = {type:d.type, text:d.text, mark:d.mark};
-    if (d.type === 'mc') q.options = d.options.split('\n').map(s => s.trim()).filter(Boolean).map(l => l.startsWith('*') ? {text:l.slice(1).trim(), correct:true} : {text:l});
+    if (d.type === 'mc' || d.type === 'mcm') q.options = d.options.split('\n').map(s => s.trim()).filter(Boolean).map(l => l.startsWith('*') ? {text:l.slice(1).trim(), correct:true} : {text:l});
     if (d.type === 'tf') q.answer = d.tf === 'true'; if (d.type === 'short') q.answer = d.short; if (d.type === 'num') { q.answer = d.num; q.tol = d.tol; } if (d.type === 'essay') q.guidance = d.guidance;
     const r = await act('saveBankQuestion', {id:d.bid || null, category:d.category, q}, null, {silent:true, errEl:'qerr'}); if (r === FAIL) return; closeModal(); render(); toast(`Question saved${r.synced ? `. Updated in ${r.synced} quiz${r.synced > 1 ? 'zes' : ''}.` : ''}`); },
   bankAdd: async (d, f) => { const ids = picked(f, 'bq'); const r = await act('addFromBank', {mid:d.mid, ids, random:ids.length ? 0 : Number(d.random) || 0, category:d.category}, null, {silent:true, errEl:'bqerr'}); if (r === FAIL) return; closeModal(); render(); toast(`${r.added} question${r.added > 1 ? 's' : ''} added`); },
@@ -276,7 +276,7 @@ const qbTimers = new Map();
 function qbRead(card) {
   const key = card.dataset.qcard, mid = card.dataset.mid, type = card.dataset.qtype || card.querySelector('.qb-type').value, old = (S.mods[mid]?.questions || []).find(x => x.id === key);
   const q = {type, text:card.querySelector('.qb-text').value.trim(), mark:card.querySelector('.qb-mark').value, bankId:old?.bankId};
-  if (type === 'mc') q.options = [...card.querySelectorAll('.qb-opt')].filter(r => r.querySelector('.qb-opt-text')).map(r => ({text:r.querySelector('.qb-opt-text').value, correct:r.querySelector('.qb-pick').classList.contains('on')}));
+  if (type === 'mc' || type === 'mcm') q.options = [...card.querySelectorAll('.qb-opt')].filter(r => r.querySelector('.qb-opt-text')).map(r => ({text:r.querySelector('.qb-opt-text').value, correct:r.querySelector('.qb-pick').classList.contains('on')}));
   if (type === 'tf') q.answer = card.querySelector('.qb-pick.on')?.dataset.v !== 'false';
   if (type === 'short') q.answer = [...card.querySelectorAll('.qb-alt')].map(x => x.value.trim()).filter(Boolean).join('|');
   if (type === 'num') { q.answer = card.querySelector('.qb-num').value; q.tol = card.querySelector('.qb-tol').value; }
@@ -285,6 +285,7 @@ function qbRead(card) {
 }
 function qbProblem(q) {
   if (!q.text) return 'Type the question to save it.';
+  if (q.type === 'mcm') { const opts = (q.options || []).filter(o => o.text.trim()); if (opts.length < 2) return 'Add at least two options.'; if (!opts.some(o => o.correct)) return 'Tick every correct answer.'; }
   if (q.type === 'mc') { const opts = (q.options || []).filter(o => o.text.trim()); if (opts.length < 2) return 'Add at least two options.'; if (!opts.some(o => o.correct)) return 'Click the circle next to the correct answer.'; }
   if (q.type === 'short' && !q.answer) return 'Enter the correct answer.';
   if (q.type === 'num' && (q.answer === '' || isNaN(Number(q.answer)))) return 'Enter the correct number.';
@@ -323,7 +324,7 @@ Object.assign(A, {
   qbAdd: async d => { await qbFlush(); const open = ui.qbDraft?.mid === d.mid && document.querySelector(`.qb-card[data-qcard="${ui.qbDraft.id}"][data-draft]`);
     if (open) { open.querySelector('.qb-text')?.focus(); open.scrollIntoView({block:'center'}); toast('Finish this question first: it saves once it has a question, options and a correct answer.'); return; }
     ui.qbDraft = {mid:d.mid, id:'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), q:qbBlank('mc')}; render(); const c = document.querySelector(`.qb-card[data-qcard="${ui.qbDraft.id}"]`); if (c) { c.classList.add('active'); c.scrollIntoView({block:'center', behavior:'smooth'}); c.querySelector('.qb-text').focus(); } },
-  qbCorrect: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.options.forEach((o, k) => { o.correct = k === Number(d.k); }); qbSchedule(qbRerender(card, q), 0); },
+  qbCorrect: (d, el) => { const card = qbCardOf(el), q = qbRead(card); if (q.type === 'mcm') q.options[Number(d.k)].correct = !q.options[Number(d.k)].correct; else q.options.forEach((o, k) => { o.correct = k === Number(d.k); }); qbSchedule(qbRerender(card, q), 0); },
   qbTF: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.answer = d.v === 'true'; qbSchedule(qbRerender(card, q), 0); },
   qbAddOpt: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.options.push({text:'', correct:false}); const c = qbRerender(card, q); const ins = c.querySelectorAll('.qb-opt-text'); ins[ins.length - 1]?.focus(); },
   qbRemoveOpt: (d, el) => { const card = qbCardOf(el), q = qbRead(card); q.options.splice(Number(d.k), 1); qbSchedule(qbRerender(card, q), 0); },
@@ -341,6 +342,7 @@ Object.assign(A, {
 document.addEventListener('input', e => { const card = qbCardOf(e.target); if (!card) return; if (e.target.classList.contains('qb-text')) qbAutosize(card); if (!e.target.classList.contains('qb-type')) qbSchedule(card); });
 document.addEventListener('change', e => { if (!e.target.classList.contains('qb-type')) return; const card = qbCardOf(e.target), old = qbRead(card), nq = {...qbBlank(e.target.value), text:old.text, mark:old.mark};
   if (e.target.value === 'mc' && old.type === 'short' && old.answer) nq.options = [{text:old.answer.split('|')[0], correct:true}, {text:'', correct:false}];
+  if (['mc', 'mcm'].includes(e.target.value) && ['mc', 'mcm'].includes(old.type) && (old.options || []).length) { let first = true; nq.options = old.options.map(o => ({text:o.text, correct:e.target.value === 'mc' ? (o.correct && first ? !(first = false) : false) : !!o.correct})); }
   const c = qbRerender(card, nq); c.querySelector('.qb-type').focus(); qbSchedule(c, 0); });
 document.addEventListener('keydown', e => { if (e.key !== 'Enter' || !e.target.classList?.contains('qb-opt-text') || e.isComposing) return; e.preventDefault(); const card = qbCardOf(e.target), q = qbRead(card), k = [...card.querySelectorAll('.qb-opt-text')].indexOf(e.target);
   q.options.splice(k + 1, 0, {text:'', correct:false}); const c = qbRerender(card, q); c.querySelectorAll('.qb-opt-text')[k + 1]?.focus(); });
@@ -386,16 +388,17 @@ ${validations}</worksheet>`;
   // Quiz questions template, in the agreed format: Sno | Question Text | A–F | Correct Answer
   function quizTemplate() {
     const COLS = [['Sno', 6], ['Question Text', 60], ['A', 26], ['B', 26], ['C', 26], ['D', 26], ['E', 20], ['F', 20], ['Correct Answer', 16]], n = 2001;
-    const validations = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Correct Answer" error="Enter the letter of the correct option: A, B, C, D, E or F." promptTitle="Correct Answer" prompt="Letter of the correct option" sqref="I2:I${n}"><formula1>"A,B,C,D,E,F"</formula1></dataValidation></dataValidations>`;
+    const validations = `<dataValidations count="1"><dataValidation type="none" allowBlank="1" showInputMessage="1" promptTitle="Correct Answer" prompt="Letter of the correct option, e.g. B. More than one correct answer: letters separated by commas, e.g. A,C" sqref="I2:I${n}"/></dataValidations>`;
     const qs = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[1]), freeze:true, validations, textCols:[2, 3, 4, 5, 6, 7]});
     const instr = sheet([[{v:'How to fill in the questions sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
       ['Sno', 'Optional. A running number, for your own reference.', '1'],
       ['Question Text', 'The question (required).', 'What does legal on property mean?'],
       ['A, B, C, D', 'The options. At least two; A and B are required.', 'Physical inspection / Verification of property documents / …'],
       ['E, F', 'Optional extra options. Leave empty if not needed.', ''],
-      ['Correct Answer', 'The letter of the one correct option (A to F).', 'B'], [''],
+      ['Correct Answer', 'The letter of the correct option (A to F).', 'B'],
+      ['', 'More than one correct answer: the letters separated by commas. Learners tick every correct option and get the mark only when they select exactly those.', 'A,C'], [''],
       ['Notes', 'One question per row. Keep the header row as it is.', ''],
-      ['', 'Every question is multiple choice with one correct answer, worth 1 mark.', ''],
+      ['', 'Every question is multiple choice worth 1 mark: one letter = one correct answer, several letters = more than one.', ''],
       ['', 'On the quiz page, choose Upload questions and pick this file. You see a preview before anything is saved.', '']], {widths:[18, 80, 44]});
     return book([['Quiz-Activity-Questions', qs], ['Instructions', instr]]);
   }
@@ -468,7 +471,7 @@ function qImportPreview() {
       <ul class="small" style="margin:0;padding-left:18px">${errors.slice(0, 40).map(e => `<li><b>Row ${e.row}</b>${e.text ? ` (${esc(e.text.slice(0, 60))})` : ''}: ${esc(e.error)}</li>`).join('')}${errors.length > 40 ? `<li>…and ${errors.length - 40} more</li>` : ''}</ul></div>` : ''}
     ${questions.length ? `<p><b>${questions.length} question${questions.length === 1 ? '' : 's'}</b> read from ${esc(st.name)}${errors.length ? ' (the rows above are not counted)' : ''}. The correct option is marked ✓.</p>
     <div class="tw" style="max-height:44vh;overflow:auto"><table><thead><tr><th class="n">Row</th><th>Question</th><th>Options</th></tr></thead><tbody>
-      ${questions.map(q => `<tr><td class="n">${q.row}</td><td>${esc(q.text)}</td><td class="small">${q.options.map((o, i) => o.correct ? `<b style="color:var(--ok)">✓ ${esc(o.text)}</b>` : esc(o.text)).join('<br>')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${questions.map(q => `<tr><td class="n">${q.row}</td><td>${esc(q.text)}${q.type === 'mcm' ? ' <span class="chip brand">More than one answer</span>' : ''}</td><td class="small">${q.options.map((o, i) => o.correct ? `<b style="color:var(--ok)">✓ ${esc(o.text)}</b>` : esc(o.text)).join('<br>')}</td></tr>`).join('')}</tbody></table></div>` : ''}
     ${!errors.length && questions.length ? `${have ? `<fieldset class="stack" style="border:0;padding:0;margin:0"><legend class="small"><b>This quiz already has ${have} question${have === 1 ? '' : 's'}.</b></legend>
         <label class="check"><input type="radio" name="qimode" value="add" checked> Add these after the existing questions</label><label class="check"><input type="radio" name="qimode" value="replace"> Replace the existing questions</label></fieldset>` : ''}
       <span class="err small" id="qierr" hidden></span><div class="row"><button class="btn primary" data-act="qImportGo">Add ${questions.length} question${questions.length === 1 ? '' : 's'}</button><button class="btn ghost" data-act="closeModal">Cancel</button></div>` : ''}`;
@@ -476,7 +479,7 @@ function qImportPreview() {
 Object.assign(A, {
   quizTemplate: () => download('quiz-questions-template.xlsx', XL.quizTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
   qImport: d => { ui.qImport = {mid:d.id};
-    openModal('Upload questions', `<div class="stack"><p class="muted small" style="margin:0">An Excel (.xlsx) or CSV file with the columns <b>Question Text</b>, options <b>A</b> to <b>F</b> (at least A and B) and <b>Correct Answer</b> (the letter of the right option). A <b>Sno</b> column is fine. Each row becomes a multiple-choice question worth 1 mark. <button class="link" data-act="quizTemplate">Download the template</button></p>
+    openModal('Upload questions', `<div class="stack"><p class="muted small" style="margin:0">An Excel (.xlsx) or CSV file with the columns <b>Question Text</b>, options <b>A</b> to <b>F</b> (at least A and B) and <b>Correct Answer</b>: the letter of the right option (<b>B</b>), or several letters when more than one answer is correct (<b>A,C</b>). A <b>Sno</b> column is fine. Each row becomes a multiple-choice question worth 1 mark; with several letters, learners tick every correct option and get the mark only when they select exactly those. <button class="link" data-act="quizTemplate">Download the template</button></p>
       <div class="field"><label for="qifile">Questions file</label><input id="qifile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-qimport="1"></div><div id="qiprev" class="stack"></div></div>`, true); },
   qImportGo: async () => {
     const st = ui.qImport; if (!st?.rows) return; const replace = document.querySelector('input[name=qimode]:checked')?.value === 'replace';

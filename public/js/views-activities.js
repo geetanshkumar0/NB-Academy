@@ -256,6 +256,8 @@ function itemAnalysisHTML(m) {
 }
 function qInput(q, a) {
   const name = `q_${q.id}`;
+  if (q.type === 'mcm') { const sel = String(a ?? '').split(',');
+    return `<p class="small muted" style="margin:0 0 6px">Select all that apply.</p>` + q.options.map((o, i) => `<label class="opt"><input type="checkbox" name="${name}" value="${i}" data-q="${q.id}" ${sel.includes(String(i)) ? 'checked' : ''}><span>${esc(o.text)}</span></label>`).join(''); }
   if (q.type === 'mc' || q.type === 'tf') {
     const opts = q.type === 'mc' ? q.options.map((o, i) => [String(i), o.text]) : [['true', 'True'], ['false', 'False']];
     return opts.map(([v, t]) => `<label class="opt"><input type="radio" name="${name}" value="${v}" data-q="${q.id}" ${String(a) === v ? 'checked' : ''}><span>${esc(t)}</span></label>`).join('');
@@ -300,7 +302,9 @@ VIEWS.review = (p) => {
     <tr><th>Grade</th><td class="num"><b>${fmtG(a.score / a.max * m.maxgrade)}</b> out of ${fmtG(m.maxgrade)} (<b>${Math.round(a.score / a.max * 100)}</b>%)${m.gradepass && !m.pretest ? ` · ${a.score / a.max * 100 >= m.gradepass ? '<span class="chip ok">Pass</span>' : '<span class="chip bad">Below the pass mark</span>'}` : ''}</td></tr></tbody></table></div>
     ${ids.map((qid, i) => { const rv = a.review[qid], ans = a.answers[qid], ok = rv.got >= rv.mark && rv.mark > 0, has = ans != null && ans !== '';
       let body, fb;
-      if (rv.type === 'mc' || rv.type === 'tf') {
+      if (rv.type === 'mcm') { const sel = String(ans ?? '').split(',');
+        body = rv.options.map((o, k) => { const on = sel.includes(String(k)); return `<label class="opt ${o.correct ? 'right' : on ? 'wrong' : ''}"><input type="checkbox" disabled ${on ? 'checked' : ''}><span>${esc(o.text)}</span></label>`; }).join('');
+      } else if (rv.type === 'mc' || rv.type === 'tf') {
         const opts = rv.type === 'mc' ? rv.options.map((o, k) => [String(k), o.text, o.correct]) : [['true', 'True', rv.answerTf === true], ['false', 'False', rv.answerTf === false]];
         body = opts.map(([v, t, right]) => { const sel = String(ans) === v; return `<label class="opt ${right ? 'right' : sel ? 'wrong' : ''}"><input type="radio" disabled ${sel ? 'checked' : ''}><span>${esc(t)}</span></label>`; }).join('');
       } else if (rv.type === 'essay') body = `<div class="fpreview" style="font-family:var(--f-body)">${esc(ans || '(no answer)')}</div>`;
@@ -681,14 +685,15 @@ function mountPlayers() {
 }
 
 /* ---------- Quiz question editor: one card per question, saved automatically (like Google Forms) ---------- */
-const QB_TYPES = [['mc', 'Multiple choice'], ['tf', 'True / False'], ['short', 'Short answer'], ['num', 'Number'], ['essay', 'Subjective (graded by a trainer)']];
-function qbBlank(type = 'mc') { return {type, text:'', mark:1, options:type === 'mc' ? [{text:'Option 1', correct:false}, {text:'Option 2', correct:false}] : undefined, answer:type === 'tf' ? true : type === 'short' ? '' : type === 'num' ? '' : undefined, tol:0, guidance:''}; }
+const QB_TYPES = [['mc', 'Multiple choice'], ['mcm', 'Multiple choice (more than one answer)'], ['tf', 'True / False'], ['short', 'Short answer'], ['num', 'Number'], ['essay', 'Subjective (graded by a trainer)']];
+function qbBlank(type = 'mc') { return {type, text:'', mark:1, options:type === 'mc' || type === 'mcm' ? [{text:'Option 1', correct:false}, {text:'Option 2', correct:false}] : undefined, answer:type === 'tf' ? true : type === 'short' ? '' : type === 'num' ? '' : undefined, tol:0, guidance:''}; }
 function qbCard(m, q, key, i, n, isDraft = false) {
-  const circle = (on, act, extra = '') => `<button type="button" class="qb-pick ${on ? 'on' : ''}" data-act="${act}" ${extra} aria-pressed="${on}" title="${on ? 'Correct answer' : 'Mark as the correct answer'}"><span></span></button>`;
+  const multi = q.type === 'mcm'; // more than one answer: square tick boxes, any number can be correct
+  const circle = (on, act, extra = '') => `<button type="button" class="qb-pick ${multi && act === 'qbCorrect' ? 'sq' : ''} ${on ? 'on' : ''}" data-act="${act}" ${extra} aria-pressed="${on}" title="${on ? 'Correct answer' : multi ? 'Tick if this is a correct answer' : 'Mark as the correct answer'}"><span></span></button>`;
   let body = '';
-  if (q.type === 'mc') body = `<div class="qb-opts">${(q.options || []).map((o, k) => `<div class="qb-opt">${circle(o.correct, 'qbCorrect', `data-k="${k}"`)}<input class="qb-opt-text" type="text" value="${esc(o.text)}" placeholder="Option ${k + 1}" aria-label="Option ${k + 1}"><button type="button" class="qb-x" data-act="qbRemoveOpt" data-k="${k}" aria-label="Remove option ${k + 1}" ${(q.options || []).length <= 2 ? 'disabled' : ''}>×</button></div>`).join('')}
-      <div class="qb-opt qb-addopt"><span class="qb-pick ghost"><span></span></span><button type="button" class="link" data-act="qbAddOpt">Add option</button></div></div>
-      <p class="qb-hint">Click the circle next to the correct answer.</p>`;
+  if (q.type === 'mc' || multi) body = `<div class="qb-opts">${(q.options || []).map((o, k) => `<div class="qb-opt">${circle(o.correct, 'qbCorrect', `data-k="${k}"`)}<input class="qb-opt-text" type="text" value="${esc(o.text)}" placeholder="Option ${k + 1}" aria-label="Option ${k + 1}"><button type="button" class="qb-x" data-act="qbRemoveOpt" data-k="${k}" aria-label="Remove option ${k + 1}" ${(q.options || []).length <= 2 ? 'disabled' : ''}>×</button></div>`).join('')}
+      <div class="qb-opt qb-addopt"><span class="qb-pick ghost ${multi ? 'sq' : ''}"><span></span></span><button type="button" class="link" data-act="qbAddOpt">Add option</button></div></div>
+      <p class="qb-hint">${multi ? 'Tick every correct answer. Learners get the marks only when they select exactly these.' : 'Click the circle next to the correct answer.'}</p>`;
   else if (q.type === 'tf') body = `<div class="qb-opts">${[[true, 'True'], [false, 'False']].map(([v, l]) => `<div class="qb-opt">${circle(q.answer === v, 'qbTF', `data-v="${v}"`)}<span class="qb-opt-static">${l}</span></div>`).join('')}</div><p class="qb-hint">Click the circle next to the correct answer.</p>`;
   else if (q.type === 'short') { const alts = String(q.answer ?? '').split('|').map(x => x.trim()); if (!alts.length) alts.push('');
     body = `<div class="qb-opts">${alts.map((a, k) => `<div class="qb-opt"><span class="qb-check" aria-hidden="true">✓</span><input class="qb-alt" type="text" value="${esc(a)}" placeholder="${k ? 'Another accepted answer' : 'Correct answer'}" aria-label="Accepted answer ${k + 1}">${k ? `<button type="button" class="qb-x" data-act="qbRemoveAlt" data-k="${k}" aria-label="Remove accepted answer">×</button>` : ''}</div>`).join('')}

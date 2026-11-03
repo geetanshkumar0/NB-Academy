@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (73 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (74 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -294,7 +294,7 @@ A quiz question of type **Subjective (graded by a trainer)** lets the learner wr
 
 ## Uploading quiz questions in bulk
 
-On a quiz page (edit mode), **⇪ Upload questions** takes an Excel (.xlsx) or CSV file with the columns **Sno** (optional), **Question Text**, options **A** to **F** (at least A and B) and **Correct Answer** (the letter of the right option, or the option's exact text). "Download the template" gives an empty sheet in this format, with a dropdown for the answer. Each row becomes a multiple-choice question worth 1 mark (add a **Marks** column to change that).
+On a quiz page (edit mode), **⇪ Upload questions** takes an Excel (.xlsx) or CSV file with the columns **Sno** (optional), **Question Text**, options **A** to **F** (at least A and B) and **Correct Answer** (the letter of the right option, or the option's exact text; for questions with more than one correct answer, the letters separated by commas, e.g. **A,C**). "Download the template" gives an empty sheet in this format, with a dropdown for the answer. Each row becomes a multiple-choice question worth 1 mark (add a **Marks** column to change that). With several letters, the question becomes **Multiple choice (more than one answer)**: learners tick every correct option and get the mark only when they select exactly those. This question type can also be chosen in the quiz editor, where you tick each correct answer.
 
 You see every question, with the correct option ticked, before anything is saved. If any row has a problem (no question, fewer than two options, an answer that points to an empty option, two answers), nothing is added and each problem is listed with its row number. Questions can be added after the existing ones or replace them.
 
