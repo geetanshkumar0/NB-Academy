@@ -1023,6 +1023,24 @@ test('questions with more than one correct answer: upload (A,C), editor validati
   // The upload template no longer limits Correct Answer to one letter
   const x = fs.readFileSync(path.join(__dirname, '../public/js/actions-ext.js'), 'utf8'); assert.doesNotMatch(x, /<formula1>"A,B,C,D,E,F"<\/formula1>/); assert.match(x, /e\.g\. A,C/);
 });
+test('remove from course: admins anyone, trainers their learners; the learner is told and progress comes back on re-assignment', async () => {
+  const a = await login('admin'), mk = async (un, role) => { const r = await op(a, 'newUser', {firstname:un, lastname:'Test', username:un, email:un + '@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r.status, 200, r.text); const u = getState().users.find(x => x.id === r.json.result.id); Object.assign(u, {mustChangePassword:false, termsAccepted:99, prefsSet:true}); if (role) assert.equal((await op(a, 'enrolUser', {cid:'c1', userId:u.id, role})).status, 200); return u; };
+  const tr = await mk('rm.trainer', 'trainer'), tr2 = await mk('rm.trainer2', 'trainer'), ln = await mk('rm.learner', 'student'), other = await mk('rm.other', 'student');
+  const caps = getState().roles.find(r => r.id === 'trainer').caps; assert.ok(caps['course:assign'] && !caps['course:enrol'], 'the Trainer role assigns but does not manage enrolment');
+  getState().attempts.push({id:'a_rm1', cmid:Object.values(getState().mods).find(m => m.courseId === 'c1' && m.type === 'quiz').id, userId:ln.id, state:'finished', answers:{}, score:1, max:1, start:1, finish:2, review:{}});
+  const ct = await login('rm.trainer', 'Pass@2026');
+  assert.equal((await op(ct, 'unenrol', {cid:'c1', userId:tr2.id})).status, 403, 'a trainer cannot remove another trainer');
+  assert.equal((await op(await login('rm.other', 'Pass@2026'), 'unenrol', {cid:'c1', userId:ln.id})).status, 403, 'a learner cannot remove anyone');
+  let r = await op(ct, 'unenrol', {cid:'c1', userId:ln.id}); assert.equal(r.status, 200, r.text);
+  assert.ok(!getState().enrol.some(e => e.courseId === 'c1' && e.userId === ln.id));
+  assert.ok(getState().notifications.some(n => n.userId === ln.id && /^Removed from Excel for Data Analysis/.test(n.subject)), 'the learner is told');
+  assert.ok(getState().audit.some(x => x.action === 'Removed from course' && /DA101 › rm\.learner Test/.test(x.target)));
+  assert.ok(getState().attempts.some(x => x.id === 'a_rm1'), 'attempts and grades are kept');
+  assert.equal((await op(ct, 'unenrol', {cid:'c1', userId:ln.id})).status, 404, 'already removed');
+  assert.equal((await op(a, 'enrolUser', {cid:'c1', userId:ln.id, role:'student'})).status, 200, 'can be assigned again');
+  assert.equal((await op(a, 'unenrol', {cid:'c1', userId:tr2.id})).status, 200, 'administrators can remove trainers');
+  for (const u of [tr, tr2, ln, other]) await op(a, 'deleteUser', {id:u.id});
+});
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
