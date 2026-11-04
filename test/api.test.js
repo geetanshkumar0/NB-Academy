@@ -1049,7 +1049,7 @@ test('login page: brand colour fills the screen with the log-in card in the cent
   assert.match(css, /\.login-mid\{[^}]*align-items:center;justify-content:center/);
   assert.match(css, /\.login-form\{background:var\(--surface\)/);
   assert.match(js, /<div class="login-top">[\s\S]*<div class="login-mid">[\s\S]*class="login-form"/);
-  assert.doesNotMatch(js, /__codes|class="codes"/, 'no course names on the login page');
+  assert.match(js, /Learn, practice, and track every step\./); assert.doesNotMatch(js, /__codes|class="codes"/, 'no course names on the login page');
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

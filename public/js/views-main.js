@@ -32,7 +32,7 @@ function viewLogin() {
   return `<div class="login">
     <div class="login-top">${hasUploadedLogo() ? `${logoHTML()}<b style="font-family:var(--f-display);font-size:1.1rem">${esc(site.name)}</b>` : logoHTML(0, true)}</div>
     <div class="login-mid">
-      <section class="login-art"><h1>Learn, practise, and track every step.</h1><p>${esc(site.tagline)}</p></section>
+      <section class="login-art"><h1>Learn, practice, and track every step.</h1><p>${esc(site.tagline)}</p></section>
       <section class="login-form">${form}</section>
     </div></div>`;
 }
