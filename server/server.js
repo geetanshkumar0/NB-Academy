@@ -369,7 +369,7 @@ async function handle(req, res) {
       return send(res, 200, FAVICON_PNG, {'Content-Type':'image/png', 'Cache-Control':'public, max-age=86400'});
     }
     if (req.method === 'GET' && p === '/api/logo') { const id = S.site.branding?.logo, f = id && S.files.find(x => x.id === id); if (!f || !fs.existsSync(store.filePath(id))) return sendErr(res, 404, 'No logo.'); return send(res, 200, fs.readFileSync(store.filePath(id)), {'Content-Type':f.type, 'Cache-Control':'public, max-age=300', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"}); }
-    if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [], codes:S.courses.filter(c => c.visible && c.status !== 'draft').slice(0, 8).map(c => c.shortname),
+    if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [],
       sso:S.site.sso?.enabled ? {label:S.site.sso.label} : null, forgot:true});
 
     if (req.method === 'GET' && p.startsWith('/files/')) {

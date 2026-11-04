@@ -34,8 +34,7 @@ function viewLogin() {
     <div class="login-mid">
       <section class="login-art"><h1>Learn, practise, and track every step.</h1><p>${esc(site.tagline)}</p></section>
       <section class="login-form">${form}</section>
-    </div>
-    <div class="codes">${(window.__codes || ['DA101', 'BS201', 'TE110', 'SAFE100']).map(c => `<span>${esc(c)}</span>`).join('')}</div></div>`;
+    </div></div>`;
 }
 function pwRuleText(sec) {
   sec = sec || S?.site?.security || {minLength:8, upper:true, lower:true, digit:true};
