@@ -1041,6 +1041,16 @@ test('remove from course: admins anyone, trainers their learners; the learner is
   assert.equal((await op(a, 'unenrol', {cid:'c1', userId:tr2.id})).status, 200, 'administrators can remove trainers');
   for (const u of [tr, tr2, ln, other]) await op(a, 'deleteUser', {id:u.id});
 });
+test('login page: brand colour fills the screen with the log-in card in the centre', () => {
+  const read = f => fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8');
+  const css = read('app.html'), js = read('js/views-main.js');
+  assert.match(css, /body\{margin:0;/);
+  assert.match(css, /\.login\{min-height:100vh;[^}]*background:var\(--nav\)/);
+  assert.match(css, /\.login-mid\{[^}]*align-items:center;justify-content:center/);
+  assert.match(css, /\.login-form\{background:var\(--surface\)/);
+  assert.match(js, /<div class="login-top">[\s\S]*<div class="login-mid">[\s\S]*class="login-form"/);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
