@@ -243,7 +243,7 @@ function H(S, meId) {
   h.learnerPersona = (uid = meId) => !!h.user(uid)?.builtinAdmin || !!h.user(uid)?.personas?.includes('learner') || h.learnsAnything(uid);
   /* Personas a person can switch between: learner, trainer, team lead, administrator */
   /* The super administrator (built-in admin) holds every persona */
-  h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; if (u.builtinAdmin) return ['learner', 'trainer', 'teamlead', 'admin']; const out = [];
+  h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; if (u.builtinAdmin) return ['learner', 'trainer', 'teamlead', 'moderator', 'admin']; const out = [];
     if (h.learnerPersona(uid) || (!u.admin && !h.sysrole('manager', uid) && !h.isTrainer(uid) && !h.isTeamLead(uid))) out.push('learner');
     if (h.isTrainer(uid)) out.push('trainer'); if (h.isTeamLead(uid)) out.push('teamlead');
     if (h.isModerator(uid)) out.push('moderator');

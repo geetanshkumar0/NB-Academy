@@ -563,12 +563,12 @@ test('the super administrator holds every persona and can be assigned training',
   const g = (await call('POST', '/api/login', {username:'geetansh.kumar', password:'Super@2026x'})).cookie; assert.ok(g);
   let st = (await call('GET', '/api/state', null, g)).json.state;
   const me = st.users.find(u => u.id === st.me), H = require('../public/core.js').H(getState(), me.id);
-  assert.deepEqual(H.personas(), ['learner', 'trainer', 'teamlead', 'admin']);
+  assert.deepEqual(H.personas(), ['learner', 'trainer', 'teamlead', 'moderator', 'admin']);
   assert.ok(H.isTrainer() && H.isTeamLead() && H.learnerPersona());
   assert.equal(H.cohortsLed().length, getState().cohorts.length, 'sees every cohort as team lead');
   // unticking personas does not take them away
   assert.equal((await op(g, 'setPersonas', {userId:me.id, personas:['admin']})).status, 200);
-  assert.deepEqual(require('../public/core.js').H(getState(), me.id).personas(), ['learner', 'trainer', 'teamlead', 'admin']);
+  assert.deepEqual(require('../public/core.js').H(getState(), me.id).personas(), ['learner', 'trainer', 'teamlead', 'moderator', 'admin']);
   // can be assigned a course like any learner
   const a = await login('admin');
   const r = await op(a, 'assign', {kind:'course', id:'c1', users:[me.id], due:Date.now() + 7 * 864e5, mandatory:true});
