@@ -413,6 +413,16 @@ pre.code{background:var(--surface-2);padding:12px;border-radius:6px;overflow-x:a
 
 /* ---- Lifecycle, workspaces and governance ---- */
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.mdrop{position:relative}
+.mdrop summary{list-style:none;display:flex;align-items:center;gap:4px;background:var(--nav-hover);color:var(--nav-ink);border-radius:20px;padding:6px 10px 6px 14px;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap}
+.mdrop summary::-webkit-details-marker{display:none}
+.mdrop summary svg{width:16px;height:16px}
+.mdrop .menu{position:absolute;right:0;top:calc(100% + 8px);min-width:200px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:30;padding:6px}
+.mdrop .mhead{padding:6px 12px 8px}
+@media (max-width:760px){.mdrop .menu{left:0;right:auto}}
+.mdrop .menu button{display:flex;justify-content:space-between;width:100%;text-align:left;background:none;border:0;color:var(--ink);padding:9px 12px;border-radius:6px;cursor:pointer;font:inherit;font-weight:550;white-space:nowrap}
+.mdrop .menu button:hover{background:var(--surface-2)}
+.mdrop .menu button.on{color:var(--brand-text);background:var(--brand-soft)}
 .modesw{display:flex;background:var(--nav-hover);border-radius:20px;padding:3px;gap:2px}
 .modesw button{background:none;border:0;color:var(--nav-muted);padding:5px 11px;border-radius:16px;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap}
 .modesw button.on{background:var(--accent);color:var(--accent-ink)}

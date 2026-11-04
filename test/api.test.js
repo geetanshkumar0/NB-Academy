@@ -1052,6 +1052,14 @@ test('login page: brand colour fills the screen with the log-in card in the cent
   assert.match(js, /Learn, practice, and track every step\./); assert.doesNotMatch(js, /__codes|class="codes"/, 'no course names on the login page');
 });
 
+test('header: three or more views are behind one "Switch access" dropdown', () => {
+  const read = f => fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8');
+  const js = read('js/base.js');
+  assert.match(js, /ms\.length > 2 \? `<details class="mdrop"><summary[\s\S]{0,200}<span>Switch access<\/span>/);
+  assert.match(js, /: ms\.length > 1 \? `<div class="modesw"/, 'two views keep the small toggle');
+  assert.match(read('js/actions.js'), /\.mdrop\[open\]/, 'closes on an outside click');
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
