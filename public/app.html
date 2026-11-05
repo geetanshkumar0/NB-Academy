@@ -423,6 +423,18 @@ pre.code{background:var(--surface-2);padding:12px;border-radius:6px;overflow-x:a
 .mdrop .menu button{display:flex;justify-content:space-between;width:100%;text-align:left;background:none;border:0;color:var(--ink);padding:9px 12px;border-radius:6px;cursor:pointer;font:inherit;font-weight:550;white-space:nowrap}
 .mdrop .menu button:hover{background:var(--surface-2)}
 .mdrop .menu button.on{color:var(--brand-text);background:var(--brand-soft)}
+.docview iframe{display:block;width:100%;height:75vh;border:1px solid var(--line);border-radius:6px;background:#fff}
+.docview img{display:block;max-width:100%;border-radius:6px}
+.docview:fullscreen{background:var(--bg);overflow:auto;padding:0}
+.docview:fullscreen iframe{height:100vh;border:0;border-radius:0}
+.docview:fullscreen img{margin:auto;max-height:100vh;object-fit:contain}
+.doctimer{font-size:.9rem;color:var(--muted)}
+.doctimer.card{margin-bottom:14px;padding:10px 16px}
+.modnext{display:flex;justify-content:flex-end;margin-top:22px}
+.modnext .btn{max-width:100%;white-space:normal;text-align:left}
+.autonext{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:16px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;width:min(560px,calc(100vw - 32px))}
+.autonext>div:first-child{flex:1;min-width:0}
+@media (max-width:520px){.autonext{flex-direction:column;align-items:stretch}}
 .modesw{display:flex;background:var(--nav-hover);border-radius:20px;padding:3px;gap:2px}
 .modesw button{background:none;border:0;color:var(--nav-muted);padding:5px 11px;border-radius:16px;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap}
 .modesw button.on{background:var(--accent);color:var(--accent-ink)}

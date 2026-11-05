@@ -35,7 +35,9 @@ const TYPES = {
   certificate: {label:'Certificate', p:'other', desc:'Issues a verifiable certificate when the learner meets the conditions.'},
   label:       {label:'Text and media area', p:'other', desc:'Text shown directly on the course page between activities.'}
 };
-const MANUAL = new Set(['page', 'url', 'file', 'forum', 'glossary']);
+const MANUAL = new Set(['url', 'forum', 'glossary']);
+/* Documents (uploaded files and pages) complete after this many seconds spent on them, measured by the server (op docTime) */
+const DOC_SECONDS = 120;
 const QTYPES = {mc:'Multiple choice', mcm:'Multiple choice (more than one answer)', tf:'True / False', short:'Short answer', num:'Number', essay:'Subjective (graded by a trainer)'};
 const WS_PHASES = {1:'Setup', 2:'Submission', 3:'Assessment', 4:'Grading evaluation', 5:'Closed'};
 
@@ -1710,13 +1712,20 @@ function view(S, meId) {
   V.files = clone(S.files.filter(f => f.owner === meId || text.includes(f.id)));
   return V;
 }
+/* Course content (a file resource, a video, its captions, a session recording) is view-only for learners:
+   only people who can edit the course may download it. Returns true when this person may download the file. */
+function mayDownloadFile(S, meId, fileId) {
+  const ms = Object.values(S.mods).filter(m => m.fileId === fileId || m.captionsId === fileId || m.recordingFileId === fileId);
+  if (!ms.length) return true;
+  const h = H(S, meId); return ms.some(m => h.canEdit(m.courseId));
+}
 function canReadFile(S, meId, fileId) {
   const f = S.files.find(x => x.id === fileId); if (!f) return false;
   if (S.site.branding?.logo === fileId) return true;
   const V = view(S, meId); return !!V && V.files.some(x => x.id === fileId);
 }
 
-return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile,
+return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile, mayDownloadFile, DOC_SECONDS,
   gradeQ, correctText, reviewOf, parseCSV, csvGrid, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
   DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

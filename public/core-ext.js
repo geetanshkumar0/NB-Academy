@@ -461,6 +461,17 @@ op('saveProgress', (S, h, p, env) => {
   if (!r.completed && r.duration && r.watched / r.duration * 100 >= (m.completePct || 90)) { r.completed = env.now(); log(S, env, h.meId, `Video watched: ${m.name}`, m.courseId); checkBadges(S, env, h.meId, m.courseId); }
   return {completed:!!r.completed};
 });
+/* Time spent on a document (a file resource or a page). The page reports every 30 seconds while it is in view;
+   the server counts the real time between reports (at most 35 s each, so a report cannot claim time that did not pass).
+   p.start begins a new stretch (page opened, or tab shown again) without counting the time away. */
+op('docTime', (S, h, p, env) => {
+  const m = modOf(S, p.mid); mustLearn(h, m); need(m.type === 'file' || m.type === 'page', 'Not a document.', 400);
+  const k = h.meId + ':' + m.id, r = S.resume[k] || (S.resume[k] = {}), t = env.now();
+  if (!p.start && r.beat && t - r.beat <= 90e3) r.seconds = Math.round((r.seconds || 0) + Math.min(35, Math.max(0, (t - r.beat) / 1000)));
+  r.beat = t; r.updated = t;
+  if (!S.completion[k] && (r.seconds || 0) >= Core.DOC_SECONDS) { S.completion[k] = t; log(S, env, h.meId, `Read: ${m.name}`, m.courseId); checkBadges(S, env, h.meId, m.courseId); }
+  return {seconds:r.seconds || 0, completed:!!S.completion[k], need:Core.DOC_SECONDS};
+});
 op('scormCommit', (S, h, p, env) => {
   const m = modOf(S, p.mid); mustLearn(h, m); need(m.type === 'scorm', 'Not a SCORM package.', 400);
   const k = h.meId + ':' + m.id, r = S.resume[k] || (S.resume[k] = {}); const c = p.cmi || {};

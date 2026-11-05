@@ -66,7 +66,7 @@ function datesLine(m) {
   const learner = h.isLearner(m.courseId), late = learner && d < now() && !h.isDone(m, S.me);
   return `<div class="mod-d ${late ? 'late' : ''}"><b>${{assign:'Due', quiz:'Closes', workshop:'Submissions close', lesson:'Closes', live:'Starts'}[m.type]}:</b> ${fmtDate(d)}</div>`;
 }
-const AUTO = {assign:'Make a submission', quiz:'Attempt the quiz', lesson:'Finish the lesson', choice:'Make a choice', workshop:'Submit your work', video:'Watch the video', scorm:'Complete the module', live:'Attend the session', feedback:'Complete the survey'};
+const AUTO = {page:'Spend 2 minutes on it', file:'Spend 2 minutes on it', assign:'Make a submission', quiz:'Attempt the quiz', lesson:'Finish the lesson', choice:'Make a choice', workshop:'Submit your work', video:'Watch the video', scorm:'Complete the module', live:'Attend the session', feedback:'Complete the survey'};
 function completionUI(m) {
   if (!h.isLearner(m.courseId)) return '';
   if (m.pretest) return h.attemptsOf(m.id, S.me).length ? '<span class="chip ok">Pre-test done</span>' : '<span class="chip">Optional pre-test</span>';
@@ -74,7 +74,7 @@ function completionUI(m) {
   const done = h.isDone(m, S.me), lock = h.modLock(m);
   if (lock && !done) return `<span class="chip" title="${esc(lock)}">${lockIcon()} Locked</span>`;
   if (m.type === 'quiz' && m.gradepass) return `<span class="chip ${done ? 'ok' : ''}">${done ? 'Done' : 'To do'}: Pass with ${m.gradepass}%</span>`;
-  if (AUTO[m.type]) return `<span class="chip ${done ? 'ok' : ''}">${done ? 'Done' : 'To do'}: ${AUTO[m.type]}</span>`;
+  if (AUTO[m.type]) return `<span class="chip ${done ? 'ok' : ''}" data-donechip>${done ? 'Done' : 'To do'}: ${AUTO[m.type]}</span>`;
   return `<button class="cbtn ${done ? 'done' : ''}" data-act="toggleDone" data-id="${m.id}" aria-pressed="${done}">${done ? '✓ Done' : 'Mark as done'}</button>`;
 }
 function modTools(m) {
@@ -130,10 +130,60 @@ function modShell(m, c, body, crumbExtra) {
     <div class="spread noprint" style="margin:-6px 0 18px"><div class="adates">${d.join('')}${!m.visible ? '<span class="chip">Hidden from students</span>' : ''}</div>
       <div class="row">${completionUI(m)}${h.canEdit(c.id) ? `<button class="btn sm" data-act="editMod" data-id="${m.id}">Edit settings</button>` : ''}</div></div>
     ${m.intro && m.type !== 'label' && !crumbExtra ? `<div class="prose noprint" style="margin-bottom:18px">${md(m.intro)}</div>` : ''}
-    ${body}`;
+    ${body}${nextLink(m)}`;
 }
+/* The next activity a learner can open after m, in course order (labels skipped); null at the end of the course */
+function nextModOf(m) {
+  const all = h.courseMods(m.courseId), i = all.findIndex(x => x.id === m.id);
+  return all.slice(i + 1).find(x => x.visible && x.type !== 'label') || null;
+}
+function nextLink(m) {
+  if (!h.isLearner(m.courseId) || ui.view.name === 'attempt' || ui.view.name === 'lessonplay') return '';
+  const n = nextModOf(m), lock = n && h.modLock(n);
+  return `<div class="modnext noprint">${n ? `<button class="btn${h.isDone(m, S.me) ? ' primary' : ''}" data-go="mod" data-id="${n.id}" ${lock ? `disabled title="${esc(lock)}"` : ''}><span class="muted small" style="font-weight:500">Next</span> ${esc(n.name)} →</button>` : `<button class="btn" data-go="course" data-id="${m.courseId}">Back to the course</button>`}</div>`;
+}
+const fsIcon = () => '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" style="vertical-align:-3px"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+/* Documents (file resources and pages) complete after DOC_SECONDS on the page; mountPlayers runs the timer */
+function docTimer(m, card) {
+  if (!h.isLearner(m.courseId) || !h.trackable(m)) return '';
+  return `<div class="doctimer${card ? ' card' : ''}" id="doctimer" data-mid="${m.id}" role="status">${h.isDone(m, S.me) ? '✓ Read. This document is complete.' : `Stay on this document for ${fmtClock(Math.max(0, C.DOC_SECONDS - (h.resume(m.id, S.me)?.seconds || 0)))} to complete it.`}</div>`;
+}
+/* After a learner completes the activity they are on, the next one opens by itself (with a short countdown they can stop).
+   Called after every render and state update; it notices the moment the current activity turns from not done to done. */
+function currentModId() {
+  const v = ui.view.name, p = ui.view.p || {};
+  if (v === 'mod' || v === 'submit') return p.id;
+  if (v === 'attempt') return ui.attempt?.cmid;
+  if (v === 'lessonplay') return ui.lesson?.cmid;
+  if (v === 'review') { const a = S.attempts.find(x => x.id === p.id); return a && a.userId === S.me ? a.cmid : null; }
+  return null;
+}
+function watchDone() {
+  if (!S || !h) return;
+  const id = currentModId(), m = id && S.mods[id];
+  if (!m || !h.isLearner(m.courseId) || !h.trackable(m)) { ui.doneWatch = null; return; }
+  const d = h.isDone(m, S.me);
+  if (ui.doneWatch?.id === id && !ui.doneWatch.done && d) { const chip = document.querySelector('[data-donechip]'); if (chip) chip.outerHTML = completionUI(m); offerNext(m); }
+  ui.doneWatch = {id, done:d};
+}
+function offerNext(m) {
+  const v = document.getElementById('vplayer');
+  // A video completes at 90% watched: let it play to the end first
+  if (v && v.dataset.mid === m.id && !v.paused && !v.ended) { v.addEventListener('ended', () => { if (currentModId() === m.id) offerNext(m); }, {once:true}); return; }
+  const n = nextModOf(m);
+  if (!n || h.modLock(n)) { toast(n ? 'Done. The next activity is not open yet.' : 'Done. That was the last activity in this course.'); return; }
+  const wait = ['quiz', 'lesson'].includes(m.type) ? 10 : 5; // time to read a quiz or lesson result
+  cancelAutoNext();
+  const box = document.createElement('div'); box.id = 'autonext'; box.className = 'autonext'; box.setAttribute('role', 'status');
+  box.innerHTML = `<div><b>✓ Completed.</b> Next: ${esc(n.name)}<div class="muted small" id="autonextmsg">Opening in ${wait} seconds…</div></div><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn primary sm" data-act="autoNextGo">Open now</button><button class="btn ghost sm" data-act="autoNextStay">Stay here</button></div>`;
+  document.body.appendChild(box);
+  let left = wait;
+  ui.autoNext = {id:n.id, from:m.id, t:setInterval(() => { left--; const el = document.getElementById('autonextmsg'); if (el) el.textContent = `Opening in ${left} second${left === 1 ? '' : 's'}…`; if (left <= 0) openNext(); }, 1000)};
+}
+function cancelAutoNext() { if (ui.autoNext) clearInterval(ui.autoNext.t); ui.autoNext = null; document.getElementById('autonext')?.remove(); }
+function openNext() { const id = ui.autoNext?.id; cancelAutoNext(); if (!id || !S.mods[id]) return; if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); go('mod', {id}); }
 BODIES.label = m => `<div class="card prose">${md(m.intro)}</div>`;
-BODIES.page = m => `<article class="card prose" style="max-width:none">${md(m.content)}</article>`;
+BODIES.page = m => `${docTimer(m, true)}<article class="card prose" style="max-width:none">${md(m.content)}</article>`;
 BODIES.url = m => {
   const ok = /^https?:\/\//i.test(m.url || ''); let host = ''; try { host = new URL(m.url).hostname; } catch (e) {}
   return `<div class="card stack" style="max-width:640px"><p>This resource opens in a new tab.</p>
@@ -143,13 +193,18 @@ BODIES.file = m => {
   const f = fileOf(m.fileId); if (!f) return '<div class="card err">The file for this resource is missing. Ask your teacher to upload it again.</div>';
   const isImg = /^image\//.test(f.type), isText = /^text\//.test(f.type) && f.size < 200000;
   if (isText) setTimeout(async () => { const el = document.getElementById('fprev'); if (el) { try { el.textContent = await B.fileText(f); } catch (e) { el.textContent = 'Preview not available.'; } } }, 0);
+  // Course content is view-only: only people who can edit the course get a Download button (the server enforces the same)
+  const dl = h.canEdit(m.courseId), isPdf = f.type === 'application/pdf', shown = isImg || isText || (isPdf && B.server);
   return `<div class="card stack"><div class="row">${icon('file', 'lg')}<div style="flex:1;min-width:0"><b style="word-break:break-all">${esc(f.name)}</b><div class="muted small">${fmtSize(f.size)} · ${esc(f.type || 'file')} · uploaded ${fmtDateOnly(f.time)}</div></div>
-      <a class="btn primary" href="${esc(B.fileUrl(f, true))}" ${B.server ? '' : `download="${esc(f.name)}"`} target="_blank" rel="noopener">Download</a></div>
-    ${isImg ? `<img src="${esc(B.fileUrl(f))}" alt="${esc(f.name)}" style="max-width:100%;border-radius:6px">` : ''}
-    ${B.server && f.type === 'application/pdf' ? `<iframe src="${esc(B.fileUrl(f))}" title="${esc(f.name)}" style="width:100%;height:75vh;border:1px solid var(--line);border-radius:6px"></iframe>` : ''}
-    ${/presentation|powerpoint|\.pptx?$/i.test(f.type + f.name) ? '<p class="muted small">Slide decks download to open in PowerPoint or Keynote. To show slides inside the course, export the deck as PDF and upload that.</p>' : ''}
-    ${isText ? '<pre class="fpreview" id="fprev">Loading preview…</pre>' : ''}
-    ${!B.server ? '<p class="muted small">In this preview, downloads may be blocked by the viewer. They work normally on the server edition.</p>' : ''}</div>`;
+      ${shown ? `<button class="btn" data-act="fullScreen" data-target="docview">${fsIcon()} Full screen</button>` : ''}
+      ${dl ? `<a class="btn primary" href="${esc(B.fileUrl(f, true))}" ${B.server ? '' : `download="${esc(f.name)}"`} target="_blank" rel="noopener">Download</a>` : ''}</div>
+    ${docTimer(m)}
+    <div id="docview" class="docview nosave">
+    ${isImg ? `<img src="${esc(B.fileUrl(f))}" alt="${esc(f.name)}" draggable="false">` : ''}
+    ${B.server && isPdf ? `<iframe src="${esc(B.fileUrl(f))}#toolbar=0&amp;navpanes=0" title="${esc(f.name)}" allow="fullscreen" allowfullscreen></iframe>` : ''}
+    ${isText ? '<pre class="fpreview" id="fprev">Loading preview…</pre>' : ''}</div>
+    ${!shown ? `<p class="muted">${dl ? 'This kind of file cannot be shown in the browser, so learners cannot open it. Upload it as a PDF (for slide decks: export the deck as PDF) so learners can read it here.' : 'This kind of file cannot be shown in the browser. Ask your trainer to upload it as a PDF.'}</p>` : ''}
+    ${dl ? '<p class="muted small">Learners can view this file here but cannot download it.</p>' : ''}</div>`;
 };
 
 /* Assignment */
@@ -485,7 +540,8 @@ BODIES.video = (m, c) => {
   const f = fileOf(m.fileId); if (!f) return '<div class="card err">The video file is missing.</div>';
   const cap = m.captionsId && fileOf(m.captionsId), r = h.resume(m.id, S.me), learner = h.isLearner(c.id);
   const capOn = (me().prefs || {}).captions !== false;
-  let html = `<div class="card stack"><div class="vresume" id="vresume" role="status" hidden><span id="vresumemsg"></span><span class="row"><button class="btn primary sm" data-act="vResume" id="vresumebtn">Resume</button><button class="btn ghost sm" data-act="vRestart">Start over</button></span></div><video id="vplayer" data-mid="${m.id}" controls preload="metadata" playsinline style="width:100%;max-height:70vh;background:#000;border-radius:6px" src="${esc(B.fileUrl(f))}">${cap ? `<track kind="captions" srclang="en" label="English" src="${esc(B.fileUrl(cap))}" ${capOn ? 'default' : ''}>` : ''}</video>
+  let html = `<div class="card stack"><div class="vresume" id="vresume" role="status" hidden><span id="vresumemsg"></span><span class="row"><button class="btn primary sm" data-act="vResume" id="vresumebtn">Resume</button><button class="btn ghost sm" data-act="vRestart">Start over</button></span></div><video id="vplayer" class="nosave" data-mid="${m.id}" controls controlslist="nodownload" preload="metadata" playsinline style="width:100%;max-height:70vh;background:#000;border-radius:6px" src="${esc(B.fileUrl(f))}">${cap ? `<track kind="captions" srclang="en" label="English" src="${esc(B.fileUrl(cap))}" ${capOn ? 'default' : ''}>` : ''}</video>
+    <div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="fullScreen" data-target="vplayer">${fsIcon()} Full screen</button></div>
     ${learner ? `<div class="spread small"><span class="muted" id="vstatus">${r?.completed ? 'Watched. This activity is complete.' : `Watch at least ${m.completePct || 90}% to complete this activity.`}</span>${r?.duration ? `<span class="num">${Math.round(Math.min(100, (r.watched || 0) / r.duration * 100))}% watched</span>` : ''}</div>` : ''}
     ${cap ? '<details><summary class="small"><b>Transcript</b></summary><div id="vtranscript" class="prose small" style="margin-top:8px">Loading…</div></details>' : ''}</div>`;
   if (h.has('grade:viewall', c.id)) html += `<section class="stack" style="margin-top:22px"><h2>Viewing</h2><div class="tw"><table><thead><tr><th>Learner</th><th class="n">Watched</th><th>Last viewed</th><th>Status</th></tr></thead><tbody>${h.students(c.id).map(s => { const x = h.resume(m.id, s.id); return `<tr><td>${esc(fullname(s))}</td><td class="n">${x?.duration ? fmtPct(Math.min(100, (x.watched || 0) / x.duration * 100)) : '–'}</td><td class="small">${x ? ago(x.updated) : '–'}</td><td>${x?.completed ? '<span class="chip ok">Completed</span>' : x ? '<span class="chip brand">Started</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div></section>`;
@@ -507,7 +563,7 @@ BODIES.scorm = (m, c) => {
   const r = h.resume(m.id, S.me), learner = h.isLearner(c.id);
   const src = B.server ? B.scormUrl(m) : null, local = !B.server && m.launchFileId && B.fileData?.(m.launchFileId);
   let html = learner ? `<div class="spread" style="margin-bottom:10px"><div class="row" style="gap:6px">${r?.completed ? `<span class="chip ok">Completed${r.score != null ? ` · score ${r.score}%` : ''}</span>` : r ? `<span class="chip brand">In progress</span><span class="muted small">Your place is saved. You will continue where you stopped.</span>` : '<span class="chip">Not started</span>'}</div><span class="muted small" id="scormstatus"></span></div>` : '';
-  if (src || local) html += `<iframe id="scormframe" data-mid="${m.id}" title="${esc(m.name)}" ${src ? `src="${esc(src)}"` : ''} style="width:100%;height:min(70vh,620px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>`;
+  if (src || local) html += `<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="btn sm" data-act="fullScreen" data-target="scormframe">${fsIcon()} Full screen</button></div><iframe id="scormframe" data-mid="${m.id}" title="${esc(m.name)}" allow="fullscreen; autoplay" allowfullscreen ${src ? `src="${esc(src)}"` : ''} style="width:100%;height:min(70vh,620px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>`;
   else html += `<div class="card muted">This SCORM package can only be played on the server edition. In the preview, single-page packages play directly.</div>`;
   if (h.has('grade:viewall', c.id) && B.server) html += `<p class="muted small" style="margin-top:8px">Package: ${m.scormVersion ? `SCORM ${esc(m.scormVersion)}` : 'SCORM (checked when first opened)'}${m.scormFiles ? ` · ${m.scormFiles} files` : ''} · starts at <span class="mono">${esc(m.launch || '–')}</span></p>`;
   if (h.has('grade:viewall', c.id)) html += `<section class="stack" style="margin-top:22px"><h2>Learner progress</h2><div class="tw"><table><thead><tr><th>Learner</th><th>Status</th><th class="n">Score</th><th>Location</th><th>Last activity</th></tr></thead><tbody>${h.students(c.id).map(s => { const x = h.resume(m.id, s.id); return `<tr><td>${esc(fullname(s))}</td><td>${x ? `<span class="chip ${x.completed ? 'ok' : 'brand'}">${esc(x.status || 'incomplete')}</span>` : '<span class="chip">Not attempted</span>'}</td><td class="n">${x?.score != null ? x.score + '%' : '–'}</td><td class="small">${esc(x?.location || '–')}</td><td class="small">${x ? ago(x.updated) : '–'}</td></tr>`; }).join('')}</tbody></table></div></section>`;
@@ -532,7 +588,7 @@ BODIES.live = (m, c) => {
     ${learner ? `<p class="muted small">${room ? 'Joining from here records your attendance and completes this activity.' : 'Attendance is recorded by the trainer and completes this activity.'}</p>` : ''}
     ${manage && (m.inviteEmails || []).length ? `<details><summary class="small"><b>Invited by email (${m.inviteEmails.length})</b></summary><p class="small muted" style="margin-top:6px">${m.inviteEmails.map(esc).join(', ')}</p></details>` : ''}</div>`;
   const rec = m.recordingFileId && fileOf(m.recordingFileId);
-  if (rec || m.recordingUrl) html += `<section class="card stack" style="margin-top:16px;max-width:760px"><h2>Recording</h2>${rec ? (/^video\//.test(rec.type) ? `<video controls preload="metadata" style="width:100%;border-radius:6px;background:#000" src="${esc(B.fileUrl(rec))}"></video>` : fileChip(rec.id)) : ''}${m.recordingUrl ? `<a href="${esc(m.recordingUrl)}" target="_blank" rel="noopener">Watch the recording ↗</a>` : ''}</section>`;
+  if (rec || m.recordingUrl) html += `<section class="card stack" style="margin-top:16px;max-width:760px"><h2>Recording</h2>${rec ? (/^video\//.test(rec.type) ? `<video class="nosave" controls controlslist="nodownload" preload="metadata" style="width:100%;border-radius:6px;background:#000" src="${esc(B.fileUrl(rec))}"></video>` : h.canEdit(c.id) ? fileChip(rec.id) : '<span class="muted small">The recording is not a video, so it cannot be shown here.</span>') : ''}${m.recordingUrl ? `<a href="${esc(m.recordingUrl)}" target="_blank" rel="noopener">Watch the recording ↗</a>` : ''}</section>`;
   if (h.has('live:manage', c.id)) {
     const st = h.students(c.id);
     html += `<section class="stack" style="margin-top:22px"><div class="spread"><h2>Attendance roster</h2><span class="muted small">${S.liveSignups.filter(x => x.cmid === m.id && !x.archived && (x.status === 'present' || x.status === 'late')).length} attended</span></div>
@@ -586,6 +642,24 @@ document.addEventListener('visibilitychange', () => videoAway(document.hidden ? 
 window.addEventListener('pagehide', () => videoAway('page'));
 let scormAPI = null;
 function mountPlayers() {
+  const dt = document.getElementById('doctimer');
+  if (dt && !dt.dataset.mounted && !dt.textContent.startsWith('✓')) {
+    dt.dataset.mounted = '1'; const mid = dt.dataset.mid; let secs = h.resume(mid, S.me)?.seconds || 0, since = Date.now(), busy = false, done = false;
+    const left = () => Math.max(0, C.DOC_SECONDS - secs - (document.hidden ? 0 : (Date.now() - since) / 1000));
+    const beat = async start => { if (busy || done) return; busy = true;
+      try { const out = await B.op('docTime', {mid, start:!!start}); secs = out.result.seconds; since = Date.now();
+        if (out.result.completed) { done = true; dt.textContent = '✓ Read. This document is complete.'; toast('Document completed'); setState(await B.init()); watchDone(); } }
+      catch (e) {} finally { busy = false; } };
+    beat(true);
+    const t = setInterval(() => {
+      if (!document.body.contains(dt)) { clearInterval(t); document.removeEventListener('visibilitychange', vis); return; }
+      if (done || document.hidden) return;
+      const l = left(); dt.textContent = `Stay on this document for ${fmtClock(Math.ceil(l))} to complete it.`;
+      if (Date.now() - since >= 30e3 || (l <= 0 && Date.now() - since >= 2e3)) beat(false);
+    }, 1000);
+    // Time with the tab hidden does not count: report up to the moment it was hidden, and start a new stretch when it is shown again
+    const vis = () => { if (document.body.contains(dt)) beat(!document.hidden ? true : false); }; document.addEventListener('visibilitychange', vis);
+  }
   const v = document.getElementById('vplayer');
   if (v && !v.dataset.mounted) {
     v.dataset.mounted = '1'; const mid = v.dataset.mid, m = S.mods[mid], learner = h.isLearner(m.courseId), r = h.resume(mid, S.me);
@@ -722,3 +796,7 @@ function qbBuilder(m) {
     <div class="qb-list">${qs.map((q, i) => qbCard(m, q, q.id, i, n)).join('')}${draft ? qbCard(m, draft, dr.id, qs.length, n, true) : ''}</div>
     <button type="button" class="qb-add" data-act="qbAdd" data-mid="${m.id}"><span aria-hidden="true">＋</span> Add question</button></section>`;
 }
+
+/* Course content cannot be saved with a right-click or dragged out of the page */
+document.addEventListener('contextmenu', e => { if (e.target.closest?.('.nosave')) e.preventDefault(); });
+document.addEventListener('dragstart', e => { if (e.target.closest?.('.nosave')) e.preventDefault(); });

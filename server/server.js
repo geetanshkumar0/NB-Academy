@@ -377,7 +377,10 @@ async function handle(req, res) {
       const id = p.split('/')[2]; const f = S.files.find(x => x.id === id);
       if (!f || !Core.canReadFile(S, me.uid, id)) return sendErr(res, 404, 'File not found.');
       const fp = store.filePath(id); if (!fs.existsSync(fp)) return sendErr(res, 404, 'File not found.');
-      const data = fs.readFileSync(fp), inline = INLINE_TYPES.test(f.type) && url.searchParams.get('dl') !== '1';
+      // Course content is view-only for learners: never sent as a download, and kinds a browser cannot show are not sent at all
+      const viewOnly = !Core.mayDownloadFile(S, me.uid, id), playable = INLINE_TYPES.test(f.type) || (viewOnly && /^(video|audio)\/[\w.+-]+$/.test(f.type));
+      if (viewOnly && !playable) return sendErr(res, 403, 'This file can only be viewed in NB Academy, and this kind of file cannot be shown in the browser. Ask your trainer to upload it as a PDF.');
+      const data = fs.readFileSync(fp), inline = playable && (viewOnly || url.searchParams.get('dl') !== '1');
       const base = {'Content-Type':inline ? f.type : 'application/octet-stream', 'Content-Disposition':`${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`, 'Cache-Control':'private, max-age=3600', 'Accept-Ranges':'bytes'};
       const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
       if (range && inline) { const start = range[1] ? Number(range[1]) : 0, end = range[2] ? Math.min(Number(range[2]), data.length - 1) : data.length - 1; if (start <= end) return send(res, 206, data.subarray(start, end + 1), {...base, 'Content-Range':`bytes ${start}-${end}/${data.length}`}); }

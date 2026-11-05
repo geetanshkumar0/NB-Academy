@@ -268,7 +268,7 @@ if (!SERVER) inlineEmailIcons();
 let S = null, h = null;
 const ui = {editing:false, view:{name:'dashboard', p:{}}, cal:null, attempt:null, timer:null, confirmFn:null, loginErr:'', replyTo:null, lesson:null, msgWith:null, gloss:{letter:'', q:''}, grp:'', csv:null, upload:{}, saveT:null,
   mode:null, mfaTicket:null, loginView:'login', token:null, lastActive:Date.now(), team:{cohort:'', filter:'all', course:''}, ana:{group:'department', department:'', course:''}};
-function setState(st) { S = st; h = S ? C.H(S, S.me) : null; if (S) { applyBranding(); applyPrefs(); LOGO = logoHTML(); } }
+function setState(st) { S = st; h = S ? C.H(S, S.me) : null; if (S) { applyBranding(); applyPrefs(); LOGO = logoHTML(); if (typeof watchDone === 'function') watchDone(); } }
 const FAIL = Symbol('fail');
 async function act(name, payload, okMsg, opts = {}) {
   try {
@@ -367,6 +367,8 @@ function go(name, p = {}, fromHistory = false) {
   if (name !== 'lessonplay') ui.lesson = null;
   if (name !== 'liveroom') ui.liveRoom = null; // leaving the video room ends the call
   ui.view = {name, p}; ui.replyTo = null;
+  // The "next activity" countdown stays only while the learner is still on the activity they just completed (e.g. quiz → its result)
+  if (ui.autoNext && (typeof currentModId !== 'function' || currentModId() !== ui.autoNext.from)) cancelAutoNext();
   closeModal(); render(); window.scrollTo(0, 0);
   if (!fromHistory) pushNav();
 }
@@ -424,7 +426,24 @@ function afterRender() {
   const qt = document.getElementById('qtype'); if (qt) toggleQFields();
   const tb = document.querySelector('.tbody'); if (tb) tb.scrollTop = tb.scrollHeight;
   if (typeof mountPlayers === 'function') mountPlayers();
+  document.querySelectorAll('textarea').forEach(growArea);
+  if (typeof watchDone === 'function') watchDone();
 }
+/* Text boxes grow with what is typed, and the line being typed stays on screen (also above a phone's keyboard) */
+function growArea(t) {
+  if (!t || t.closest('.qb-card,.tform') || t.readOnly || !t.isConnected || !t.offsetParent) return;
+  const min = parseFloat(getComputedStyle(t).minHeight) || 0, y = window.scrollY;
+  // Answers (quiz, assignment text) grow without limit; other boxes (e.g. email templates) up to most of the screen, then scroll inside
+  const max = t.matches('[data-q],#subtext,#rmsg') ? Infinity : Math.max(320, window.innerHeight * 0.6);
+  t.style.height = 'auto'; t.style.height = Math.max(min, Math.min(max, t.scrollHeight + t.offsetHeight - t.clientHeight)) + 'px';
+  if (window.scrollY !== y) window.scrollTo(0, y);
+}
+function keepCaretInView(t) {
+  if (t.selectionEnd < t.value.length - 1) return; // editing earlier text: the browser keeps that in view itself
+  const vv = window.visualViewport, bottom = vv ? vv.offsetTop + vv.height : window.innerHeight, r = t.getBoundingClientRect();
+  if (r.bottom > bottom - 12) window.scrollBy(0, r.bottom - bottom + 40);
+}
+document.addEventListener('input', e => { const t = e.target; if (t.tagName === 'TEXTAREA' && !t.closest('.qb-card,.tform')) { growArea(t); keepCaretInView(t); } });
 function navbar() {
   const u = me(), v = ui.view.name, mode = currentMode(), ms = modes();
   const L = {learner:[['dashboard', 'Dashboard'], ['mycourses', 'My learning'], ['home', 'Library'], ['calendar', 'Calendar']],

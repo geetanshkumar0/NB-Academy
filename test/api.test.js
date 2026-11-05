@@ -1060,6 +1060,55 @@ test('header: three or more views are behind one "Switch access" dropdown', () =
   assert.match(read('js/actions.js'), /\.mdrop\[open\]/, 'closes on an outside click');
 });
 
+test('documents complete after 2 minutes on the page, measured by the server; only time that really passed counts', () => {
+  const S = Core.clone(getState()), u = S.users.find(x => x.username === 'asha'), e = S.enrol.find(x => x.courseId === 'c3' && x.userId === u.id);
+  e.due = Date.now() + 30 * 864e5; delete S.completion[u.id + ':m26'];
+  let t = Date.now(); const env = {now:() => t, uid:p => (p || 'x') + Math.random().toString(36).slice(2), token:() => 'tok'};
+  const beat = (start, sec) => { t += sec * 1000; return Core.run(S, u.id, 'docTime', {mid:'m26', start}, env); };
+  assert.equal(beat(true, 0).seconds, 0);
+  assert.equal(beat(false, 30).seconds, 30);
+  assert.equal(beat(false, 600).seconds, 30, 'a long gap (tab away, computer asleep) does not count');
+  assert.equal(beat(false, 50).seconds, 65, 'one report counts at most 35 seconds');
+  assert.equal(beat(true, 20).seconds, 65, 'a new stretch (tab shown again) does not count the time away');
+  let r; for (let i = 0; i < 2; i++) r = beat(false, 30);
+  assert.equal(r.seconds, 125); assert.equal(r.completed, true, 'complete after 120 seconds');
+  assert.ok(S.completion[u.id + ':m26']);
+  assert.throws(() => Core.run(S, u.id, 'toggleDone', {id:'m25'}, env), /completes automatically/, 'documents are no longer marked done by hand');
+  assert.throws(() => Core.run(S, u.id, 'docTime', {mid:'m27'}, env), /Not a document/);
+});
+
+test('course content is view-only for learners: no downloads, and files a browser cannot show are not sent', async () => {
+  const a = await login('admin');
+  const r0 = await op(a, 'newUser', {firstname:'View', lastname:'Only', username:'view.only', email:'view.only@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+  const u = getState().users.find(x => x.id === r0.json.result.id); Object.assign(u, {mustChangePassword:false, termsAccepted:99, prefsSet:true});
+  assert.equal((await op(a, 'enrolUser', {cid:'c3', userId:u.id, role:'student'})).status, 200);
+  const f = getState().files.find(x => x.id === getState().mods.m26.fileId), fp = _store().filePath(f.id); if (!fs.existsSync(fp)) fs.writeFileSync(fp, 'cheat sheet');
+  const lc = await login('view.only', 'Pass@2026'), url = `/files/${f.id}/x?dl=1`;
+  let r = await call('GET', url, null, lc); assert.equal(r.status, 200); assert.match(r.headers.get('content-disposition'), /^inline/, 'a learner asking for a download gets the file to view');
+  r = await call('GET', url, null, a); assert.match(r.headers.get('content-disposition'), /^attachment/, 'people who edit the course can still download');
+  const type = f.type; f.type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  try {
+    r = await call('GET', url, null, lc); assert.equal(r.status, 403); assert.match(r.json.error, /upload it as a PDF/);
+    assert.equal((await call('GET', url, null, a)).status, 200);
+  } finally { f.type = type; }
+  assert.ok(Core.mayDownloadFile(getState(), u.id, 'not-course-content'), 'other files (e.g. own submissions) are unaffected');
+  const read = x => fs.readFileSync(path.join(__dirname, '..', 'public', x), 'utf8'), va = read('js/views-activities.js');
+  assert.match(va, /<video id="vplayer" class="nosave"[^>]*controlslist="nodownload"/);
+  assert.match(va, /const dl = h\.canEdit\(m\.courseId\)/, 'the Download button is for course editors only');
+  assert.match(va, /#toolbar=0/, 'PDFs open without the viewer toolbar (download, print)');
+});
+
+test('full screen, next activity and growing answer boxes are wired up', () => {
+  const read = x => fs.readFileSync(path.join(__dirname, '..', 'public', x), 'utf8'), va = read('js/views-activities.js'), base = read('js/base.js');
+  assert.match(va, /data-act="fullScreen" data-target="vplayer"/); assert.match(va, /data-act="fullScreen" data-target="scormframe"/);
+  assert.match(va, /id="scormframe"[^>]*allow="fullscreen; autoplay" allowfullscreen/);
+  assert.match(read('js/actions-ext.js'), /fullScreen: d => \{/);
+  assert.match(base, /function setState[^\n]*watchDone\(\)/, 'completion is noticed after every state update');
+  assert.match(base, /cancelAutoNext\(\)/, 'leaving the activity stops the countdown');
+  assert.match(va, /function offerNext\(m\)/); assert.match(va, /function nextModOf\(m\)/);
+  assert.match(base, /document\.addEventListener\('input', e => \{[^\n]*growArea\(t\); keepCaretInView\(t\)/);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

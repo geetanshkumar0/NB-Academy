@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (77 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (80 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -89,7 +89,8 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 - **Integrations need your details.** Email, SSO and LDAP were tested against simulated servers. Connecting them to your real mail server, identity provider and directory needs those settings.
 - **Course versions.** When a new version is published, learners in progress either keep their progress on the updated content or restart on it. They cannot stay on the old content side by side.
 - **SCORM.** SCORM 1.2 and 2004 are supported, packages up to 1 GB. xAPI, cmi5 and SCORM 2004 sequencing between several SCOs are not. In the preview edition, only single-page packages play.
-- **Slide decks.** PowerPoint files are downloadable, not shown inline. Export to PDF to show slides inside a course.
+- **Slide decks and Office files.** Learners cannot download course content, and browsers cannot show PowerPoint, Word or Excel files, so learners cannot open those. Export to PDF to show them inside a course.
+- **View-only content.** Download buttons are gone for learners, videos have no download option, PDFs open without the viewer toolbar, and right-click saving is blocked on content. Someone determined can still capture what is on their screen (screenshots, screen recording).
 - **MFA set-up.** Uses a setup key typed into the authenticator app. There is no QR code.
 - **Assigning an individual assessment.** Trainers assign courses or learning paths. To assign a single assessment, put it in its own short course.
 - **Custom domains.** Set the site address, point DNS at the server and add HTTPS at the reverse proxy. This is not automated.

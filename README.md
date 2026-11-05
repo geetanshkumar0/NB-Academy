@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (77 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (80 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -115,7 +115,7 @@ test/api.test.js         API tests (node --test)
 | POST | `/api/op` | Run an operation |
 | POST | `/api/upload?name=…` | Upload a file (raw body) |
 | POST | `/api/loginas` | "Log in as" another user (needs `user:loginas`) |
-| GET | `/files/:id/:name` | Download a file (permission-checked; `?dl=1` forces download) |
+| GET | `/files/:id/:name` | Get a file (permission-checked; `?dl=1` forces download). Course content (file resources, videos, captions, recordings) is view-only for learners: `?dl=1` is ignored, and kinds a browser cannot show get 403 |
 | GET | `/api/backup/:courseId?users=1` | Download a course backup |
 | GET | `/cert/:code` | Public certificate verification page |
 | GET | `/health` | Health check |
@@ -335,3 +335,11 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 - **Single sign-on:** register `https://YOUR-SITE/auth/sso/callback` as a redirect URI with your OpenID Connect provider, then enter the issuer URL, client ID and secret. Users are matched by email address.
 - **LDAP / Active Directory:** enter the server URL (`ldaps://…` recommended) and a bind DN pattern containing `{username}`, then "Test a sign-in".
 - **Custom domain:** set General › Site address, point DNS at the server and terminate HTTPS at the reverse proxy.
+
+## Learning experience
+
+- **Documents** (uploaded files and pages) complete after **2 minutes** on the page (`DOC_SECONDS` in core.js). The page reports every 30 seconds while it is in view (op `docTime`); the server counts only time that really passed (at most 35 seconds per report, nothing while the tab is hidden).
+- **Next activity:** when a learner completes the activity they are on, a countdown (5 seconds, 10 after a quiz or lesson result) opens the next visible activity; **Stay here** stops it. Videos play to the end first. Every activity page also has a **Next →** button.
+- **Full screen** buttons on videos, SCORM modules and documents.
+- **View-only content:** learners get no Download button and cannot download course files (the server enforces it); people who edit the course still can.
+- **Answer boxes** grow as you type, and the line being typed stays on screen.
