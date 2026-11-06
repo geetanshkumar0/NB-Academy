@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (80 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (81 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -341,5 +341,6 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 - **Documents** (uploaded files and pages) complete after **2 minutes** on the page (`DOC_SECONDS` in core.js). The page reports every 30 seconds while it is in view (op `docTime`); the server counts only time that really passed (at most 35 seconds per report, nothing while the tab is hidden).
 - **Next activity:** when a learner completes the activity they are on, a countdown (5 seconds, 10 after a quiz or lesson result) opens the next visible activity; **Stay here** stops it. Videos play to the end first. Every activity page also has a **Next →** button.
 - **Full screen** buttons on videos, SCORM modules and documents.
+- **Videos on phones:** some Android browsers (Vivo, Oppo, Xiaomi and others) play videos in their own player, which does not send the sign-in cookie. Video links therefore carry a signed key (`?k=`, valid 6 to 12 hours, for one person and one file; secret in `data/.media-key`). Files are streamed from disk with byte ranges.
 - **View-only content:** learners get no Download button and cannot download course files (the server enforces it); people who edit the course still can.
 - **Answer boxes** grow as you type, and the line being typed stays on screen.

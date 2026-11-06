@@ -176,7 +176,8 @@ const ServerBackend = {
   async tokenPassword(token, password) { return this.req('POST', '/api/token-password', {token, password}); },
   async testEmail(to) { return this.req('POST', '/api/admin/test-email', {to}); },
   async testLdap(username, password) { return this.req('POST', '/api/admin/test-ldap', {username, password}); },
-  fileUrl: (f, dl) => `/files/${f.id}/${encodeURIComponent(f.name)}${dl ? '?dl=1' : ''}`,
+  // Videos carry a signed key (S.mediaKeys) so a phone browser's own video player can load them without the sign-in cookie
+  fileUrl: (f, dl) => `/files/${f.id}/${encodeURIComponent(f.name)}${dl ? '?dl=1' : S?.mediaKeys?.[f.id] ? '?k=' + encodeURIComponent(S.mediaKeys[f.id]) : ''}`,
   backupUrl: (cid, users) => `/api/backup/${cid}${users ? '?users=1' : ''}`,
   certPdfUrl: code => `/cert/${code}.pdf`,
   scormUrl: m => { const [p, q] = (m.launch || 'index.html').split('?'); return `/scorm/${m.id}/${p.split('/').map(encodeURIComponent).join('/')}${q ? '?' + q : ''}`; },

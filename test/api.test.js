@@ -1109,6 +1109,30 @@ test('full screen, next activity and growing answer boxes are wired up', () => {
   assert.match(base, /document\.addEventListener\('input', e => \{[^\n]*growArea\(t\); keepCaretInView\(t\)/);
 });
 
+test('videos: a signed link works without the sign-in cookie (phone browsers\' own players), and files stream with ranges', async () => {
+  const a = await login('admin');
+  const r0 = await op(a, 'newUser', {firstname:'Media', lastname:'Key', username:'media.key', email:'media.key@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+  const u = getState().users.find(x => x.id === r0.json.result.id); Object.assign(u, {mustChangePassword:false, termsAccepted:99, prefsSet:true});
+  const re = await op(a, 'enrolUser', {cid:'c6', userId:u.id, role:'student'}); assert.ok(re.status === 200 || /already enrolled/.test(re.text), re.text);
+  const vid = getState().mods.m42.fileId, body = Buffer.from('0123456789'.repeat(1000)); fs.writeFileSync(_store().filePath(vid), body);
+  const f = getState().files.find(x => x.id === vid); f.type = 'video/mp4'; f.size = body.length;
+  const lc = await login('media.key', 'Pass@2026'), st = (await call('GET', '/api/state', null, lc)).json.state, k = st.mediaKeys?.[vid];
+  assert.ok(k, 'the view carries a key for each video the person can watch');
+  assert.ok(!Object.keys(st.mediaKeys).includes(getState().mods.m26.fileId), 'only videos get keys');
+  const url = `/files/${vid}/v.mp4?k=${encodeURIComponent(k)}`;
+  let r = await call('GET', url); assert.equal(r.status, 200, 'works without a cookie'); assert.equal(r.buf.length, body.length); assert.match(r.headers.get('content-disposition'), /^inline/);
+  r = await call('GET', url, null, null, {Range:'bytes=100-109'}); assert.equal(r.status, 206); assert.equal(r.headers.get('content-range'), `bytes 100-109/${body.length}`); assert.equal(r.text, '0123456789');
+  r = await call('GET', url, null, null, {Range:'bytes=-5'}); assert.equal(r.status, 206); assert.equal(r.text, '56789');
+  r = await call('GET', url, null, null, {Range:`bytes=${body.length}-`}); assert.equal(r.status, 416);
+  assert.equal((await call('GET', `/files/${vid}/v.mp4?k=${encodeURIComponent(k.slice(0, -2) + 'xx')}`)).status, 401, 'a changed key does not work');
+  assert.equal((await call('GET', `/files/${getState().mods.m26.fileId}/x?k=${encodeURIComponent(k)}`)).status, 401, 'a key opens only its own file');
+  assert.equal((await call('GET', `/files/${vid}/v.mp4`)).status, 401, 'no key, no cookie: refused');
+  const cur = getState().users.find(x => x.id === u.id); cur.suspended = true; try { assert.equal((await call('GET', url)).status, 401, 'suspended accounts lose their links'); } finally { cur.suspended = false; }
+  assert.equal((await op(a, 'unenrol', {cid:'c6', userId:u.id})).status, 200);
+  assert.equal((await call('GET', url)).status, 404, 'removed from the course: the link stops working');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'base.js'), 'utf8'), /S\?\.mediaKeys\?\.\[f\.id\] \? '\?k=/);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

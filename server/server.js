@@ -277,9 +277,33 @@ function readBody(req, limit) {
 }
 async function readJSON(req) { const b = await readBody(req, MAX_JSON); try { return b.length ? JSON.parse(b.toString('utf8')) : {}; } catch (e) { throw Object.assign(new Error('Invalid JSON.'), {status:400}); } }
 const idleMs = () => (S.site.security?.sessionTimeout || 60) * 60e3;
+/* Signed media links. Some phone browsers (Vivo, Oppo, Xiaomi and others) hand a video to their own player, which loads it
+   again without the sign-in cookie. Each video, its captions and session recordings therefore carry a signed key (?k=)
+   that stands in for the cookie for that one file and person. The key changes every 6 hours and is valid for 6 to 12 hours,
+   so the link stays the same while someone watches. The secret is kept in the data folder, so keys survive restarts. */
+let MEDIA_SECRET = null;
+function mediaSecret() {
+  if (MEDIA_SECRET) return MEDIA_SECRET;
+  const f = path.join(DATA, '.media-key');
+  try { MEDIA_SECRET = fs.readFileSync(f); } catch (e) { MEDIA_SECRET = crypto.randomBytes(32); try { fs.writeFileSync(f, MEDIA_SECRET, {mode:0o600}); } catch (e2) {} }
+  return MEDIA_SECRET;
+}
+const mediaSig = (uid, fileId, exp) => crypto.createHmac('sha256', mediaSecret()).update(`${uid}|${fileId}|${exp}`).digest('base64url').slice(0, 32);
+function mediaKey(uid, fileId, now = Date.now()) { const exp = (Math.ceil(now / 6 / 3600e3) + 1) * 6 * 3600e3; return `${uid}.${exp}.${mediaSig(uid, fileId, exp)}`; }
+function mediaUser(fileId, k) {
+  const m = /^([\w-]+)\.(\d+)\.([\w-]{32})$/.exec(k || ''); if (!m || Number(m[2]) < Date.now()) return null;
+  const a = Buffer.from(m[3]), b = Buffer.from(mediaSig(m[1], fileId, Number(m[2]))); if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const u = S.users.find(x => x.id === m[1]); return u && !u.suspended ? {uid:u.id} : null;
+}
+/* A person's view of the site, plus signed keys for the videos they can watch */
+function viewFor(uid) {
+  const V = Core.view(S, uid); if (!V) return V; const keys = {};
+  for (const m of Object.values(V.mods || {})) for (const id of [m.type === 'video' && m.fileId, m.type === 'video' && m.captionsId, m.recordingFileId]) if (id && !keys[id]) keys[id] = mediaKey(uid, id);
+  V.mediaKeys = keys; return V;
+}
 function currentUser(req) { const t = cookies(req).nb_sid; const uid = store.sessionUser(t, idleMs()); const u = uid && S.users.find(x => x.id === uid); return u && !u.suspended ? {uid, token:t} : null; }
 function checkCsrf(req) { if (req.headers['x-nb-request'] !== '1') throw Object.assign(new Error('Missing request header.'), {status:403}); }
-function startSession(req, res, uid, body) { const token = crypto.randomBytes(32).toString('hex'); store.createSession(token, uid, SESSION_TTL); return send(res, 200, body || {state:Core.view(S, uid), server:true}, {'Set-Cookie':sessionCookie(req, token, SESSION_TTL)}); }
+function startSession(req, res, uid, body) { const token = crypto.randomBytes(32).toString('hex'); store.createSession(token, uid, SESSION_TTL); return send(res, 200, body || {state:viewFor(uid), server:true}, {'Set-Cookie':sessionCookie(req, token, SESSION_TTL)}); }
 const origin = req => siteUrl() || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
 
 /* Login throttling per IP (on top of per-account lockout) */
@@ -372,19 +396,27 @@ async function handle(req, res) {
     if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [],
       sso:S.site.sso?.enabled ? {label:S.site.sso.label} : null, forgot:true});
 
-    if (req.method === 'GET' && p.startsWith('/files/')) {
-      const me = currentUser(req); if (!me) return sendErr(res, 401, 'Please log in.');
-      const id = p.split('/')[2]; const f = S.files.find(x => x.id === id);
+    if ((req.method === 'GET' || req.method === 'HEAD') && p.startsWith('/files/')) {
+      const id = p.split('/')[2], me = currentUser(req) || mediaUser(id, url.searchParams.get('k')); if (!me) return sendErr(res, 401, 'Please log in.');
+      const f = S.files.find(x => x.id === id);
       if (!f || !Core.canReadFile(S, me.uid, id)) return sendErr(res, 404, 'File not found.');
       const fp = store.filePath(id); if (!fs.existsSync(fp)) return sendErr(res, 404, 'File not found.');
       // Course content is view-only for learners: never sent as a download, and kinds a browser cannot show are not sent at all
       const viewOnly = !Core.mayDownloadFile(S, me.uid, id), playable = INLINE_TYPES.test(f.type) || (viewOnly && /^(video|audio)\/[\w.+-]+$/.test(f.type));
       if (viewOnly && !playable) return sendErr(res, 403, 'This file can only be viewed in NB Academy, and this kind of file cannot be shown in the browser. Ask your trainer to upload it as a PDF.');
-      const data = fs.readFileSync(fp), inline = playable && (viewOnly || url.searchParams.get('dl') !== '1');
+      const size = fs.statSync(fp).size, inline = playable && (viewOnly || url.searchParams.get('dl') !== '1');
       const base = {'Content-Type':inline ? f.type : 'application/octet-stream', 'Content-Disposition':`${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`, 'Cache-Control':'private, max-age=3600', 'Accept-Ranges':'bytes'};
       const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
-      if (range && inline) { const start = range[1] ? Number(range[1]) : 0, end = range[2] ? Math.min(Number(range[2]), data.length - 1) : data.length - 1; if (start <= end) return send(res, 206, data.subarray(start, end + 1), {...base, 'Content-Range':`bytes ${start}-${end}/${data.length}`}); }
-      return send(res, 200, data, base);
+      // Streamed from disk (large videos are not read into memory); ranges let players seek and resume
+      let start = 0, end = size - 1, status = 200; const extra = {};
+      if (range && inline) {
+        if (range[1]) { start = Number(range[1]); end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1; } else if (range[2]) start = Math.max(0, size - Number(range[2]));
+        if (start > end || start >= size) { res.writeHead(416, {...SEC_HEADERS, 'Content-Range':`bytes */${size}`}); return res.end(); }
+        status = 206; extra['Content-Range'] = `bytes ${start}-${end}/${size}`;
+      }
+      res.writeHead(status, {...SEC_HEADERS, ...base, ...extra, 'Content-Length':size ? end - start + 1 : 0});
+      if (req.method === 'HEAD' || !size) return res.end();
+      const rs = fs.createReadStream(fp, {start, end}); rs.on('error', () => res.destroy()); res.on('close', () => rs.destroy()); return rs.pipe(res);
     }
     // Email icons: public (mail apps fetch them without signing in), drawn once per colour and cached
     if (req.method === 'GET' && p.startsWith('/email-assets/')) {
@@ -415,7 +447,7 @@ async function handle(req, res) {
       }
       res.writeHead(200, {...SEC_HEADERS, ...headers, 'Content-Length':total}); return fs.createReadStream(fp).pipe(res);
     }
-    if (req.method === 'GET' && p === '/api/state') { const me = currentUser(req); if (!me) return send(res, 200, {state:null}); return send(res, 200, {state:Core.view(S, me.uid), server:true}); }
+    if (req.method === 'GET' && p === '/api/state') { const me = currentUser(req); if (!me) return send(res, 200, {state:null}); return send(res, 200, {state:viewFor(me.uid), server:true}); }
     if (req.method === 'GET' && p === '/api/token') { const t = Core._.useToken(S, env, url.searchParams.get('t'), false); const u = t && S.users.find(x => x.id === t.userId); return send(res, 200, u ? {valid:true, name:u.firstname, username:u.username, kind:t.kind} : {valid:false}); }
     if (req.method === 'GET' && p.startsWith('/api/backup/')) {
       const me = currentUser(req); if (!me) return sendErr(res, 401, 'Please log in.');
@@ -488,7 +520,7 @@ async function handle(req, res) {
       if (['setOwnPassword', 'updateProfile'].includes(b.op) && b.payload?.password) { /* keep this session, end others */ }
       if (S.outbox.some(m => m.status === 'queued')) setImmediate(deliverMail);
       if (b.op === 'heartbeat' || b.op === 'touch' || b.op === 'saveProgress') return send(res, 200, {result});
-      return send(res, 200, {result, state:Core.view(S, me.uid)});
+      return send(res, 200, {result, state:viewFor(me.uid)});
     }
     if (p === '/api/admin/storage' || p === '/api/admin/storage/clean') {
       if (!Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Not allowed.');
@@ -499,7 +531,7 @@ async function handle(req, res) {
       const b = await readJSON(req), mt = meetingConfig();
       if (!mt.server || !mt.secret) return sendErr(res, 503, 'Video meetings are not set up yet. An administrator needs to add the meeting server in Site administration › Email, sign-in and meetings.');
       const r = b.sid ? runOp(me.uid, 'sessionJoin', {id:b.sid}) : runOp(me.uid, 'liveJoin', {mid:b.mid});
-      return send(res, 200, {url:meetingUrl(mt, r), origin:new URL(mt.server).origin, state:Core.view(S, me.uid)});
+      return send(res, 200, {url:meetingUrl(mt, r), origin:new URL(mt.server).origin, state:viewFor(me.uid)});
     }
     if (p === '/api/loginas') {
       const b = await readJSON(req);
@@ -507,7 +539,7 @@ async function handle(req, res) {
       mutate(() => Core._.audit(S, env, me.uid, 'Logged in as another user', S.users.find(u => u.id === r.id).username));
       store.dropSession(me.token);
       const token = crypto.randomBytes(32).toString('hex'); store.createSession(token, r.id, 4 * 3600e3, me.uid);
-      return send(res, 200, {state:Core.view(S, r.id)}, {'Set-Cookie':sessionCookie(req, token, 4 * 3600e3)});
+      return send(res, 200, {state:viewFor(r.id)}, {'Set-Cookie':sessionCookie(req, token, 4 * 3600e3)});
     }
     if (p === '/api/upload/start') {
       const b = await readJSON(req), size = Math.floor(Number(b.size) || 0), piece = Math.floor(Number(b.piece) || 8 * 1024 * 1024);
@@ -541,7 +573,7 @@ async function handle(req, res) {
       const fid = 'f_' + crypto.randomBytes(10).toString('hex');
       fs.renameSync(upPart(id), store.filePath(fid)); fs.rmSync(upMeta(id), {force:true});
       const f = runOp(me.uid, 'registerFile', {id:fid, name:u.name, type:u.type, size:u.size});
-      return send(res, 200, {result:f, state:Core.view(S, me.uid)});
+      return send(res, 200, {result:f, state:viewFor(me.uid)});
     }
     if (p === '/api/upload') {
       const name = String(url.searchParams.get('name') || 'file').slice(0, 200);
@@ -557,7 +589,7 @@ async function handle(req, res) {
       });
       if (!size) { fs.rmSync(fp, {force:true}); return sendErr(res, 400, 'The file is empty.'); }
       const f = runOp(me.uid, 'registerFile', {id, name, type, size});
-      return send(res, 200, {result:f, state:Core.view(S, me.uid)});
+      return send(res, 200, {result:f, state:viewFor(me.uid)});
     }
     if (p === '/api/admin/test-email') {
       const b = await readJSON(req); const u = S.users.find(x => x.id === me.uid);
