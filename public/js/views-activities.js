@@ -142,6 +142,30 @@ function nextLink(m) {
   const n = nextModOf(m), lock = n && h.modLock(n);
   return `<div class="modnext noprint">${n ? `<button class="btn${h.isDone(m, S.me) ? ' primary' : ''}" data-go="mod" data-id="${n.id}" ${lock ? `disabled title="${esc(lock)}"` : ''}><span class="muted small" style="font-weight:500">Next</span> ${esc(n.name)} →</button>` : `<button class="btn" data-go="course" data-id="${m.courseId}">Back to the course</button>`}</div>`;
 }
+const isPhone = () => { try { return matchMedia('(pointer:coarse)').matches && Math.min(screen.width, screen.height) < 600; } catch (e) { return false; } };
+const playerBar = title => `<div class="player-bar"><button class="btn sm" data-act="exitPlayer">✕ Close</button><b>${esc(title)}</b><span class="rotate-hint">Turn your phone sideways for a bigger view</span></div>`;
+/* Full-screen player for SCORM modules and documents. Real full screen where the browser allows it (Android: also landscape);
+   otherwise (iPhone) the player fills the window. Page zoom is switched off meanwhile (zooming made Storyline pause),
+   and the phone's Back button closes the player instead of leaving the page. The iframe is never re-created, so the course keeps running. */
+function enterPlayer(id) {
+  const el = document.getElementById(id); if (!el || ui.player) return;
+  const p = ui.player = {id, pushed:false, fs:false};
+  el.classList.add('immersive'); document.documentElement.classList.add('has-player');
+  const vp = document.querySelector('meta[name=viewport]'); if (vp) { p.vp = vp.content; vp.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'; }
+  try { history.pushState({...(history.state || {}), player:id}, ''); p.pushed = true; } catch (e) {}
+  const fs = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (fs) { try { Promise.resolve(fs.call(el)).then(() => { if (ui.player === p) { p.fs = true; screen.orientation?.lock?.('landscape').catch(() => {}); } }).catch(() => {}); } catch (e) {} }
+}
+function exitPlayer(fromHistory) {
+  const p = ui.player; if (!p) return; ui.player = null;
+  document.getElementById(p.id)?.classList.remove('immersive'); document.documentElement.classList.remove('has-player');
+  const vp = document.querySelector('meta[name=viewport]'); if (vp && p.vp) vp.content = p.vp;
+  try { screen.orientation?.unlock?.(); } catch (e) {}
+  if (document.fullscreenElement || document.webkitFullscreenElement) { try { Promise.resolve((document.exitFullscreen || document.webkitExitFullscreen).call(document)).catch(() => {}); } catch (e) {} }
+  if (p.pushed && !fromHistory) { ui.ignorePop = true; history.back(); }
+}
+['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => { if (ui.player?.fs && !(document.fullscreenElement || document.webkitFullscreenElement)) exitPlayer(); }));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.player) exitPlayer(); });
 const fsIcon = () => '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" style="vertical-align:-3px"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 /* Documents (file resources and pages) complete after DOC_SECONDS on the page; mountPlayers runs the timer */
 function docTimer(m, card) {
@@ -176,12 +200,13 @@ function offerNext(m) {
   cancelAutoNext();
   const box = document.createElement('div'); box.id = 'autonext'; box.className = 'autonext'; box.setAttribute('role', 'status');
   box.innerHTML = `<div><b>✓ Completed.</b> Next: ${esc(n.name)}<div class="muted small" id="autonextmsg">Opening in ${wait} seconds…</div></div><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn primary sm" data-act="autoNextGo">Open now</button><button class="btn ghost sm" data-act="autoNextStay">Stay here</button></div>`;
-  document.body.appendChild(box);
+  // inside the full-screen player when it is open (only the player shows in full screen)
+  ((ui.player && document.getElementById(ui.player.id)) || document.body).appendChild(box);
   let left = wait;
   ui.autoNext = {id:n.id, from:m.id, t:setInterval(() => { left--; const el = document.getElementById('autonextmsg'); if (el) el.textContent = `Opening in ${left} second${left === 1 ? '' : 's'}…`; if (left <= 0) openNext(); }, 1000)};
 }
 function cancelAutoNext() { if (ui.autoNext) clearInterval(ui.autoNext.t); ui.autoNext = null; document.getElementById('autonext')?.remove(); }
-function openNext() { const id = ui.autoNext?.id; cancelAutoNext(); if (!id || !S.mods[id]) return; if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); go('mod', {id}); }
+function openNext() { const id = ui.autoNext?.id; cancelAutoNext(); exitPlayer(); if (!id || !S.mods[id]) return; if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); go('mod', {id}); }
 BODIES.label = m => `<div class="card prose">${md(m.intro)}</div>`;
 BODIES.page = m => `${docTimer(m, true)}<article class="card prose" style="max-width:none">${md(m.content)}</article>`;
 BODIES.url = m => {
@@ -199,7 +224,7 @@ BODIES.file = m => {
       ${shown ? `<button class="btn" data-act="fullScreen" data-target="docview">${fsIcon()} Full screen</button>` : ''}
       ${dl ? `<a class="btn primary" href="${esc(B.fileUrl(f, true))}" ${B.server ? '' : `download="${esc(f.name)}"`} target="_blank" rel="noopener">Download</a>` : ''}</div>
     ${docTimer(m)}
-    <div id="docview" class="docview nosave">
+    <div id="docview" class="docview player nosave">${playerBar(f.name)}
     ${isImg ? `<img src="${esc(B.fileUrl(f))}" alt="${esc(f.name)}" draggable="false">` : ''}
     ${B.server && isPdf ? `<iframe src="${esc(B.fileUrl(f))}#toolbar=0&amp;navpanes=0" title="${esc(f.name)}" allow="fullscreen" allowfullscreen></iframe>` : ''}
     ${isText ? '<pre class="fpreview" id="fprev">Loading preview…</pre>' : ''}</div>
@@ -563,7 +588,10 @@ BODIES.scorm = (m, c) => {
   const r = h.resume(m.id, S.me), learner = h.isLearner(c.id);
   const src = B.server ? B.scormUrl(m) : null, local = !B.server && m.launchFileId && B.fileData?.(m.launchFileId);
   let html = learner ? `<div class="spread" style="margin-bottom:10px"><div class="row" style="gap:6px">${r?.completed ? `<span class="chip ok">Completed${r.score != null ? ` · score ${r.score}%` : ''}</span>` : r ? `<span class="chip brand">In progress</span><span class="muted small">Your place is saved. You will continue where you stopped.</span>` : '<span class="chip">Not started</span>'}</div><span class="muted small" id="scormstatus"></span></div>` : '';
-  if (src || local) html += `<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="btn sm" data-act="fullScreen" data-target="scormframe">${fsIcon()} Full screen</button></div><iframe id="scormframe" data-mid="${m.id}" title="${esc(m.name)}" allow="fullscreen; autoplay" allowfullscreen ${src ? `src="${esc(src)}"` : ''} style="width:100%;height:min(70vh,620px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>`;
+  // Phones: a full-screen player (landscape on Android; the whole window on iPhone, which allows real full screen only for videos)
+  const phone = isPhone();
+  if (src || local) html += `<div class="row" style="justify-content:flex-end;margin-bottom:8px">${phone ? '<span class="muted small" style="flex:1">Best on a phone: play full screen and turn it sideways.</span>' : ''}<button class="btn ${phone ? 'primary' : 'sm'}" data-act="fullScreen" data-target="scormwrap">${phone ? '▶ Play full screen' : `${fsIcon()} Full screen`}</button></div>
+    <div class="player" id="scormwrap">${playerBar(m.name)}<iframe id="scormframe" data-mid="${m.id}" title="${esc(m.name)}" allow="fullscreen; autoplay" allowfullscreen ${src ? `src="${esc(src)}"` : ''} style="width:100%;height:min(70vh,620px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div>`;
   else html += `<div class="card muted">This SCORM package can only be played on the server edition. In the preview, single-page packages play directly.</div>`;
   if (h.has('grade:viewall', c.id) && B.server) html += `<p class="muted small" style="margin-top:8px">Package: ${m.scormVersion ? `SCORM ${esc(m.scormVersion)}` : 'SCORM (checked when first opened)'}${m.scormFiles ? ` · ${m.scormFiles} files` : ''} · starts at <span class="mono">${esc(m.launch || '–')}</span></p>`;
   if (h.has('grade:viewall', c.id)) html += `<section class="stack" style="margin-top:22px"><h2>Learner progress</h2><div class="tw"><table><thead><tr><th>Learner</th><th>Status</th><th class="n">Score</th><th>Location</th><th>Last activity</th></tr></thead><tbody>${h.students(c.id).map(s => { const x = h.resume(m.id, s.id); return `<tr><td>${esc(fullname(s))}</td><td>${x ? `<span class="chip ${x.completed ? 'ok' : 'brand'}">${esc(x.status || 'incomplete')}</span>` : '<span class="chip">Not attempted</span>'}</td><td class="n">${x?.score != null ? x.score + '%' : '–'}</td><td class="small">${esc(x?.location || '–')}</td><td class="small">${x ? ago(x.updated) : '–'}</td></tr>`; }).join('')}</tbody></table></div></section>`;
@@ -644,18 +672,21 @@ let scormAPI = null;
 function mountPlayers() {
   const dt = document.getElementById('doctimer');
   if (dt && !dt.dataset.mounted && !dt.textContent.startsWith('✓')) {
-    dt.dataset.mounted = '1'; const mid = dt.dataset.mid; let secs = h.resume(mid, S.me)?.seconds || 0, since = Date.now(), busy = false, done = false;
-    const left = () => Math.max(0, C.DOC_SECONDS - secs - (document.hidden ? 0 : (Date.now() - since) / 1000));
+    dt.dataset.mounted = '1'; const mid = dt.dataset.mid;
+    // The timer survives a redraw of the page (it used to restart, losing up to 30 seconds and jumping back)
+    const cont = ui.docT && ui.docT.mid === mid && Date.now() - ui.docT.since < 60e3;
+    const T = cont ? ui.docT : (ui.docT = {mid, secs:h.resume(mid, S.me)?.seconds || 0, since:Date.now()}); let busy = false, done = false;
+    const left = () => Math.max(0, C.DOC_SECONDS - T.secs - (document.hidden ? 0 : (Date.now() - T.since) / 1000));
     const beat = async start => { if (busy || done) return; busy = true;
-      try { const out = await B.op('docTime', {mid, start:!!start}); secs = out.result.seconds; since = Date.now();
+      try { const out = await B.op('docTime', {mid, start:!!start}); T.secs = out.result.seconds; T.since = Date.now();
         if (out.result.completed) { done = true; dt.textContent = '✓ Read. This document is complete.'; toast('Document completed'); setState(await B.init()); watchDone(); } }
       catch (e) {} finally { busy = false; } };
-    beat(true);
+    if (!cont) beat(true);
     const t = setInterval(() => {
       if (!document.body.contains(dt)) { clearInterval(t); document.removeEventListener('visibilitychange', vis); return; }
       if (done || document.hidden) return;
       const l = left(); dt.textContent = `Stay on this document for ${fmtClock(Math.ceil(l))} to complete it.`;
-      if (Date.now() - since >= 30e3 || (l <= 0 && Date.now() - since >= 2e3)) beat(false);
+      if (Date.now() - T.since >= 30e3 || (l <= 0 && Date.now() - T.since >= 2e3)) beat(false);
     }, 1000);
     // Time with the tab hidden does not count: report up to the moment it was hidden, and start a new stretch when it is shown again
     const vis = () => { if (document.body.contains(dt)) beat(!document.hidden ? true : false); }; document.addEventListener('visibilitychange', vis);

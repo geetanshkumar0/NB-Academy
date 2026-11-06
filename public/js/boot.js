@@ -2,7 +2,7 @@
 'use strict';
 
 async function refresh() {
-  if (!S || document.hidden || modalEl.innerHTML || ['attempt', 'lessonplay', 'submit'].includes(ui.view.name) || document.getElementById('vplayer') || document.getElementById('scormframe') || document.getElementById('liveframe')) return;
+  if (!S || document.hidden || modalEl.innerHTML || ['attempt', 'lessonplay', 'submit'].includes(ui.view.name) || document.getElementById('vplayer') || document.getElementById('scormframe') || document.getElementById('liveframe') || document.getElementById('docview') || document.getElementById('doctimer')) return; // never reload a course, video, document or meeting someone is in
   const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
   try { const st = await B.init(); if (!st) { setState(null); ui.loginErr = 'You were signed out after a period of inactivity.'; render(); return; } const y = window.scrollY; setState(st); render(); window.scrollTo(0, y); } catch (e) {}
 }

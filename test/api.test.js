@@ -1100,13 +1100,26 @@ test('course content is view-only for learners: no downloads, and files a browse
 
 test('full screen, next activity and growing answer boxes are wired up', () => {
   const read = x => fs.readFileSync(path.join(__dirname, '..', 'public', x), 'utf8'), va = read('js/views-activities.js'), base = read('js/base.js');
-  assert.match(va, /data-act="fullScreen" data-target="vplayer"/); assert.match(va, /data-act="fullScreen" data-target="scormframe"/);
+  assert.match(va, /data-act="fullScreen" data-target="vplayer"/); assert.match(va, /data-act="fullScreen" data-target="scormwrap"/);
   assert.match(va, /id="scormframe"[^>]*allow="fullscreen; autoplay" allowfullscreen/);
   assert.match(read('js/actions-ext.js'), /fullScreen: d => \{/);
   assert.match(base, /function setState[^\n]*watchDone\(\)/, 'completion is noticed after every state update');
   assert.match(base, /cancelAutoNext\(\)/, 'leaving the activity stops the countdown');
   assert.match(va, /function offerNext\(m\)/); assert.match(va, /function nextModOf\(m\)/);
   assert.match(base, /document\.addEventListener\('input', e => \{[^\n]*growArea\(t\); keepCaretInView\(t\)/);
+});
+
+test('phones: full-screen player for SCORM and documents; the document timer and reader are never reset by a refresh', () => {
+  const read = x => fs.readFileSync(path.join(__dirname, '..', 'public', x), 'utf8'), va = read('js/views-activities.js'), base = read('js/base.js');
+  assert.match(va, /<div class="player" id="scormwrap">\$\{playerBar\(m\.name\)\}<iframe id="scormframe"/, 'the course frame sits inside the player, so opening it never reloads the course');
+  assert.match(va, /'▶ Play full screen'/);
+  assert.match(va, /fullScreen[\s\S]{0,40}|function enterPlayer\(id\)/); assert.match(read('js/actions-ext.js'), /fullScreen: d => \{ if \(d\.target !== 'vplayer'\) return enterPlayer\(d\.target\);/, 'iPhones (no full screen for pages) get the player filling the window');
+  assert.match(va, /user-scalable=no/, 'page zoom is off in the player (zooming paused Storyline)');
+  assert.match(va, /screen\.orientation\?\.lock\?\.\('landscape'\)/);
+  assert.match(base, /if \(ui\.player\) \{ exitPlayer\(true\); return; \}/, 'the phone Back button closes the player');
+  assert.match(read('js/boot.js'), /document\.getElementById\('docview'\) \|\| document\.getElementById\('doctimer'\)\) return;/, 'the 45-second refresh skips documents');
+  assert.match(va, /const cont = ui\.docT && ui\.docT\.mid === mid/, 'the document timer carries on through a redraw');
+  assert.match(va, /if \(!cont\) beat\(true\);/);
 });
 
 test('videos: a signed link works without the sign-in cookie (phone browsers\' own players), and files stream with ranges', async () => {

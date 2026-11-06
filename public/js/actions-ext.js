@@ -27,10 +27,11 @@ Object.assign(A, {
       ${personaFields(u)}<span class="err" id="eaerr" hidden></span>
       <div class="row"><button class="btn primary" type="submit">Save access</button><button class="btn ghost" type="button" data-act="closeModal">Cancel</button></div></form>`, true); },
   // Full screen for a video, a SCORM module or a document (iPhone Safari only allows it for the video itself)
-  fullScreen: d => { const el = document.getElementById(d.target); if (!el) return;
+  fullScreen: d => { if (d.target !== 'vplayer') return enterPlayer(d.target); const el = document.getElementById(d.target); if (!el) return;
     const fs = el.requestFullscreen || el.webkitRequestFullscreen;
     if (fs) { const r = fs.call(el); if (r?.catch) r.catch(() => { if (el.webkitEnterFullscreen) el.webkitEnterFullscreen(); else toast('Full screen is not available in this browser.'); }); }
     else if (el.webkitEnterFullscreen) el.webkitEnterFullscreen(); else toast('Full screen is not available in this browser.'); },
+  exitPlayer: () => exitPlayer(),
   autoNextGo: () => openNext(),
   autoNextStay: () => cancelAutoNext(),
   liveLeave: d => { ui.liveRoom = null; if (d.sid) go('session', {id:d.sid}); else go('mod', {id:d.id}); },

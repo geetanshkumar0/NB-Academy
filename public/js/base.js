@@ -367,6 +367,7 @@ function go(name, p = {}, fromHistory = false) {
   if (typeof videoAway === 'function') videoAway('page');
   if (name !== 'lessonplay') ui.lesson = null;
   if (name !== 'liveroom') ui.liveRoom = null; // leaving the video room ends the call
+  if (ui.player) exitPlayer(true);
   ui.view = {name, p}; ui.replyTo = null;
   // The "next activity" countdown stays only while the learner is still on the activity they just completed (e.g. quiz → its result)
   if (ui.autoNext && (typeof currentModId !== 'function' || currentModId() !== ui.autoNext.from)) cancelAutoNext();
@@ -384,6 +385,8 @@ function navTarget(st) {
 function pushNav() { try { history.pushState(navState(), ''); } catch (e) {} }
 function replaceNav() { try { history.replaceState(navState(), ''); } catch (e) {} }
 window.addEventListener('popstate', e => {
+  if (ui.ignorePop) { ui.ignorePop = false; return; } // the full-screen player removing its own history entry
+  if (ui.player) { exitPlayer(true); return; } // the phone's Back button closes the player
   const st = e.state; if (!st || !st.nb || !S) return;
   const {name, p} = navTarget(st);
   go(name, p, true);
