@@ -14,7 +14,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-test-'));
 process.env.NB_DATA_DIR = dir;
 process.env.NB_DEMO = '1'; // the tests run against the demo data
 process.env.NB_REMOVE_ACCOUNTS = ''; // the tests use the demo accounts; removal is tested directly below
-const {server, getState, deliverMail, runTick, removeAccounts, removeDemoData, _store} = require('../server/server.js');
+const {server, getState, deliverMail, runTick, removeAccounts, unenrolLearner, removeDemoData, _store} = require('../server/server.js');
 const Core = require('../public/core.js');
 let base;
 const extras = [];
@@ -1144,6 +1144,29 @@ test('videos: a signed link works without the sign-in cookie (phone browsers\' o
   assert.equal((await op(a, 'unenrol', {cid:'c6', userId:u.id})).status, 200);
   assert.equal((await call('GET', url)).status, 404, 'removed from the course: the link stops working');
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'base.js'), 'utf8'), /S\?\.mediaKeys\?\.\[f\.id\] \? '\?k=/);
+});
+
+test('server configuration removes an account from its courses as a learner, once, keeping other roles and progress', async () => {
+  const a = await login('admin');
+  const r0 = await op(a, 'newUser', {firstname:'Learn', lastname:'Er', username:'unenrol.me', email:'Unenrol.Me@Example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+  const id = r0.json.result.id;
+  for (const [cid, role] of [['c1', 'student'], ['c3', 'student'], ['c2', 'editingteacher']]) { const r = await op(a, 'enrolUser', {cid, userId:id, role}); assert.ok(r.status === 200 || /already enrolled/.test(r.text), r.text); }
+  getState().completion[id + ':m25'] = Date.now();
+  const roles = () => getState().enrol.filter(e => e.userId === id).map(e => e.courseId + ':' + e.role).sort();
+  assert.ok(roles().includes('c2:editingteacher'));
+  const before = getState().audit.length;
+  unenrolLearner(['unenrol.me@example.com']);
+  const learnerRoles = roles().filter(x => /student/.test(x));
+  assert.deepEqual(learnerRoles, [], 'no learner enrolments left');
+  assert.ok(roles().includes('c2:editingteacher'), 'other roles stay');
+  assert.ok(getState().completion[id + ':m25'], 'progress is kept');
+  assert.ok(getState().audit.slice(before).some(x => x.action === 'Removed from course'), 'audit log entry');
+  assert.ok(getState().site.learnerUnenrolled['unenrol.me@example.com']);
+  assert.equal((await op(a, 'enrolUser', {cid:'c1', userId:id, role:'student'})).status, 200);
+  unenrolLearner(['unenrol.me@example.com']);
+  assert.ok(roles().includes('c1:student'), 'runs only once: a later enrolment is kept');
+  unenrolLearner(['nobody@example.com']); assert.equal(getState().site.learnerUnenrolled['nobody@example.com'], undefined, 'unknown accounts are retried later');
+  const cfg = require('../server/site-admins.js'); assert.ok(cfg.unenrolLearner.includes('geetansh.kumar@nobroker.in'));
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

@@ -104,6 +104,25 @@ function ensureSiteAdmins() {
   }
   if (changed) store.save(S);
 }
+/* Once per account listed under "unenrolLearner" in server/site-admins.js: remove its learner enrolments in every course */
+function unenrolLearner(list) {
+  const done = S.site.learnerUnenrolled || (S.site.learnerUnenrolled = {}); let changed = false;
+  for (const entry of (list || []).map(x => String(x).trim().toLowerCase()).filter(Boolean)) {
+    if (done[entry]) continue;
+    const u = Core.findUser(S, entry) || S.users.find(x => String(x.email).toLowerCase() === entry);
+    if (!u) continue; // not created yet: try again at the next start-up
+    const h = Core.H(S, u.id), mine = S.enrol.filter(e => e.userId === u.id && h.role(e.role)?.caps?.['mod:submit']);
+    for (const e of mine) {
+      const c = S.courses.find(x => x.id === e.courseId);
+      S.enrol = S.enrol.filter(x => x !== e);
+      S.groups.filter(g => g.courseId === e.courseId).forEach(g => g.members = (g.members || []).filter(m => m !== u.id));
+      Core._.audit(S, env, null, 'Removed from course', `${c ? c.shortname : e.courseId} › ${u.username}`, 'As a learner, by server configuration (site-admins.js)');
+    }
+    done[entry] = Date.now(); changed = true;
+    console.log(`Learner enrolments removed for ${entry}: ${mine.length}`);
+  }
+  if (changed) store.save(S);
+}
 /* Delete the accounts listed under "remove" in server/site-admins.js (or NB_REMOVE_ACCOUNTS) */
 function removeAccounts(list) {
   const keep = new Set(siteConfig.admins.map(x => String(x).toLowerCase()));
@@ -160,6 +179,7 @@ if (process.env.NB_MEET_APP_ID) S.site.meetings.appId = process.env.NB_MEET_APP_
 { const changes = Core.tidyData(S); if (changes.length) { for (const c of changes) { Core._.audit(S, env, null, 'Data clean-up', S.site.name, c); console.log('Data clean-up: ' + c); } store.save(S); } }
 // Demo mode keeps the demo accounts (including 'admin'); the remove list applies to the real site
 removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : DEMO ? [] : siteConfig.remove);
+if (!DEMO) unenrolLearner(siteConfig.unenrolLearner);
 
 /* Run an operation. If it fails part-way, reload the last saved state so nothing half-done remains. */
 function runOp(uid, name, payload) {
@@ -622,4 +642,4 @@ if (require.main === module) {
   const stop = () => { try { store.save(S); } catch (x) {} process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
-module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, removeDemoData, _store:() => store};
+module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, unenrolLearner, removeDemoData, _store:() => store};

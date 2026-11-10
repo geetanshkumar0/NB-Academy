@@ -14,6 +14,11 @@
  *  Their enrolments, roles and cohort mappings go too; their past posts and grades show as
  *  "Former user", and the deletion is recorded in the audit log. Accounts listed in ADMINS are
  *  never removed. Not applied when the server runs with --demo. Override with NB_REMOVE_ACCOUNTS="user1,user2@company.com" (empty = remove none).
+ *
+ * UNENROL_LEARNER: accounts (by username or email) removed from every course they are enrolled in AS A LEARNER,
+ *  once: the next start-up does it and records it (S.site.learnerUnenrolled), so later enrolments are kept.
+ *  Trainer, editing and other roles stay. Progress, attempts and grades are kept (as with "Remove from course").
+ *  Each removal is recorded in the audit log. Not applied when the server runs with --demo.
  */
 'use strict';
 module.exports = {
@@ -24,5 +29,8 @@ module.exports = {
     'admin',                          // the "Admin User" account from the demo data or a first install
     'rohit.chakrabarti@nobroker.in',
     'gaurav.garg@nobroker.in',
+  ],
+  unenrolLearner: [
+    'geetansh.kumar@nobroker.in',     // requested 10 Nov 2026
   ],
 };
