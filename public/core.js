@@ -847,6 +847,7 @@ function welcomeUser(S, env, u) { const tok = makeToken(S, env, u.id, 'setpw', 7
 /* Assign a course to a learner with a due date (creates or updates the enrolment) */
 function assignCourse(S, env, byId, uid, cid, due, opts = {}) {
   const h = H(S, byId || uid), c = h.course(cid); if (!c || c.status === 'archived' || c.status === 'draft') return false;
+  if (h.user(uid)?.suspended) return false; // inactive people get no new training (cohorts, rules, bulk assignment skip them)
   let e = h.enrolOf(cid, uid), fresh = false;
   if (!e) { e = {id:env.uid('e'), courseId:cid, userId:uid, role:'student', time:env.now()}; S.enrol.push(e); fresh = true; }
   else if (!h.role(e.role)?.caps?.['mod:submit']) return false;
@@ -1052,7 +1053,10 @@ op('deleteUser', (S, h, p, env) => {
   S.groups.forEach(g => g.members = g.members.filter(m => m !== u.id)); S.cohorts.forEach(c => { c.members = c.members.filter(m => m !== u.id); c.leads = c.leads.filter(m => m !== u.id); c.trainers = c.trainers.filter(m => m !== u.id); });
   log(S, env, h.meId, `User deleted: ${u.username}`); audit(S, env, h.meId, 'User deleted', u.username);
 });
-op('suspendUser', (S, h, p, env) => { need(h.has('user:manage'), 'You cannot suspend users.'); const u = h.user(p.id); need(!u || h.mayManage(u.id), 'Only administrators can suspend this account.'); need(u && u.id !== h.meId && !u.builtinAdmin && (!u.admin || h.isSuperAdmin()), u?.admin ? 'Only the super administrator can suspend administrators.' : 'This account cannot be suspended.', u?.admin && !u.builtinAdmin ? 403 : 400); u.suspended = !!p.on; log(S, env, h.meId, `${p.on ? 'Suspended' : 'Reactivated'} ${u.username}`); audit(S, env, h.meId, p.on ? 'User suspended' : 'User reactivated', u.username); });
+/* Mark an account inactive (stored as user.suspended) or active again. Administrators only (super administrators for other
+   administrators). An inactive person cannot sign in, gets no notifications or reminders and cannot be given new training;
+   their enrolments, progress, grades, certificates and place in reports all stay. */
+op('suspendUser', (S, h, p, env) => { need(h.isAdmin(), 'Only administrators can mark an account as inactive.'); const u = h.user(p.id); need(u && u.id !== h.meId && !u.builtinAdmin && (!u.admin || h.isSuperAdmin()), u?.admin ? 'Only the super administrator can mark administrators as inactive.' : 'This account cannot be marked as inactive.', u?.admin && !u.builtinAdmin ? 403 : 400); u.suspended = !!p.on; if (u.suspended) u.inactiveSince = env.now(); else delete u.inactiveSince; log(S, env, h.meId, `${p.on ? 'Marked inactive' : 'Marked active'}: ${u.username}`); audit(S, env, h.meId, p.on ? 'User marked inactive' : 'User marked active', u.username); });
 op('loginAsCheck', (S, h, p) => { need(h.has('user:loginas'), 'You cannot log in as other users.'); const u = h.user(p.id); need(u && !u.admin, 'You cannot log in as this user.', 400); return {id:u.id}; });
 op('setSysRole', (S, h, p, env) => {
   need(h.has('role:manage'), 'You cannot assign site roles.'); need(h.user(p.userId) && h.role(p.roleId), 'User or role not found.', 404);
@@ -1148,6 +1152,7 @@ op('enrolMe', (S, h, p, env) => {
 op('enrolUser', (S, h, p, env) => {
   const c = courseOf(S, p.cid); need(h.has('course:enrol', c.id), 'You cannot enrol users in this course.');
   need(h.user(p.userId) && h.role(p.role), 'User or role not found.', 404); need(!h.enrolOf(c.id, p.userId), 'This user is already enrolled.', 400);
+  need(!h.user(p.userId).suspended, `${h.fullname(p.userId)} is inactive. Mark them as active first.`, 400);
   need(c.status !== 'archived', 'Archived courses do not accept new enrolments.', 400);
   S.enrol.push({id:env.uid('e'), courseId:c.id, userId:p.userId, role:p.role, time:env.now()});
   notify(S, env, p.userId, `You are enrolled in ${c.fullname}`, `Role: ${h.role(p.role).name}`, 'course', c.id);
@@ -1206,7 +1211,7 @@ function setLiveInvites(S, h, env, m, c, raw, changed) {
   const pairs = emails.map(e => [e, S.users.find(u => String(u.email || '').toLowerCase() === e)]);
   const unknown = pairs.filter(([, u]) => !u).map(([e]) => e);
   need(!unknown.length, `No NB Academy account uses ${unknown.length === 1 ? 'this email' : 'these emails'}: ${unknown.join(', ')}. Add ${unknown.length === 1 ? 'the person' : 'them'} in Site administration › Users first, or remove ${unknown.length === 1 ? 'it' : 'them'}.`, 400);
-  const off = pairs.filter(([, u]) => u.suspended).map(([e]) => e); need(!off.length, `Suspended ${off.length === 1 ? 'account' : 'accounts'}: ${off.join(', ')}`, 400);
+  const off = pairs.filter(([, u]) => u.suspended).map(([e]) => e); need(!off.length, `Inactive ${off.length === 1 ? 'account' : 'accounts'}: ${off.join(', ')}`, 400);
   const outside = pairs.map(([, u]) => u).filter(u => !h.enrolOf(c.id, u.id));
   need(!outside.length || h.has('course:enrol', c.id), `Not enrolled in this course: ${outside.map(u => u.email).join(', ')}. Ask an administrator to enrol ${outside.length === 1 ? 'them' : 'them'}, or remove ${outside.length === 1 ? 'the email' : 'these emails'}.`, 400);
   need(!outside.length || c.status !== 'archived', 'Archived courses do not accept new enrolments.', 400);
@@ -1600,7 +1605,7 @@ op('registerFile', (S, h, p, env) => {
 function run(S, meId, name, payload, env) {
   const fn = OPS[name]; if (!fn) throw new OpError(`Unknown operation: ${name}`, 404);
   const me = S.users.find(u => u.id === meId); if (!me) throw new OpError('Please log in again.', 401);
-  if (me.suspended) throw new OpError('This account is suspended.', 401);
+  if (me.suspended) throw new OpError('This account is inactive.', 401);
   const free = ['setOwnPassword', 'acceptTerms', 'savePrefs', 'touch', 'heartbeat', 'readNotifications', 'mfaSetup', 'mfaEnable'];
   if (me.mustChangePassword && !free.includes(name)) throw new OpError('Set a new password before continuing.', 428);
   if (mfaRequired(S, me) && !me.mfaEnabled && !free.includes(name)) throw new OpError('Set up two-step sign-in before continuing.', 428);
@@ -1617,7 +1622,7 @@ function login(S, username, password, env, opts = {}) {
     if (sec.lockoutAttempts && u.failedLogins >= sec.lockoutAttempts) { u.lockedUntil = env.now() + (sec.lockoutMinutes || 30) * 6e4; u.failedLogins = 0; audit(S, env, u.id, 'Account locked', u.username, `${sec.lockoutAttempts} failed login attempts`); }
     return {error:'Invalid login, please try again.'};
   }
-  if (u.suspended) return {error:'This account is suspended. Contact your administrator.'};
+  if (u.suspended) return {error:'This account is inactive. Contact your administrator.'};
   u.failedLogins = 0; u.lockedUntil = null; u.lastLogin = env.now();
   log(S, env, u.id, opts.via ? `User logged in (${opts.via})` : 'User logged in'); return {user:u};
 }
@@ -1636,7 +1641,7 @@ function view(S, meId) {
   const V = {version:VERSION, me:meId, site, roles:clone(S.roles), sysroles:clone(S.sysroles), categories:clone(S.categories), now:Date.now()};
   const manageUsers = h.has('user:manage');
   const team = new Set(h.teamMembers(meId)), scope = h.trainerScope(meId);
-  V.users = S.users.map(u => ({id:u.id, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:!!u.admin, created:u.created, suspended:!!u.suspended, department:u.department || '', personas:u.personas || [], builtinAdmin:!!u.builtinAdmin,
+  V.users = S.users.map(u => ({id:u.id, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:!!u.admin, created:u.created, suspended:!!u.suspended, inactiveSince:u.inactiveSince || null, department:u.department || '', personas:u.personas || [], builtinAdmin:!!u.builtinAdmin,
     ...(u.id === meId || manageUsers ? {username:u.username, lastLogin:u.lastLogin || null, locked:!!(u.lockedUntil && u.lockedUntil > Date.now()), mfaEnabled:!!u.mfaEnabled, auth:u.auth || 'manual', mustChangePassword:!!u.mustChangePassword} : {}),
     ...(u.id === meId ? {prefs:u.prefs || {}, prefsSet:!!u.prefsSet, termsAccepted:u.termsAccepted || 0} : {}),
     ...(team.has(u.id) || scope.has(u.id) ? {lastLogin:u.lastLogin || null} : {})}));

@@ -899,6 +899,7 @@ test('Content Moderator: adds users, creates courses and quizzes, has Trainer an
   assert.equal((await op(m, 'updateProfile', {id:admin.id, firstname:'Hacked', lastname:'x', email:admin.email, password:'Hacked@123'})).status, 403, 'cannot change an administrator, including the password');
   assert.notEqual((await op(m, 'adminResetPassword', {id:admin.id, mode:'temp'})).status, 200);
   assert.equal((await op(m, 'suspendUser', {id:admin.id, on:true})).status, 403);
+  assert.equal((await op(m, 'suspendUser', {id:nh, on:true})).status, 403, 'only administrators mark accounts as inactive');
   assert.equal((await op(m, 'deleteUser', {id:nh})).status, 403, 'moderators add and edit users but do not delete them');
   assert.equal((await op(m, 'siteSettings', {name:'X'})).status, 403); assert.equal((await op(m, 'loginAsCheck', {id:nh})).status, 400);
   assert.equal((await op(m, 'deleteCourse', {id:cid})).status, 403);
@@ -1167,6 +1168,38 @@ test('server configuration removes an account from its courses as a learner, onc
   assert.ok(roles().includes('c1:student'), 'runs only once: a later enrolment is kept');
   unenrolLearner(['nobody@example.com']); assert.equal(getState().site.learnerUnenrolled['nobody@example.com'], undefined, 'unknown accounts are retried later');
   const cfg = require('../server/site-admins.js'); assert.ok(cfg.unenrolLearner.includes('geetansh.kumar@nobroker.in'));
+});
+
+test('administrators mark a person as inactive: no sign-in, but enrolments, progress, grades and reports stay', async () => {
+  const a = await login('admin');
+  const r0 = await op(a, 'newUser', {firstname:'Ina', lastname:'Ctive', username:'ina.ctive', email:'ina.ctive@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+  const id = r0.json.result.id; let u = getState().users.find(x => x.id === id); Object.assign(u, {mustChangePassword:false, termsAccepted:99, prefsSet:true});
+  const re = await op(a, 'enrolUser', {cid:'c3', userId:id, role:'student'}); assert.ok(re.status === 200 || /already enrolled/.test(re.text), re.text);
+  getState().completion[id + ':m25'] = Date.now(); getState().grades = getState().grades || [];
+  const lc = await login('ina.ctive', 'Pass@2026'); assert.equal((await call('GET', '/api/state', null, lc)).status, 200);
+  const enrolBefore = getState().enrol.filter(e => e.userId === id).length; assert.ok(enrolBefore >= 1);
+  let r = await op(a, 'suspendUser', {id, on:true}); assert.equal(r.status, 200, r.text);
+  u = getState().users.find(x => x.id === id); assert.equal(u.suspended, true); assert.ok(u.inactiveSince);
+  const row = r.json.state.users.find(x => x.id === id); assert.equal(row.suspended, true); assert.ok(row.inactiveSince, 'admins see since when');
+  assert.equal(getState().enrol.filter(e => e.userId === id).length, enrolBefore, 'still enrolled');
+  assert.ok(getState().completion[id + ':m25'], 'progress stays');
+  assert.ok(r.json.state.enrol.some(e => e.userId === id && e.courseId === 'c3'), 'still in the course lists and reports');
+  assert.ok(getState().audit.some(x => x.action === 'User marked inactive' && x.target === 'ina.ctive'));
+  // the open session stops working, and signing in again is refused
+  assert.equal((await op(lc, 'docTime', {mid:'m25', start:true})).status, 401);
+  const li = await call('POST', '/api/login', {username:'ina.ctive', password:'Pass@2026'}); assert.equal(li.status, 401); assert.match(li.text, /inactive/i);
+  // no new training for an inactive person
+  r = await op(a, 'assign', {kind:'course', id:'c1', users:[id], due:Date.now() + 5 * 864e5}); assert.notEqual(r.status, 200); assert.match(r.text, /Inactive/);
+  r = await op(a, 'enrolUser', {cid:'c2', userId:id, role:'student'}); assert.equal(r.status, 400); assert.match(r.text, /is inactive/);
+  assert.ok(!getState().enrol.some(e => e.userId === id && ['c1', 'c2'].includes(e.courseId) && e.time > Date.now() - 5000), 'nothing new was assigned');
+  // active again: everything is as it was
+  r = await op(a, 'suspendUser', {id, on:false}); assert.equal(r.status, 200, r.text);
+  u = getState().users.find(x => x.id === id); assert.equal(u.suspended, false); assert.equal(u.inactiveSince, undefined);
+  const lc2 = await login('ina.ctive', 'Pass@2026'), st = (await call('GET', '/api/state', null, lc2)).json.state;
+  assert.ok(st.enrol.some(e => e.userId === id && e.courseId === 'c3')); assert.ok(st.completion[id + ':m25']);
+  const read = x => fs.readFileSync(path.join(__dirname, '..', 'public', x), 'utf8');
+  assert.match(read('js/views-admin.js'), /'Mark as active' : 'Mark as inactive'/); assert.match(read('js/views-admin.js'), /id="ustatus"/);
+  assert.doesNotMatch(read('js/views-admin.js') + read('js/views-main.js') + read('js/actions.js'), />Suspended<|'Suspend'/);
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

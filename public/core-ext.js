@@ -284,6 +284,8 @@ op('assign', (S, h, p, env) => {
   need(global || cids.every(cid => h.has('course:assign', cid)), kind === 'path' ? 'You can only assign learning paths whose courses are all tagged to you.' : 'You cannot assign this course.');
   const scope = h.trainerScope();
   let targets = uids(S, p.users);
+  // Inactive people get no new training: chosen by name is refused; inside a cohort they are skipped (assignCourse)
+  const off = targets.filter(id => S.users.find(x => x.id === id)?.suspended); need(!off.length, `Inactive: ${off.map(id => h.fullname(id)).join(', ')}. Mark them as active first.`, 400);
   for (const cid of p.cohorts || []) { const co = S.cohorts.find(x => x.id === cid); need(co, 'Cohort not found.', 404); need(global || co.trainers.includes(h.meId), `The cohort ${co.name} is not mapped to you.`); targets.push(...co.members); }
   targets = [...new Set(targets)].filter(id => { const u = S.users.find(x => x.id === id); return u && (!u.admin || u.builtinAdmin || u.personas?.includes('learner')); });
   need(targets.length, 'Choose at least one learner or cohort.', 400);
@@ -368,7 +370,7 @@ op('saveSession', (S, h, p, env) => {
   if (s.mode === 'room' && !s.room) s.room = newRoom(env);
   const ids = [...new Set(Array.isArray(p.invitees) ? p.invitees.map(String) : [])];
   const missing = ids.filter(id => !h.user(id)); need(!missing.length, 'Some of the people chosen no longer exist. Reload the page and try again.', 400);
-  const off = ids.filter(id => h.user(id).suspended); need(!off.length, `Suspended: ${off.map(id => h.fullname(id)).join(', ')}`, 400);
+  const off = ids.filter(id => h.user(id).suspended); need(!off.length, `Inactive: ${off.map(id => h.fullname(id)).join(', ')}`, 400);
   need(ids.length, 'Choose at least one person to invite.', 400); need(ids.length <= 2000, 'Invite at most 2,000 people to one session.', 400);
   const removed = (s.invitees || []).filter(id => !ids.includes(id)); s.invitees = ids;
   if (isNew) S.sessions.push(s);

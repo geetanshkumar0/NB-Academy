@@ -151,7 +151,9 @@ const A = {
       <div class="field"><label for="nu5">Password</label><input id="nu5" name="password" type="text" value="Welcome@123" required></div>${h.isAdmin() ? '<label class="check" style="align-self:end;padding-bottom:10px"><input type="checkbox" name="admin"> Site administrator</label>' : ''}</div>
       <p class="err" id="nuerr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Create user</button></div></form>`, true),
   deleteUser: d => confirmBox('Delete user', `Delete <b>${esc(fullname(d.u))}</b>? They are removed from all courses and can no longer log in.`, () => act('deleteUser', {id:d.u}, 'User deleted')),
-  suspend: d => act('suspendUser', {id:d.u, on:!!d.on}, d.on ? 'Account suspended' : 'Account reactivated'),
+  // Mark a person inactive (asks first) or active again
+  suspend: d => { const u = h.user(d.u); if (!d.on) return act('suspendUser', {id:d.u, on:false}, `${fullname(u)} is active again`);
+    confirmBox('Mark as inactive', `Mark <b>${esc(fullname(u))}</b> as inactive?<br><br>They will not be able to sign in, will get no emails or reminders, and cannot be given new training. Their courses, progress, grades, certificates and place in reports all stay, and you can mark them as active again at any time.`, () => act('suspendUser', {id:d.u, on:true}, `${fullname(u)} marked as inactive`), 'Mark as inactive'); },
   newCourse: () => openModal('Create new course', `<form data-form="newCourse" class="stack"><div class="fgrid">
       <div class="field full"><label for="nc1">Course full name</label><input id="nc1" name="fullname" type="text" required></div>
       <div class="field"><label for="nc2">Course short name</label><input id="nc2" name="shortname" type="text" required placeholder="e.g. LD101"></div>
@@ -353,6 +355,7 @@ document.addEventListener('change', e => {
   else if (t.dataset.csv) readText(t, 'csvtext');
   else if (t.dataset.restore) readText(t, 'rtext');
   else if (t.dataset.award) act('awardBadge', {bid:t.dataset.award, userId:t.dataset.u, on:t.checked}, t.checked ? 'Badge awarded' : 'Badge revoked');
+  else if (t.dataset.change === 'userStatus') { const l = document.getElementById('ulist'); if (l) l.dataset.only = t.value; ui.userStatus = t.value; }
   else if (t.dataset.change === 'changeRole') act('changeRole', {cid:t.dataset.cid, userId:t.dataset.u, role:t.value}, 'Role changed');
   else if (t.dataset.change === 'copyRole') { const r = h.role(t.value); document.querySelectorAll('input[name^="cap:"]').forEach(cb => cb.checked = !!r?.caps[cb.name.slice(4)]); }
 });

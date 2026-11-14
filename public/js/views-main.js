@@ -247,7 +247,7 @@ VIEWS.profile = (p) => {
       <section class="block"><header><h2>User details</h2>${!self ? `<button class="btn sm" data-go="messages" data-with="${u.id}">Message</button>` : ''}</header><div class="bb"><table class="kv" style="border:0"><tbody>
         <tr><th>Email address</th><td>${esc(u.email)}</td></tr>${u.username ? `<tr><th>Username</th><td class="mono">${esc(u.username)}</td></tr>` : ''}
         <tr><th>Team</th><td>${esc(u.department || '–')}</td></tr>
-        <tr><th>Site roles</th><td>${u.admin ? 'Site administrator' : sys.length ? esc(sys.join(', ')) : 'Authenticated user'}${u.suspended ? ' <span class="chip bad">Suspended</span>' : ''}${u.locked ? ' <span class="chip bad">Locked</span>' : ''}</td></tr>
+        <tr><th>Site roles</th><td>${u.admin ? 'Site administrator' : sys.length ? esc(sys.join(', ')) : 'Authenticated user'}${u.suspended ? ' <span class="chip bad">Inactive</span>' : ''}${u.locked ? ' <span class="chip bad">Locked</span>' : ''}</td></tr>
         ${cohorts.length ? `<tr><th>Cohorts</th><td>${cohorts.map(c => `${esc(c.name)}${c.leads.includes(u.id) ? ' (team lead)' : c.trainers.includes(u.id) ? ' (trainer)' : ''}`).join('<br>')}</td></tr>` : ''}
         ${u.auth && u.auth !== 'manual' ? `<tr><th>Sign-in method</th><td>${u.auth === 'sso' ? 'Single sign-on' : 'LDAP directory'}</td></tr>` : ''}
         ${u.lastLogin !== undefined ? `<tr><th>Last login</th><td>${u.lastLogin ? fmtDate(u.lastLogin) : 'Never'}</td></tr>` : ''}<tr><th>Account created</th><td>${fmtDate(u.created)}</td></tr></tbody></table></div></section>

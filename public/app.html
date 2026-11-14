@@ -445,6 +445,7 @@ html.has-player,html.has-player body{overflow:hidden}
 .autonext{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:260;display:flex;align-items:center;gap:16px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;width:min(560px,calc(100vw - 32px))}
 .autonext>div:first-child{flex:1;min-width:0}
 @media (max-width:520px){.autonext{flex-direction:column;align-items:stretch}}
+#ulist[data-only=inactive] tr[data-st=active],#ulist[data-only=active] tr[data-st=inactive]{display:none!important}
 .modesw{display:flex;background:var(--nav-hover);border-radius:20px;padding:3px;gap:2px}
 .modesw button{background:none;border:0;color:var(--nav-muted);padding:5px 11px;border-radius:16px;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap}
 .modesw button.on{background:var(--accent);color:var(--accent-ink)}

@@ -1,6 +1,6 @@
 # Lifecycle guide coverage
 
-How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (83 tests) and the browser click-through of both editions.
+How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operations Guide*. "Tested" means covered by `test/api.test.js` (84 tests) and the browser click-through of both editions.
 
 ## 1. Learner
 
@@ -53,7 +53,7 @@ How NB Academy meets each requirement in *LMS Complete User Lifecycle and Operat
 | Logos, brand colours, custom domain, certificate templates | Admin › Branding and certificates; General › Site address |
 | Notification engine: email and in-app templates | Admin › Notifications and terms; Email log |
 | Password rules, session timeouts, SSO/LDAP | Admin › Security; Admin › Email, sign-in and meetings. Tested. |
-| User CRUD, bulk CSV, suspend/delete, unlock, reset passwords | Admin › Users, Upload users, user profile |
+| User CRUD, bulk CSV, mark as inactive/active, delete, unlock, reset passwords | Admin › Users, Upload users, user profile |
 | Personas (Learner, Trainer, Team Lead, Administrator, in any combination) | Add a new user, and Personas on each user's profile, including cohorts and courses. Anyone with more than one persona, administrators included, switches views from the top bar. Tested. |
 | Login As | Users and profile |
 | Cohort, trainer and team lead mapping | Admin › Cohorts and mapping |

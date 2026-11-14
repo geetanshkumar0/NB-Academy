@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (83 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (84 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -153,7 +153,7 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 | Upload users (CSV) | Preview with validation, enrolments and groups, update existing users |
 | Backup and restore | Course backup with or without user data; restore as a new course |
 | Logs, reports | Site logs, course logs, course report |
-| Log in as, suspend users | Included |
+| Log in as, mark users as inactive | Included |
 
 ## Deploying
 
@@ -200,7 +200,7 @@ Every new account starts with the password **`Welcome@1`** and must choose its o
 ## Super administrator
 
 The accounts listed under `admins` in `server/site-admins.js` (today geetansh.kumar@nobroker.in) are **super administrators**.
-- Only a super administrator can take administrator access away from other administrators, suspend them or delete them. The Users list shows them **Remove admin access** and **Delete** buttons on administrator rows.
+- Only a super administrator can take administrator access away from other administrators, mark them as inactive or delete them. The Users list shows them **Remove admin access** and **Delete** buttons on administrator rows.
 - Removing access keeps the account, with the person's learner, trainer or team lead personas. The person is notified, and the change is recorded in the audit log.
 - Other administrators can still create administrators. They cannot remove or demote one.
 - A super administrator holds **every role** (Learner, Trainer, Team Lead and Administrator) and switches between them with the view switcher. As Trainer they see every active course and cohort, as Team Lead every cohort, and as Learner their own assigned training; anyone who assigns training can assign it to them. These roles cannot be taken away in the app.
@@ -317,7 +317,7 @@ Usernames may use letters (capital or small), numbers, dots, dashes and undersco
 - Every time the server starts, it makes sure each address has an administrator account.
 - A missing account is created with a username taken from the email and the starting password. It is also sent a welcome email with a set-password link, which is printed in the server console too.
 - An existing built-in account that has never been signed in to is given the starting password once.
-- These accounts cannot be deleted or suspended in the app. Their administrator access and email address cannot be changed there either.
+- These accounts cannot be deleted or marked as inactive in the app. Their administrator access and email address cannot be changed there either.
 - To add more without editing the file, set `NB_SITE_ADMINS="a@company.com,b@company.com"`.
 
 **`remove`** lists accounts, by username or email, that are deleted when the server starts.
@@ -344,3 +344,7 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 - **Videos on phones:** some Android browsers (Vivo, Oppo, Xiaomi and others) play videos in their own player, which does not send the sign-in cookie. Video links therefore carry a signed key (`?k=`, valid 6 to 12 hours, for one person and one file; secret in `data/.media-key`). Files are streamed from disk with byte ranges.
 - **View-only content:** learners get no Download button and cannot download course files (the server enforces it); people who edit the course still can.
 - **Answer boxes** grow as you type, and the line being typed stays on screen.
+
+## Inactive accounts
+
+Administrators (and only they) can **Mark as inactive** on Site administration › Users, and **Mark as active** again; the list can be filtered to Active or Inactive. An inactive person cannot sign in (an open session ends), gets no emails or reminders, and cannot be enrolled in or assigned new training. Their enrolments, progress, grades, certificates and place in reports all stay, and they show with an **Inactive** label. Stored as `user.suspended` (op `suspendUser`).
