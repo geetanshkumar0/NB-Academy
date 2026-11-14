@@ -1202,6 +1202,25 @@ test('administrators mark a person as inactive: no sign-in, but enrolments, prog
   assert.doesNotMatch(read('js/views-admin.js') + read('js/views-main.js') + read('js/actions.js'), />Suspended<|'Suspend'/);
 });
 
+test('course sections can be moved up and down; General stays first; activities move with their section', async () => {
+  const a = await login('admin'), cid = 'c1';
+  for (let n = getState().courses.find(c => c.id === cid).sections.length; n < 4; n++) assert.equal((await op(a, 'addSection', {cid})).status, 200);
+  const secs = () => getState().courses.find(c => c.id === cid).sections, ids = () => secs().map(s => s.id);
+  const before = ids(), modsOf = Object.fromEntries(secs().map(s => [s.id, s.mods.join(',')]));
+  let r = await op(a, 'moveSection', {cid, sid:before[1], dir:1}); assert.equal(r.status, 200, r.text);
+  assert.deepEqual(ids(), [before[0], before[2], before[1], ...before.slice(3)]);
+  assert.deepEqual(r.json.state.courses.find(c => c.id === cid).sections.map(s => s.id), ids(), 'the new order is what everyone sees');
+  for (const s of secs()) assert.equal(s.mods.join(','), modsOf[s.id], 'activities stay in their section');
+  r = await op(a, 'moveSection', {cid, sid:before[1], dir:-1}); assert.equal(r.status, 200); assert.deepEqual(ids(), before);
+  assert.equal((await op(a, 'moveSection', {cid, sid:before[0], dir:1})).status, 400, 'General stays at the top');
+  assert.equal((await op(a, 'moveSection', {cid, sid:before[1], dir:-1})).status, 400, 'nothing goes above General');
+  assert.equal((await op(a, 'moveSection', {cid, sid:before[before.length - 1], dir:1})).status, 400, 'the last section cannot go further down');
+  assert.equal((await op(a, 'moveSection', {cid, sid:'nope', dir:1})).status, 404);
+  assert.equal((await op(await login('asha'), 'moveSection', {cid, sid:before[1], dir:1})).status, 403, 'learners cannot rearrange a course');
+  assert.deepEqual(ids(), before);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-activities.js'), 'utf8'), /data-act="moveSection"[^>]*data-dir="-1"/);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

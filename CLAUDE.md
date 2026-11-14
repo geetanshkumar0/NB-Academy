@@ -71,6 +71,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 
 - **Teams:** a user's team is stored in `user.department` and must be one of `S.site.teams` (default `TEAMS` in core.js, editable via `saveTeams`); `normTeam` validates it. There is no Company field anywhere (forms, rules, Analytics, exports). `tidyData` in core.js runs at every start-up (server and preview): it removes old company values and renames teams in `RENAMED_TEAMS` ("Training" → "Training Team"), logging each change in the audit log.
 
+- **Course sections:** ops `addSection`, `editSection`, `deleteSection`, `moveSection` ({cid, sid, dir}; swaps with the neighbour, activities move with it; the first "General" section stays first and cannot be deleted). ↑ ↓ buttons on each section header in edit mode (`sectionBlock` area in views-activities.js); activities use `moveMod`.
+
 - **Locks** (step-by-step order `modLock`, overdue lockout `isLocked`, learning-path order `pathLock`) apply only to learners who cannot edit the course: `h.editsCourse(cid)` exempts editors and admins even when they are also enrolled as learners.
 
 `h.personas(uid)` drives the view switcher (`modes()` in base.js).

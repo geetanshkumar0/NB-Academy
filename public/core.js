@@ -1189,6 +1189,13 @@ op('setGroupMember', (S, h, p) => {
 /* Course editing */
 op('addSection', (S, h, p) => { const c = courseOf(S, p.cid); need(h.canEdit(c.id), 'You cannot edit this course.'); c.sections.push({id:'s' + Math.random().toString(36).slice(2, 10), name:`Section ${c.sections.length}`, summary:'', mods:[]}); });
 op('editSection', (S, h, p) => { const c = courseOf(S, p.cid); need(h.canEdit(c.id), 'You cannot edit this course.'); const s = c.sections.find(x => x.id === p.sid); need(s, 'Section not found.', 404); s.name = req(p.name, 'Section name', 200); s.summary = str(p.summary); });
+/* Move a section up or down among the course's sections, with everything in it. The first (General) section stays first. */
+op('moveSection', (S, h, p) => {
+  const c = courseOf(S, p.cid); need(h.canEdit(c.id), 'You cannot edit this course.');
+  const i = c.sections.findIndex(x => x.id === p.sid); need(i >= 0, 'Section not found.', 404); need(i > 0, 'The General section stays at the top.', 400);
+  const j = i + (Number(p.dir) < 0 ? -1 : 1); need(j >= 1 && j < c.sections.length, j < 1 ? 'This section is already first, below General.' : 'This section is already last.', 400);
+  [c.sections[i], c.sections[j]] = [c.sections[j], c.sections[i]];
+});
 op('deleteSection', (S, h, p) => { const c = courseOf(S, p.cid); need(h.canEdit(c.id), 'You cannot edit this course.'); const i = c.sections.findIndex(x => x.id === p.sid); need(i > 0, 'The General section cannot be deleted.', 400); c.sections[i].mods.forEach(id => delete S.mods[id]); c.sections.splice(i, 1); });
 const MOD_FIELDS = {
   page:['content'], url:['url'], file:['fileId'], assign:['due', 'maxgrade', 'allowFiles'], quiz:['close', 'timelimit', 'attempts', 'maxgrade', 'gradepass', 'pretest'],

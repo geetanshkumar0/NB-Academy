@@ -56,7 +56,7 @@ VIEWS.course = (p) => {
 function sectionHTML(c, s, i, ed) {
   const mods = s.mods.map(id => S.mods[id]).filter(Boolean);
   return `<section class="sec" id="sec-${s.id}"><header class="sec-h"><h2>${esc(s.name)}</h2>
-    ${ed ? `<div class="tools"><button class="btn sm ghost" data-act="editSection" data-cid="${c.id}" data-sid="${s.id}">Edit</button>${i > 0 ? `<button class="btn sm ghost danger" data-act="deleteSection" data-cid="${c.id}" data-sid="${s.id}">Delete</button>` : ''}</div>` : ''}</header>
+    ${ed ? `<div class="tools">${i > 0 ? `<button class="btn sm ghost" data-act="moveSection" data-cid="${c.id}" data-sid="${s.id}" data-dir="-1" aria-label="Move section up" title="Move section up" ${i === 1 ? 'disabled' : ''}>↑</button><button class="btn sm ghost" data-act="moveSection" data-cid="${c.id}" data-sid="${s.id}" data-dir="1" aria-label="Move section down" title="Move section down" ${i === c.sections.length - 1 ? 'disabled' : ''}>↓</button>` : ''}<button class="btn sm ghost" data-act="editSection" data-cid="${c.id}" data-sid="${s.id}">Edit</button>${i > 0 ? `<button class="btn sm ghost danger" data-act="deleteSection" data-cid="${c.id}" data-sid="${s.id}">Delete</button>` : ''}</div>` : ''}</header>
     ${s.summary ? `<div class="sec-sum prose">${md(s.summary)}</div>` : ''}
     <ul class="mods">${mods.map(m => modRow(m, c, ed)).join('') || `<li class="mod muted small">No activities in this section yet.</li>`}</ul>
     ${ed ? `<button class="btn add" data-act="chooser" data-cid="${c.id}" data-sid="${s.id}">+ Add an activity or resource</button>` : ''}</section>`;

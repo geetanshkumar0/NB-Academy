@@ -113,6 +113,7 @@ const A = {
   chooseType: d => modForm(d.type, d.cid, d.sid),
   editMod: d => { const m = S.mods[d.id]; modForm(m.type, m.courseId, h.sectionOf(m)?.id, m); },
   moveMod: d => act('moveMod', {id:d.id, dir:d.dir}),
+  moveSection: d => act('moveSection', {cid:d.cid, sid:d.sid, dir:d.dir}, 'Section moved'),
   toggleVis: async d => { const r = await act('toggleVis', {id:d.id}); if (r !== FAIL) toast(r.visible ? 'Shown to students' : 'Hidden from students'); },
   deleteMod: d => { const m = S.mods[d.id]; confirmBox('Delete activity', `Delete <b>${esc(m.name || 'this text area')}</b>? Its submissions, attempts and posts will no longer be visible.`, async () => { if (await act('deleteMod', {id:m.id}, 'Activity deleted', {silent:true}) !== FAIL) { if (ui.view.name === 'course') render(); else go('course', {id:m.courseId}); } }); },
   addSection: d => act('addSection', {cid:d.cid}, 'Section added'),
