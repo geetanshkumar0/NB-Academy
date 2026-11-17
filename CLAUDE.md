@@ -73,6 +73,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 
 - **Course sections:** ops `addSection`, `editSection`, `deleteSection`, `moveSection` ({cid, sid, dir}; swaps with the neighbour, activities move with it; the first "General" section stays first and cannot be deleted). ↑ ↓ buttons on each section header in edit mode (`sectionBlock` area in views-activities.js); activities use `moveMod`.
 
+- **Course completion:** `enrolment.completedAt` is set once, when every tracked activity is done (`touch` in core.js). `h.status` is `completed` from then on, and `h.progress` returns 100 for a completed enrolment even if activities are added to the course later; a new cycle (recertification/reset clears `completedAt`) counts afresh.
+
 - **Locks** (step-by-step order `modLock`, overdue lockout `isLocked`, learning-path order `pathLock`) apply only to learners who cannot edit the course: `h.editsCourse(cid)` exempts editors and admins even when they are also enrolled as learners.
 
 `h.personas(uid)` drives the view switcher (`modes()` in base.js).

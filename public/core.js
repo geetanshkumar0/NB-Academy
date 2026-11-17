@@ -189,7 +189,9 @@ function H(S, meId) {
       default: return !!S.completion[uid + ':' + m.id];
     }
   };
-  h.progress = (cid, uid) => { const ms = h.courseMods(cid).filter(h.trackable); if (!ms.length) return 0; return Math.round(ms.filter(m => h.isDone(m, uid)).length / ms.length * 100); };
+  /* Share of the course's tracked activities a person has done. Someone who has completed the course (enrolment.completedAt)
+     stays at 100% when activities are added later; a new cycle (recertification, reset) clears completedAt and counts afresh. */
+  h.progress = (cid, uid) => { if (h.enrolOf(cid, uid)?.completedAt) return 100; const ms = h.courseMods(cid).filter(h.trackable); if (!ms.length) return 0; return Math.round(ms.filter(m => h.isDone(m, uid)).length / ms.length * 100); };
   /* Quiz attempts with subjective answers still to grade, that this person can grade (newest last) */
   h.gradingQueue = (uid = meId) => S.attempts.filter(a => a.state === 'finished' && a.pending && !a.archived && !a.preview).map(a => ({a, m:S.mods[a.cmid]})).filter(x => x.m && h.has('grade:edit', x.m.courseId, uid) && h.isLearner(x.m.courseId, x.a.userId)).sort((x, y) => x.a.finish - y.a.finish);
   h.needsGrading = m => m.type === 'assign' ? S.submissions.filter(s => s.cmid === m.id && s.status === 'submitted' && s.grade == null && !s.archived && h.isLearner(m.courseId, s.userId)).length

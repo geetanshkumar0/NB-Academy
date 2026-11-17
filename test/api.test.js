@@ -1221,6 +1221,32 @@ test('course sections can be moved up and down; General stays first; activities 
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-activities.js'), 'utf8'), /data-act="moveSection"[^>]*data-dir="-1"/);
 });
 
+test('a completed course stays at 100% when activities are added afterwards', async () => {
+  const a = await login('admin'), cid = 'c6', S0 = getState();
+  const doneE = S0.enrol.find(e => e.courseId === cid && e.completedAt), uid = doneE.userId;
+  const h0 = Core.H(S0, uid); assert.equal(h0.progress(cid, uid), 100); assert.equal(h0.status(cid, uid), 'completed');
+  // someone part-way through, for comparison
+  const r0 = await op(a, 'newUser', {firstname:'Half', lastname:'Way', username:'half.way', email:'half.way@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+  const hid = r0.json.result.id, re = await op(a, 'enrolUser', {cid, userId:hid, role:'student'}); assert.ok(re.status === 200 || /already enrolled/.test(re.text), re.text);
+  const tracked = Core.H(getState(), hid).courseMods(cid).filter(Core.H(getState(), hid).trackable);
+  const page = tracked.find(m => m.type === 'page' || m.type === 'file'); if (page) getState().completion[hid + ':' + page.id] = Date.now();
+  const halfBefore = Core.H(getState(), hid).progress(cid, hid);
+  // the course grows
+  const sid = getState().courses.find(c => c.id === cid).sections[0].id;
+  for (const name of ['New reading A', 'New reading B']) assert.equal((await op(a, 'saveMod', {cid, sid, type:'page', name, intro:'', visible:true, fields:{content:'More to read'}})).status, 200);
+  const S1 = getState(), h1 = Core.H(S1, uid);
+  assert.equal(h1.progress(cid, uid), 100, 'still 100% for the person who had completed it');
+  assert.equal(h1.status(cid, uid), 'completed');
+  assert.equal(S1.enrol.find(e => e.courseId === cid && e.userId === uid).completedAt, doneE.completedAt, 'completion date untouched');
+  const st = (await call('GET', '/api/state', null, a)).json.state, hv = Core.H(st, st.me);
+  assert.equal(hv.progress(cid, uid), 100, 'reports show 100% too');
+  const halfAfter = Core.H(S1, hid).progress(cid, hid);
+  assert.ok(halfAfter < 100 && (halfBefore === 0 || halfAfter < halfBefore), 'people who have not completed it see the new activities in their percentage');
+  // a new cycle counts afresh against the course as it is now
+  S1.enrol.find(e => e.courseId === cid && e.userId === uid).completedAt = null;
+  try { assert.ok(Core.H(S1, uid).progress(cid, uid) < 100); } finally { S1.enrol.find(e => e.courseId === cid && e.userId === uid).completedAt = doneE.completedAt; }
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
