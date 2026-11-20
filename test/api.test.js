@@ -1247,6 +1247,29 @@ test('a completed course stays at 100% when activities are added afterwards', as
   try { assert.ok(Core.H(S1, uid).progress(cid, uid) < 100); } finally { S1.enrol.find(e => e.courseId === cid && e.userId === uid).completedAt = doneE.completedAt; }
 });
 
+test('site address: slips are repaired so links in emails work (scheme typed twice, missing colon, path, slash)', async () => {
+  const n = Core.normSiteUrl;
+  for (const [v, want] of [['https://https//lms.nbacademy.in', 'https://lms.nbacademy.in'], ['https//lms.nbacademy.in', 'https://lms.nbacademy.in'], ['https://https://lms.nbacademy.in/', 'https://lms.nbacademy.in'],
+    ['lms.nbacademy.in', 'https://lms.nbacademy.in'], [' https://lms.nbacademy.in/login ', 'https://lms.nbacademy.in'], ['http://localhost:8080/', 'http://localhost:8080'], ['HTTPS://LMS.nbacademy.IN', 'https://lms.nbacademy.in'], ['', '']])
+    assert.equal(n(v), want, v);
+  assert.equal(n('not a site'), null); assert.equal(n('https://'), null);
+  // repaired at start-up, with an audit line
+  const S = {site:{url:'https://https//lms.nbacademy.in'}, users:[], cohorts:[], rules:[]};
+  const out = Core.tidyData(S); assert.equal(S.site.url, 'https://lms.nbacademy.in'); assert.ok(out.some(x => /Site address corrected/.test(x)));
+  // saved through the settings form
+  const a = await login('admin'), keep = getState().site.url;
+  try {
+    let r = await op(a, 'siteSettings', {name:getState().site.name, tagline:getState().site.tagline, demo:getState().site.demo, url:'https://https//lms.nbacademy.in'}); assert.equal(r.status, 200, r.text);
+    assert.equal(getState().site.url, 'https://lms.nbacademy.in');
+    r = await op(a, 'siteSettings', {name:getState().site.name, tagline:getState().site.tagline, demo:getState().site.demo, url:'not a site'}); assert.equal(r.status, 400); assert.match(r.text, /should look like/);
+    // the set-password link in the welcome email uses the clean address
+    getState().site.url = 'https://https//lms.nbacademy.in';
+    const r0 = await op(a, 'newUser', {firstname:'Link', lastname:'Check', username:'link.check', email:'link.check@example.com', welcome:true, personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+    const mail = getState().outbox.filter(m => m.to === 'link.check@example.com' && m.key === 'welcome').pop(); assert.ok(mail, 'welcome email queued');
+    assert.match(mail.body + mail.html, /https:\/\/lms\.nbacademy\.in\/\?go=setpassword&(amp;)?id=/); assert.doesNotMatch(mail.body + mail.html, /https:\/\/https/);
+  } finally { getState().site.url = keep; }
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

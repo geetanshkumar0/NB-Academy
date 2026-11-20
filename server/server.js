@@ -70,7 +70,7 @@ if (store.isEmpty()) {
   }
   store.save(S);
 } else S = store.load();
-const siteUrl = () => (process.env.NB_PUBLIC_URL || S.site.url || '').replace(/\/+$/, '');
+const siteUrl = () => { const v = process.env.NB_PUBLIC_URL || S.site.url || ''; return Core.normSiteUrl(v) || v.replace(/\/+$/, ''); }; // repaired, e.g. a scheme typed twice
 /* Links in emails must be full web addresses. Use the site address setting (or NB_PUBLIC_URL);
    until one is set, use the address people reach this server at. */
 let seenOrigin = '';

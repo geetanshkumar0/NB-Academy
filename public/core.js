@@ -545,6 +545,16 @@ const teamsOf = S => Array.isArray(S.site.teams) && S.site.teams.length ? S.site
    - Company is no longer used: remove it from users and cohorts, and remove rules that matched on it.
    - The team "Training" became "Training Team". */
 const RENAMED_TEAMS = {'training':'Training Team'};
+/* The site's public address, as typed in Site administration › General. Repairs common slips such as a scheme typed twice
+   ("https://https//lms.example.in"), a missing colon ("https//…"), a missing scheme ("lms.example.in"), a trailing slash
+   or a page path, and returns just the origin, e.g. "https://lms.example.in". '' when empty; null when it is not an address. */
+function normSiteUrl(v) {
+  let s = String(v ?? '').trim(); if (!s) return '';
+  const http = /^http:/i.test(s) && !/^https/i.test(s);
+  s = s.replace(/^(?:\s*h?t?tps?:?\/*)+/i, ''); // every leading "https://", "https//", "http:/", ... however many times
+  try { const u = new URL((http ? 'http://' : 'https://') + s); if (!/^[a-z0-9.-]+$/i.test(u.hostname) || !(u.hostname.includes('.') || u.hostname === 'localhost')) return null; return u.origin; }
+  catch (e) { return null; }
+}
 function tidyData(S) {
   const out = [], ren = v => { const k = String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' '); return RENAMED_TEAMS[k] || null; };
   let comp = 0, moved = 0;
@@ -562,6 +572,8 @@ function tidyData(S) {
   const br = S.site?.branding; if (br && S.site.brandColours !== 2) { S.site.brandColours = 2; if (br.primary !== '#FB3753' || br.accent !== '#000000') { br.primary = '#FB3753'; br.accent = '#000000'; out.push('Brand colours set: primary #FB3753, accent black'); } }
   // The NoBroker Academy logo (brand-assets.js) replaces a logo uploaded before, once; a logo uploaded later in Branding is kept
   if (br && (S.site.brandLogo || 0) < 3) { S.site.brandLogo = 3; if (br.logo) { br.logo = null; out.push('Site logo: replaced by the built-in NoBroker Academy logo'); } } // 3: November 2026 logo
+  // Site address: repair one saved with a slip (it is the start of every link in emails, e.g. password set-up links)
+  if (S.site?.url) { const fixed = normSiteUrl(S.site.url); if (fixed && fixed !== S.site.url) { out.push(`Site address corrected: "${S.site.url}" → "${fixed}"`); S.site.url = fixed; } }
   if (Array.isArray(S.site?.teams)) {
     const before = S.site.teams.length, list = [];
     for (const t of S.site.teams) { const v = ren(t) || t; if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v); }
@@ -639,7 +651,7 @@ function fill(tpl, vars) { return String(tpl || '').replace(/\{(\w+)\}/g, (m, k)
 const USERNAME_RE = /^[A-Za-z0-9._-]+$/, USERNAME_RULE = 'Username may only use letters, numbers, dot, dash and underscore';
 const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
 const findUser = (S, name) => S.users.find(u => sameName(u.username, name));
-function linkTo(S, go, id) { return `${S.site.url || ''}/?go=${encodeURIComponent(go || 'dashboard')}${id ? `&id=${encodeURIComponent(id)}` : ''}`; }
+function linkTo(S, go, id) { return `${normSiteUrl(S.site.url) || ''}/?go=${encodeURIComponent(go || 'dashboard')}${id ? `&id=${encodeURIComponent(id)}` : ''}`; }
 function fmtD(t) { return t ? new Date(t).toLocaleString('en-IN', {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—'; }
 function queueEmail(S, env, u, subject, body, key, html) {
   if (!u?.email) return;
@@ -997,7 +1009,7 @@ op('updateProfile', (S, h, p, env) => {
     if (u.id !== h.meId) audit(S, env, h.meId, 'Password reset by administrator', u.username);
   }
 });
-op('siteSettings', (S, h, p) => { need(h.has('site:config'), 'You cannot change site settings.'); S.site.name = req(p.name, 'Site name', 120); S.site.tagline = str(p.tagline, 400); S.site.demo = !!p.demo; S.site.url = str(p.url, 200).trim().replace(/\/+$/, ''); });
+op('siteSettings', (S, h, p) => { need(h.has('site:config'), 'You cannot change site settings.'); S.site.name = req(p.name, 'Site name', 120); S.site.tagline = str(p.tagline, 400); S.site.demo = !!p.demo; const url = normSiteUrl(str(p.url, 200)); need(url !== null, 'The site address should look like https://lms.yourcompany.com', 400); S.site.url = url; });
 op('newCategory', (S, h, p, env) => { need(h.has('course:create'), 'You cannot create categories.'); S.categories.push({id:env.uid('k'), name:req(p.name, 'Category name', 120)}); });
 op('newCourse', (S, h, p, env) => {
   need(h.has('course:create'), 'You cannot create courses.');
@@ -1741,5 +1753,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile, mayDownloadFile, DOC_SECONDS,
   gradeQ, correctText, reviewOf, parseCSV, csvGrid, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, normSiteUrl, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });
