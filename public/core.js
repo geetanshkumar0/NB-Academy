@@ -1119,6 +1119,35 @@ op('uploadUsers', (S, h, p, env) => {
   return res;
 });
 op('backupCourse', (S, h, p, env) => { need(h.has('backup:course', p.cid), 'You cannot back up this course.'); const b = backupCourse(S, p.cid, !!p.includeUsers && h.has('grade:viewall', p.cid)); log(S, env, h.meId, 'Course backup created', p.cid); return b; });
+/* Copy sections (with their activities) into course `to`: new ids, nothing tied to people or meetings of the original,
+   "unlocks after" links remapped inside the copy (links to activities that were not copied are dropped). Returns old→new ids. */
+function copySections(S, env, sections, to) {
+  const map = new Map();
+  for (const s of sections) {
+    const ns = {...clone(s), id:env.uid('s'), mods:[]};
+    for (const mid of s.mods) { const m = S.mods[mid]; if (!m) continue;
+      const nm = clone(m); nm.id = env.uid('m'); nm.courseId = to.id; map.set(mid, nm.id); ns.mods.push(nm.id);
+      for (const k of ['invitees', 'invited', 'inviteEmails', 'room', 'recordingFileId', 'recordingUrl']) delete nm[k];
+      if (nm.type === 'workshop') nm.phase = 1;
+      S.mods[nm.id] = nm; }
+    to.sections.push(ns);
+  }
+  for (const id of map.values()) { const m = S.mods[id]; if (Array.isArray(m.requires)) m.requires = m.requires.map(x => map.get(x)).filter(Boolean); }
+  return map;
+}
+/* Import sections from another course: copies of the chosen sections, with their activities, quiz questions and files,
+   added at the end of this course. For people who can edit both courses (administrators, content moderators, course authors of both). */
+op('importSections', (S, h, p, env) => {
+  const to = courseOf(S, p.cid), from = courseOf(S, p.from);
+  need(h.canEdit(to.id), 'You cannot edit this course.'); need(h.canEdit(from.id), 'You can only import from courses you can edit.');
+  need(from.id !== to.id, 'Choose another course to import from.', 400);
+  const ids = [...new Set(Array.isArray(p.sids) ? p.sids : [])], picked = from.sections.filter(s => ids.includes(s.id));
+  need(picked.length && picked.length === ids.length, 'Choose at least one section to import.', 400);
+  const map = copySections(S, env, picked, to);
+  log(S, env, h.meId, `Imported ${picked.length} section${picked.length === 1 ? '' : 's'} from ${from.shortname}`, to.id);
+  audit(S, env, h.meId, 'Sections imported', `${from.shortname} → ${to.shortname}`, picked.map(s => s.name).join(', ') + ` (${map.size} activities)`);
+  return {sections:picked.length, activities:map.size};
+});
 /* Clone a course: a new draft with the same settings, sections, activities, quiz questions, files and badges.
    No people come across (enrolments, progress, attempts, submissions, posts, group chats, live-session invitations).
    Administrators (and super administrators) and content moderators only. */
@@ -1130,19 +1159,9 @@ op('cloneCourse', (S, h, p, env) => {
   if (short) need(!S.courses.some(c => c.shortname.toLowerCase() === short.toLowerCase()), 'That short name is already used by another course.', 400);
   else { const base = `${src.shortname}-COPY`.slice(0, 36); short = base; for (let k = 2; S.courses.some(c => c.shortname.toLowerCase() === short.toLowerCase()); k++) short = `${base}-${k}`; }
   const catId = p.catId && h.cat(p.catId) ? p.catId : src.catId;
-  const cid = env.uid('c'), map = new Map();
+  const cid = env.uid('c');
   const c = {...clone(src), id:cid, fullname, shortname:short, catId, status:'draft', version:0, created:env.now(), clonedFrom:src.id, sections:[]};
-  for (const s of src.sections) {
-    const ns = {...clone(s), id:env.uid('s'), mods:[]};
-    for (const mid of s.mods) { const m = S.mods[mid]; if (!m) continue;
-      const nm = clone(m); nm.id = env.uid('m'); nm.courseId = cid; map.set(mid, nm.id); ns.mods.push(nm.id);
-      // nothing tied to the people or meetings of the original
-      for (const k of ['invitees', 'invited', 'inviteEmails', 'room', 'recordingFileId', 'recordingUrl']) delete nm[k];
-      if (nm.type === 'workshop') nm.phase = 1;
-      S.mods[nm.id] = nm; }
-    c.sections.push(ns);
-  }
-  for (const id of map.values()) { const m = S.mods[id]; if (Array.isArray(m.requires)) m.requires = m.requires.map(x => map.get(x)).filter(Boolean); }
+  const map = copySections(S, env, src.sections, c);
   S.courses.push(c);
   for (const bd of S.badges.filter(x => x.courseId === src.id)) S.badges.push({...clone(bd), id:env.uid('b'), courseId:cid, created:env.now(), criteria:{...bd.criteria, mods:(bd.criteria?.mods || []).map(x => map.get(x)).filter(Boolean)}});
   log(S, env, h.meId, `Course cloned: ${src.shortname} → ${short}`, cid);

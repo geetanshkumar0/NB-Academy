@@ -1305,6 +1305,27 @@ test('cloning a course: admins and content moderators get a draft copy with cont
   delete m2.requires;
 });
 
+test('import sections from another course: copies go to the end, the source is unchanged, editors of both only', async () => {
+  const a = await login('admin'), S = getState(), from = S.courses.find(c => c.id === 'c3'), to = S.courses.find(c => c.id === 'c1');
+  const pick = from.sections.filter(s => s.mods.some(id => S.mods[id])).slice(0, 2); assert.ok(pick.length >= 1);
+  const fromBefore = JSON.stringify(from.sections), toCount = to.sections.length, srcModCount = Object.values(S.mods).filter(m => m.courseId === 'c3').length;
+  const r = await op(a, 'importSections', {cid:'c1', from:'c3', sids:pick.map(s => s.id)}); assert.equal(r.status, 200, r.text);
+  const S2 = getState(), t2 = S2.courses.find(c => c.id === 'c1'), added = t2.sections.slice(toCount);
+  assert.equal(added.length, pick.length); assert.deepEqual(added.map(s => s.name), pick.map(s => s.name), 'same names, same order, at the end');
+  const want = pick.reduce((n, s) => n + s.mods.filter(id => S2.mods[id]).length, 0);
+  assert.equal(r.json.result.activities, want); assert.equal(added.reduce((n, s) => n + s.mods.length, 0), want);
+  for (const s of added) for (const id of s.mods) { assert.equal(S2.mods[id].courseId, 'c1'); assert.ok(!pick.some(p => p.mods.includes(id)), 'new ids'); for (const rq of S2.mods[id].requires || []) assert.equal(S2.mods[rq].courseId, 'c1'); }
+  assert.deepEqual(added.flatMap(s => s.mods.map(id => S2.mods[id].name)), pick.flatMap(s => s.mods.filter(id => S2.mods[id]).map(id => S2.mods[id].name)));
+  assert.equal(JSON.stringify(S2.courses.find(c => c.id === 'c3').sections), fromBefore, 'source course unchanged');
+  assert.equal(Object.values(S2.mods).filter(m => m.courseId === 'c3').length, srcModCount);
+  assert.ok(S2.audit.some(x => x.action === 'Sections imported'));
+  assert.equal((await op(a, 'importSections', {cid:'c1', from:'c3', sids:[]})).status, 400, 'nothing chosen');
+  assert.equal((await op(a, 'importSections', {cid:'c1', from:'c1', sids:[to.sections[0].id]})).status, 400, 'same course');
+  assert.equal((await op(a, 'importSections', {cid:'c1', from:'c3', sids:['nope']})).status, 400, 'unknown section');
+  assert.equal((await op(await login('asha'), 'importSections', {cid:'c1', from:'c3', sids:[pick[0].id]})).status, 403, 'learners cannot');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-activities.js'), 'utf8'), /data-act="importSections"/);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

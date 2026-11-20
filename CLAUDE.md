@@ -77,6 +77,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 
 - **Clone a course:** op `cloneCourse` {cid, fullname?, shortname?, catId?} (core.js) — administrators and content moderators only. New draft course with the same settings, sections, activities (new ids, `requires` remapped; live-session invitations, room and recording dropped), quiz questions, files (shared file ids) and badges; no enrolments or learner data. Buttons: course Settings page ("Clone course") and Site administration › Courses ("Clone"); modal in actions.js.
 
+- **Import sections:** op `importSections` {cid, from, sids} (core.js) — for people who can edit both courses. Copies the chosen sections and their activities to the end of the course via `copySections` (shared with `cloneCourse`); the source is unchanged; no learner data. UI: "Import sections from another course" under "+ Add section" in edit mode (modal in actions.js, `data-change="importFrom"` swaps the section list).
+
 - **Course completion:** `enrolment.completedAt` is set once, when every tracked activity is done (`touch` in core.js). `h.status` is `completed` from then on, and `h.progress` returns 100 for a completed enrolment even if activities are added to the course later; a new cycle (recertification/reset clears `completedAt`) counts afresh.
 
 - **Locks** (step-by-step order `modLock`, overdue lockout `isLocked`, learning-path order `pathLock`) apply only to learners who cannot edit the course: `h.editsCourse(cid)` exempts editors and admins even when they are also enrolled as learners.

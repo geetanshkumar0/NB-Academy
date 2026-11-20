@@ -162,6 +162,15 @@ const A = {
     <div class="fgrid"><div class="field"><label for="cls">Short name</label><input id="cls" name="shortname" type="text" maxlength="40" placeholder="${esc(c.shortname)}-COPY"></div>
       <div class="field"><label for="clc">Category</label><select id="clc" name="catId">${S.categories.map(k => `<option value="${k.id}" ${k.id === c.catId ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div></div>
     <p class="err" id="clerr" role="alert" hidden></p><div class="row"><button class="btn primary" type="submit">Clone</button><button class="btn" type="button" data-act="closeModal">Cancel</button></div></form>`); },
+  // Import sections: pick a course you can edit, tick its sections, copies go at the end of this course
+  importSections: d => { const others = S.courses.filter(x => x.id !== d.cid && h.canEdit(x.id)).sort((a, b) => a.fullname.localeCompare(b.fullname));
+    const list = cid => { const c = h.course(cid); return c.sections.map((s, i) => { const n = s.mods.filter(id => S.mods[id]).length; return `<label class="check"><input type="checkbox" name="sids" value="${s.id}" ${n ? '' : ''}> <span><b>${esc(s.name || (i ? `Section ${i}` : 'General'))}</b> <span class="muted small">${n} activit${n === 1 ? 'y' : 'ies'}</span></span></label>`; }).join('') || '<p class="muted">This course has no sections.</p>'; };
+    openModal('Import sections', `<form data-form="importSections" class="stack"><input type="hidden" name="cid" value="${d.cid}">
+      <p class="muted">Copies the sections you tick, with their activities, quiz questions and files, to the end of <b>${esc(h.course(d.cid).fullname)}</b>. The other course does not change. No learners' progress comes across.</p>
+      <div class="field"><label for="isfrom">Import from</label><select id="isfrom" name="from" data-change="importFrom">${others.map(x => `<option value="${x.id}">${esc(x.fullname)} (${esc(x.shortname)})</option>`).join('')}</select></div>
+      <fieldset class="field"><legend class="lbl">Sections</legend><div id="islist" class="stack" style="gap:6px;max-height:45vh;overflow:auto">${others[0] ? list(others[0].id) : ''}</div></fieldset>
+      <p class="err" id="iserr" role="alert" hidden></p><div class="row"><button class="btn primary" type="submit">Import</button><button class="btn" type="button" data-act="closeModal">Cancel</button></div></form>`);
+    ui.importList = list; },
   newCourse: () => openModal('Create new course', `<form data-form="newCourse" class="stack"><div class="fgrid">
       <div class="field full"><label for="nc1">Course full name</label><input id="nc1" name="fullname" type="text" required></div>
       <div class="field"><label for="nc2">Course short name</label><input id="nc2" name="shortname" type="text" required placeholder="e.g. LD101"></div>
@@ -217,6 +226,8 @@ const F = {
   profile: d => act('updateProfile', d, 'Profile updated'),
   siteSettings: (d, f) => act('siteSettings', {...d, demo:checked(f, 'demo')}, 'Site settings saved'),
   newCategory: d => act('newCategory', d, 'Category added'),
+  importSections: async d => { const sids = [...document.querySelectorAll('#islist input[name=sids]:checked')].map(x => x.value);
+    const r = await act('importSections', {cid:d.cid, from:d.from, sids}, null, {errEl:'iserr'}); if (r !== FAIL) { closeModal(); toast(`Imported ${r.sections} section${r.sections === 1 ? '' : 's'} (${r.activities} activit${r.activities === 1 ? 'y' : 'ies'})`); } },
   cloneCourse: async d => { const r = await act('cloneCourse', d, 'Course cloned. It is a draft until you publish it.', {errEl:'clerr'}); if (r !== FAIL) { closeModal(); go('course', {id:r.id}); } },
   newCourse: async d => { const r = await act('newCourse', d, 'Course created', {silent:true, errEl:'ncerr'}); if (r !== FAIL) { closeModal(); go('course', {id:r.id}); } },
   newUser: async (d, f) => { const r = await act('newUser', {...d, admin:checked(f, 'admin')}, 'User created', {silent:true, errEl:'nuerr'}); if (r !== FAIL) { closeModal(); render(); } },
@@ -364,6 +375,7 @@ document.addEventListener('change', e => {
   else if (t.dataset.csv) readText(t, 'csvtext');
   else if (t.dataset.restore) readText(t, 'rtext');
   else if (t.dataset.award) act('awardBadge', {bid:t.dataset.award, userId:t.dataset.u, on:t.checked}, t.checked ? 'Badge awarded' : 'Badge revoked');
+  else if (t.dataset.change === 'importFrom') { const l = document.getElementById('islist'); if (l && ui.importList) l.innerHTML = ui.importList(t.value); }
   else if (t.dataset.change === 'userStatus') { const l = document.getElementById('ulist'); if (l) l.dataset.only = t.value; ui.userStatus = t.value; }
   else if (t.dataset.change === 'changeRole') act('changeRole', {cid:t.dataset.cid, userId:t.dataset.u, role:t.value}, 'Role changed');
   else if (t.dataset.change === 'copyRole') { const r = h.role(t.value); document.querySelectorAll('input[name^="cap:"]').forEach(cb => cb.checked = !!r?.caps[cb.name.slice(4)]); }
