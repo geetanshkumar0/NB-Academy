@@ -75,6 +75,8 @@ A change flows like this: the browser sends `POST /api/op {op, payload}`. The se
 
 - **Site address:** `S.site.url` (Site administration › General) starts every link in emails. `normSiteUrl` (core.js) repairs slips (scheme typed twice, missing colon, no scheme, path, trailing slash) and returns the origin; used by `siteSettings` (refuses non-addresses), `linkTo`, `siteUrl()` in server.js (also for `NB_PUBLIC_URL`) and `tidyData` (fixes a saved value at start-up, logged in the audit log).
 
+- **Clone a course:** op `cloneCourse` {cid, fullname?, shortname?, catId?} (core.js) — administrators and content moderators only. New draft course with the same settings, sections, activities (new ids, `requires` remapped; live-session invitations, room and recording dropped), quiz questions, files (shared file ids) and badges; no enrolments or learner data. Buttons: course Settings page ("Clone course") and Site administration › Courses ("Clone"); modal in actions.js.
+
 - **Course completion:** `enrolment.completedAt` is set once, when every tracked activity is done (`touch` in core.js). `h.status` is `completed` from then on, and `h.progress` returns 100 for a completed enrolment even if activities are added to the course later; a new cycle (recertification/reset clears `completedAt`) counts afresh.
 
 - **Locks** (step-by-step order `modLock`, overdue lockout `isLocked`, learning-path order `pathLock`) apply only to learners who cannot edit the course: `h.editsCourse(cid)` exempts editors and admins even when they are also enrolled as learners.

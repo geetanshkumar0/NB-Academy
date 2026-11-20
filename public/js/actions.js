@@ -155,6 +155,13 @@ const A = {
   // Mark a person inactive (asks first) or active again
   suspend: d => { const u = h.user(d.u); if (!d.on) return act('suspendUser', {id:d.u, on:false}, `${fullname(u)} is active again`);
     confirmBox('Mark as inactive', `Mark <b>${esc(fullname(u))}</b> as inactive?<br><br>They will not be able to sign in, will get no emails or reminders, and cannot be given new training. Their courses, progress, grades, certificates and place in reports all stay, and you can mark them as active again at any time.`, () => act('suspendUser', {id:d.u, on:true}, `${fullname(u)} marked as inactive`), 'Mark as inactive'); },
+  // Clone a course: asks for the new name, short name and category, then opens the copy
+  cloneCourse: d => { const c = h.course(d.id); openModal('Clone course', `<form data-form="cloneCourse" class="stack"><input type="hidden" name="cid" value="${c.id}">
+    <p class="muted">Makes a new <b>draft</b> course with the same settings, sections, activities, quiz questions, files and badges. Nobody is enrolled in the copy, and no progress, attempts or posts come across.</p>
+    <div class="field"><label for="clf">Full name</label><input id="clf" name="fullname" type="text" required value="${esc(c.fullname)} (copy)"></div>
+    <div class="fgrid"><div class="field"><label for="cls">Short name</label><input id="cls" name="shortname" type="text" maxlength="40" placeholder="${esc(c.shortname)}-COPY"></div>
+      <div class="field"><label for="clc">Category</label><select id="clc" name="catId">${S.categories.map(k => `<option value="${k.id}" ${k.id === c.catId ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div></div>
+    <p class="err" id="clerr" role="alert" hidden></p><div class="row"><button class="btn primary" type="submit">Clone</button><button class="btn" type="button" data-act="closeModal">Cancel</button></div></form>`); },
   newCourse: () => openModal('Create new course', `<form data-form="newCourse" class="stack"><div class="fgrid">
       <div class="field full"><label for="nc1">Course full name</label><input id="nc1" name="fullname" type="text" required></div>
       <div class="field"><label for="nc2">Course short name</label><input id="nc2" name="shortname" type="text" required placeholder="e.g. LD101"></div>
@@ -210,6 +217,7 @@ const F = {
   profile: d => act('updateProfile', d, 'Profile updated'),
   siteSettings: (d, f) => act('siteSettings', {...d, demo:checked(f, 'demo')}, 'Site settings saved'),
   newCategory: d => act('newCategory', d, 'Category added'),
+  cloneCourse: async d => { const r = await act('cloneCourse', d, 'Course cloned. It is a draft until you publish it.', {errEl:'clerr'}); if (r !== FAIL) { closeModal(); go('course', {id:r.id}); } },
   newCourse: async d => { const r = await act('newCourse', d, 'Course created', {silent:true, errEl:'ncerr'}); if (r !== FAIL) { closeModal(); go('course', {id:r.id}); } },
   newUser: async (d, f) => { const r = await act('newUser', {...d, admin:checked(f, 'admin')}, 'User created', {silent:true, errEl:'nuerr'}); if (r !== FAIL) { closeModal(); render(); } },
   courseSettings: async (d, f) => { if (await act('courseSettings', {...d, visible:checked(f, 'visible'), selfenrol:checked(f, 'selfenrol')}, 'Course settings saved', {silent:true}) !== FAIL) go('course', {id:d.cid}); },

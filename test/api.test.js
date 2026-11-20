@@ -1270,6 +1270,41 @@ test('site address: slips are repaired so links in emails work (scheme typed twi
   } finally { getState().site.url = keep; }
 });
 
+test('cloning a course: admins and content moderators get a draft copy with content but no people', async () => {
+  const a = await login('admin'), src = getState().courses.find(c => c.id === 'c1');
+  const srcMods = Object.values(getState().mods).filter(m => m.courseId === 'c1');
+  // give the source something to check: a prerequisite link and an enrolment with progress
+  const [m1, m2] = srcMods.filter(m => m.type !== 'label'); m2.requires = [m1.id];
+  let r = await op(a, 'cloneCourse', {cid:'c1'}); assert.equal(r.status, 200, r.text);
+  const S = getState(), cp = S.courses.find(c => c.id === r.json.result.id);
+  assert.equal(cp.fullname, `${src.fullname} (copy)`); assert.equal(cp.shortname, `${src.shortname}-COPY`); assert.equal(cp.status, 'draft'); assert.equal(cp.catId, src.catId);
+  assert.equal(cp.sections.length, src.sections.length); assert.deepEqual(cp.sections.map(s => s.name), src.sections.map(s => s.name));
+  const cpMods = Object.values(S.mods).filter(m => m.courseId === cp.id);
+  assert.equal(cpMods.length, src.sections.reduce((n, s) => n + s.mods.filter(id => S.mods[id]).length, 0), 'every activity copied');
+  assert.ok(cpMods.every(m => !srcMods.some(x => x.id === m.id)), 'new activity ids');
+  assert.deepEqual(cp.sections.flatMap(s => s.mods.map(id => S.mods[id].name)), src.sections.flatMap(s => s.mods.filter(id => S.mods[id]).map(id => S.mods[id].name)), 'same order');
+  const q1 = srcMods.find(m => m.type === 'quiz' && m.questions?.length), q2 = q1 && cpMods.find(m => m.name === q1.name && m.type === 'quiz');
+  if (q1) assert.equal(q2.questions.length, q1.questions.length, 'quiz questions copied');
+  const c2 = cpMods.find(m => m.name === m2.name); assert.equal(S.mods[c2.requires[0]].courseId, cp.id, 'prerequisites point inside the copy');
+  assert.equal(S.enrol.filter(e => e.courseId === cp.id).length, 0, 'nobody enrolled in the copy');
+  assert.ok(S.audit.some(x => x.action === 'Course cloned'));
+  // second clone gets a free short name; a taken one is refused; own name and category are kept
+  r = await op(a, 'cloneCourse', {cid:'c1'}); assert.equal(r.json.result.shortname, `${src.shortname}-COPY-2`);
+  r = await op(a, 'cloneCourse', {cid:'c1', shortname:src.shortname}); assert.equal(r.status, 400);
+  const cat = S.categories.find(k => k.id !== src.catId) || S.categories[0];
+  r = await op(a, 'cloneCourse', {cid:'c1', fullname:'Excel 2027', shortname:'XL27', catId:cat.id}); assert.equal(r.status, 200);
+  const named = getState().courses.find(c => c.id === r.json.result.id); assert.equal(named.fullname, 'Excel 2027'); assert.equal(named.shortname, 'XL27'); assert.equal(named.catId, cat.id);
+  // content moderators can; trainers and learners cannot
+  const r0 = await op(a, 'newUser', {firstname:'Mo', lastname:'Derator', username:'clone.mod', email:'clone.mod@example.com', welcome:false, password:'Pass@2026', personas:['moderator']}); assert.equal(r0.status, 200, r0.text);
+  Object.assign(getState().users.find(x => x.id === r0.json.result.id), {mustChangePassword:false, termsAccepted:99, prefsSet:true});
+  if (!getState().sysroles.some(x => x.userId === r0.json.result.id && x.roleId === 'moderator')) getState().sysroles.push({id:'sr_clone', userId:r0.json.result.id, roleId:'moderator', ctx:null});
+  assert.equal((await op(await login('clone.mod', 'Pass@2026'), 'cloneCourse', {cid:'c1'})).status, 200, 'moderator');
+  assert.equal((await op(await login('rohan'), 'cloneCourse', {cid:'c1'})).status, 403, 'trainer');
+  assert.equal((await op(await login('asha'), 'cloneCourse', {cid:'c1'})).status, 403, 'learner');
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-course.js'), 'utf8'); assert.match(ui, /h\.isAdmin\(\) \|\| h\.isModerator\(\) \? `<button class="btn" type="button" data-act="cloneCourse"/);
+  delete m2.requires;
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

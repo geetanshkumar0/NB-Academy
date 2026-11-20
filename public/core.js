@@ -1119,6 +1119,36 @@ op('uploadUsers', (S, h, p, env) => {
   return res;
 });
 op('backupCourse', (S, h, p, env) => { need(h.has('backup:course', p.cid), 'You cannot back up this course.'); const b = backupCourse(S, p.cid, !!p.includeUsers && h.has('grade:viewall', p.cid)); log(S, env, h.meId, 'Course backup created', p.cid); return b; });
+/* Clone a course: a new draft with the same settings, sections, activities, quiz questions, files and badges.
+   No people come across (enrolments, progress, attempts, submissions, posts, group chats, live-session invitations).
+   Administrators (and super administrators) and content moderators only. */
+op('cloneCourse', (S, h, p, env) => {
+  need(h.isAdmin() || h.isModerator(), 'Only administrators and content moderators can clone courses.');
+  const src = courseOf(S, p.cid);
+  const fullname = req(String(p.fullname ?? '').trim() || `${src.fullname} (copy)`, 'Full name', 200);
+  let short = str(p.shortname, 40).trim();
+  if (short) need(!S.courses.some(c => c.shortname.toLowerCase() === short.toLowerCase()), 'That short name is already used by another course.', 400);
+  else { const base = `${src.shortname}-COPY`.slice(0, 36); short = base; for (let k = 2; S.courses.some(c => c.shortname.toLowerCase() === short.toLowerCase()); k++) short = `${base}-${k}`; }
+  const catId = p.catId && h.cat(p.catId) ? p.catId : src.catId;
+  const cid = env.uid('c'), map = new Map();
+  const c = {...clone(src), id:cid, fullname, shortname:short, catId, status:'draft', version:0, created:env.now(), clonedFrom:src.id, sections:[]};
+  for (const s of src.sections) {
+    const ns = {...clone(s), id:env.uid('s'), mods:[]};
+    for (const mid of s.mods) { const m = S.mods[mid]; if (!m) continue;
+      const nm = clone(m); nm.id = env.uid('m'); nm.courseId = cid; map.set(mid, nm.id); ns.mods.push(nm.id);
+      // nothing tied to the people or meetings of the original
+      for (const k of ['invitees', 'invited', 'inviteEmails', 'room', 'recordingFileId', 'recordingUrl']) delete nm[k];
+      if (nm.type === 'workshop') nm.phase = 1;
+      S.mods[nm.id] = nm; }
+    c.sections.push(ns);
+  }
+  for (const id of map.values()) { const m = S.mods[id]; if (Array.isArray(m.requires)) m.requires = m.requires.map(x => map.get(x)).filter(Boolean); }
+  S.courses.push(c);
+  for (const bd of S.badges.filter(x => x.courseId === src.id)) S.badges.push({...clone(bd), id:env.uid('b'), courseId:cid, created:env.now(), criteria:{...bd.criteria, mods:(bd.criteria?.mods || []).map(x => map.get(x)).filter(Boolean)}});
+  log(S, env, h.meId, `Course cloned: ${src.shortname} → ${short}`, cid);
+  audit(S, env, h.meId, 'Course cloned', `${src.shortname} → ${short}`, `${map.size} activities`);
+  return {id:cid, shortname:short};
+});
 op('restoreCourse', (S, h, p, env) => {
   need(h.has('backup:restore'), 'You cannot restore courses.');
   let b = p.backup; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { throw new OpError('This file is not a valid NB Academy course backup.', 400); } }
