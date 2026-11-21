@@ -104,6 +104,31 @@ function ensureSiteAdmins() {
   }
   if (changed) store.save(S);
 }
+/* Once per pair listed under "mergeCourses" in server/site-admins.js: move learners and their progress (op mergeCourse),
+   after a backup of the database. Courses are found by full or short name (dashes and spaces ignored); if either name
+   matches no course or more than one, nothing happens and it is tried again at the next start-up. */
+function mergeCoursesAtStart(list) {
+  const done = S.site.coursesMerged || (S.site.coursesMerged = {});
+  const norm = x => String(x || '').toLowerCase().replace(/[\u2010-\u2015-]/g, '-').replace(/\s+/g, ' ').trim();
+  const find = name => S.courses.filter(c => norm(c.fullname) === norm(name) || norm(c.shortname) === norm(name));
+  for (const {from, into} of list || []) {
+    const key = norm(from) + ' → ' + norm(into); if (done[key]) continue;
+    const f = find(from), t = find(into);
+    if (f.length !== 1 || t.length !== 1) { console.log(`Move learners "${from}" → "${into}": ${f.length} and ${t.length} matching courses; skipped`); continue; }
+    const admin = S.users.find(u => u.builtinAdmin && !u.suspended) || S.users.find(u => u.admin && !u.suspended);
+    if (!admin) { console.log('Move learners: no administrator account; skipped'); continue; }
+    const plan = Core.run(Core.clone(S), admin.id, 'mergeCourse', {from:f[0].id, into:t[0].id, preview:true}, env);
+    if (!plan.learners) { done[key] = Date.now(); store.save(S); console.log(`Move learners "${from}" → "${into}": nobody to move`); continue; }
+    try {
+      const dir = path.join(DATA, 'backups'); fs.mkdirSync(dir, {recursive:true});
+      const file = path.join(dir, 'before-moving-learners-' + new Date().toISOString().replace(/[:.]/g, '-') + '.db');
+      store.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+      const r = runOp(admin.id, 'mergeCourse', {from:f[0].id, into:t[0].id});
+      S.site.coursesMerged = {...(S.site.coursesMerged || {}), [key]:Date.now()}; store.save(S);
+      console.log(`Moved ${r.learners} learners (${r.records} progress records) from "${f[0].fullname}" to "${t[0].fullname}". Backup: ${file}`);
+    } catch (e) { console.log(`Move learners "${from}" → "${into}" failed: ${e.message}`); }
+  }
+}
 /* Once per account listed under "unenrolLearner" in server/site-admins.js: remove its learner enrolments in every course */
 function unenrolLearner(list) {
   const done = S.site.learnerUnenrolled || (S.site.learnerUnenrolled = {}); let changed = false;
@@ -180,6 +205,7 @@ if (process.env.NB_MEET_APP_ID) S.site.meetings.appId = process.env.NB_MEET_APP_
 // Demo mode keeps the demo accounts (including 'admin'); the remove list applies to the real site
 removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : DEMO ? [] : siteConfig.remove);
 if (!DEMO) unenrolLearner(siteConfig.unenrolLearner);
+if (!DEMO) mergeCoursesAtStart(siteConfig.mergeCourses);
 
 /* Run an operation. If it fails part-way, reload the last saved state so nothing half-done remains. */
 function runOp(uid, name, payload) {
@@ -642,4 +668,4 @@ if (require.main === module) {
   const stop = () => { try { store.save(S); } catch (x) {} process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
-module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, unenrolLearner, removeDemoData, _store:() => store};
+module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, unenrolLearner, mergeCoursesAtStart, removeDemoData, _store:() => store};

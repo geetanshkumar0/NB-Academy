@@ -14,7 +14,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-test-'));
 process.env.NB_DATA_DIR = dir;
 process.env.NB_DEMO = '1'; // the tests run against the demo data
 process.env.NB_REMOVE_ACCOUNTS = ''; // the tests use the demo accounts; removal is tested directly below
-const {server, getState, deliverMail, runTick, removeAccounts, unenrolLearner, removeDemoData, _store} = require('../server/server.js');
+const {server, getState, deliverMail, runTick, removeAccounts, unenrolLearner, mergeCoursesAtStart, removeDemoData, _store} = require('../server/server.js');
 const Core = require('../public/core.js');
 let base;
 const extras = [];
@@ -1367,6 +1367,37 @@ test('move learners with their progress from a copy of a course back into the or
   assert.equal(S2.courses.find(c => c.id === copy).status, 'archived', 'copy archived');
   assert.ok(S2.audit.some(x => x.action === 'Learners moved between courses'));
   assert.equal((await op(a, 'mergeCourse', {from:copy, into:'c1'})).status, 400, 'nothing left to move');
+});
+
+test('server configuration moves learners from a copy into the original once at start-up, after a backup', async () => {
+  const a = await login('admin');
+  let r = await op(a, 'cloneCourse', {cid:'c3', fullname:'Python Fundamentals – NHT (new)', shortname:'TE110-NEW'}); assert.equal(r.status, 200, r.text);
+  const copy = r.json.result.id;
+  const r0 = await op(a, 'newUser', {firstname:'Start', lastname:'Up', username:'start.up', email:'start.up@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r0.status, 200, r0.text);
+  const uid = r0.json.result.id; assert.equal((await op(a, 'enrolUser', {cid:copy, userId:uid, role:'student'})).status, 200);
+  const S = getState(), cm = Core.H(S, uid).courseMods(copy).find(m => m.type === 'page'); S.completion[uid + ':' + cm.id] = Date.now();
+  const backups = () => { const d = path.join(process.env.NB_DATA_DIR, 'backups'); return fs.existsSync(d) ? fs.readdirSync(d).filter(f => f.startsWith('before-moving-learners')).length : 0; };
+  const nb = backups();
+  getState().courses.find(c => c.id === 'c3').fullname = 'Python Fundamentals - NHT';
+  try {
+    mergeCoursesAtStart([{from:'Python Fundamentals - NHT (new)', into:'Python Fundamentals - NHT'}]); // dash typed differently: still found
+    const S2 = getState();
+    assert.ok(S2.enrol.some(e => e.courseId === 'c3' && e.userId === uid), 'moved into the original');
+    assert.ok(!S2.enrol.some(e => e.courseId === copy && e.userId === uid));
+    const om = Core.H(S2, uid).courseMods('c3').find(m => m.type === 'page' && m.name === cm.name); assert.ok(S2.completion[uid + ':' + om.id], 'progress moved');
+    assert.equal(S2.courses.find(c => c.id === copy).status, 'archived');
+    assert.equal(backups(), nb + 1, 'a backup was written first');
+    assert.equal(Object.keys(S2.site.coursesMerged).length >= 1, true);
+    // runs once: a later enrolment in the copy is left alone
+    S2.courses.find(c => c.id === copy).status = 'published';
+    assert.equal((await op(a, 'enrolUser', {cid:copy, userId:uid, role:'student'})).status, 200);
+    mergeCoursesAtStart([{from:'Python Fundamentals - NHT (new)', into:'Python Fundamentals - NHT'}]);
+    assert.ok(getState().enrol.some(e => e.courseId === copy && e.userId === uid), 'not run twice');
+    // unknown names: nothing happens, tried again later
+    mergeCoursesAtStart([{from:'No such course', into:'Python Fundamentals - NHT'}]);
+    assert.ok(!Object.keys(getState().site.coursesMerged).some(k => k.startsWith('no such')));
+  } finally { getState().courses.find(c => c.id === 'c3').fullname = 'Python Fundamentals'; }
+  assert.ok(require('../server/site-admins.js').mergeCourses.some(x => x.from === 'CPMS Tenant Search - NHT (new)' && x.into === 'CPMS Tenant Search - NHT'));
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

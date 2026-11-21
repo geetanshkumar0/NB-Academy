@@ -30,6 +30,11 @@ module.exports = {
     'rohit.chakrabarti@nobroker.in',
     'gaurav.garg@nobroker.in',
   ],
+  // Once at start-up: move learners with their progress from a course (e.g. a copy) into another, by full name or short name,
+  // after a database backup in data/backups/. Same as course Settings › "Move learners from another course".
+  mergeCourses: [
+    {from:'CPMS Tenant Search - NHT (new)', into:'CPMS Tenant Search - NHT'},   // requested 21 Nov 2026
+  ],
   unenrolLearner: [
     'geetansh.kumar@nobroker.in',     // requested 10 Nov 2026
   ],
