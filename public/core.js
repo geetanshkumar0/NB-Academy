@@ -1148,6 +1148,75 @@ op('importSections', (S, h, p, env) => {
   audit(S, env, h.meId, 'Sections imported', `${from.shortname} → ${to.shortname}`, picked.map(s => s.name).join(', ') + ` (${map.size} activities)`);
   return {sections:picked.length, activities:map.size};
 });
+/* Move learners, with their progress, from one course (e.g. a copy someone made) into another (the original).
+   Activities are paired by type and name (same section name preferred). For each learner enrolled in `from`:
+   their enrolment moves (or merges with one they already have in `into`), and their completions, video/SCORM/reading
+   progress, quiz and lesson attempts, submissions, choices, feedback, workshop entries, live-session attendance,
+   certificates and badges move to the paired activities. When a learner already has the same thing in `into`, the
+   further-along record is kept. Records for activities with no pair stay in `from`. `from` is archived afterwards.
+   With p.preview the plan is returned and nothing changes. Administrators only. */
+function mergePlan(S, h, from, into) {
+  const norm = x => String(x || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const secName = m => norm(h.sectionOf(m)?.name);
+  const targets = h.courseMods(into.id).filter(m => m.type !== 'label'), used = new Set(), map = new Map(), unmatched = [];
+  for (const m of h.courseMods(from.id).filter(m => m.type !== 'label')) {
+    const same = targets.filter(t => !used.has(t.id) && t.type === m.type && norm(t.name) === norm(m.name));
+    const t = same.find(x => secName(x) === secName(m)) || same[0];
+    if (t) { used.add(t.id); map.set(m.id, t.id); } else unmatched.push(m);
+  }
+  const learners = S.enrol.filter(e => e.courseId === from.id && h.role(e.role)?.caps?.['mod:submit']).map(e => e.userId);
+  return {map, unmatched, learners, already:learners.filter(u => h.enrolOf(into.id, u))};
+}
+op('mergeCourse', (S, h, p, env) => {
+  need(h.isAdmin(), 'Only administrators can move learners between courses.');
+  const from = courseOf(S, p.from), into = courseOf(S, p.into); need(from.id !== into.id, 'Choose two different courses.', 400);
+  const plan = mergePlan(S, h, from, into), {map, learners} = plan, who = new Set(learners);
+  const summary = {from:from.fullname, into:into.fullname, learners:learners.length, alreadyEnrolled:plan.already.length, matched:map.size,
+    unmatched:plan.unmatched.map(m => ({name:m.name, type:m.type, section:h.sectionOf(m)?.name || ''})), records:0};
+  const mine = x => who.has(x.userId) && map.has(x.cmid) && !x.preview;
+  const LISTS = ['attempts', 'lessonAttempts', 'submissions', 'choiceAnswers', 'feedbackResponses', 'wsSubs', 'liveSignups', 'certIssued'];
+  summary.records = LISTS.reduce((n, k) => n + (S[k] || []).filter(mine).length, 0)
+    + ['completion', 'resume'].reduce((n, k) => n + Object.keys(S[k]).filter(key => { const [u, mid] = key.split(':'); return who.has(u) && map.has(mid); }).length, 0);
+  if (p.preview) return summary;
+  need(learners.length, 'Nobody is enrolled as a learner in that course.', 400);
+  // one record per person per activity: keep the one already in `into` unless the moved one is further along
+  const ONE = {submissions:x => x.status === 'submitted', choiceAnswers:() => true, feedbackResponses:() => true, wsSubs:() => true, certIssued:() => true, liveSignups:x => x.status === 'present' || x.status === 'late'};
+  for (const k of LISTS) for (const x of (S[k] || []).filter(mine)) {
+    const to = map.get(x.cmid), ok = ONE[k];
+    if (ok) { const have = S[k].find(y => y !== x && y.cmid === to && y.userId === x.userId && !y.archived);
+      if (have && (ok(have) || !ok(x))) { x.archived = true; continue; } if (have) have.archived = true; }
+    x.cmid = to; x.movedFrom = from.id;
+  }
+  const better = (a, b) => (b.completed ? 1 : 0) - (a.completed ? 1 : 0) || (b.seconds || b.watched || b.position || 0) - (a.seconds || a.watched || a.position || 0);
+  for (const k of ['completion', 'resume', 'extraAttempts']) for (const key of Object.keys(S[k])) {
+    const [u, mid] = key.split(':'); if (!who.has(u) || !map.has(mid)) continue;
+    const nk = u + ':' + map.get(mid), v = S[k][key], have = S[k][nk];
+    if (have == null) S[k][nk] = v;
+    else if (k === 'completion') S[k][nk] = Math.min(have, v);
+    else if (k === 'extraAttempts') S[k][nk] = (Number(have) || 0) + (Number(v) || 0);
+    else if (better(have, v) > 0) S[k][nk] = v;
+    delete S[k][key];
+  }
+  // badges of the copy → the original's badge with the same name
+  for (const bi of S.badgeIssued.filter(x => who.has(x.userId))) {
+    const b = S.badges.find(x => x.id === bi.badgeId); if (!b || b.courseId !== from.id) continue;
+    const tb = S.badges.find(x => x.courseId === into.id && x.name.toLowerCase() === b.name.toLowerCase()); if (!tb) continue;
+    if (S.badgeIssued.some(x => x.badgeId === tb.id && x.userId === bi.userId)) S.badgeIssued = S.badgeIssued.filter(x => x !== bi); else bi.badgeId = tb.id;
+  }
+  // enrolments
+  for (const uid of learners) {
+    const e = S.enrol.find(x => x.courseId === from.id && x.userId === uid), have = h.enrolOf(into.id, uid);
+    if (!have) { e.courseId = into.id; e.movedFrom = from.id; }
+    else { if (e.startedAt && (!have.startedAt || e.startedAt < have.startedAt)) have.startedAt = e.startedAt;
+      if (!have.completedAt && e.completedAt) have.completedAt = e.completedAt; S.enrol = S.enrol.filter(x => x !== e); }
+    S.groups.filter(g => g.courseId === from.id).forEach(g => g.members = (g.members || []).filter(m => m !== uid));
+  }
+  for (const uid of learners) checkBadges(S, env, uid, into.id);
+  from.status = 'archived'; from.selfenrol = false; S.rules.forEach(r => { if (r.target?.type === 'course' && r.target.id === from.id) r.active = false; });
+  log(S, env, h.meId, `Learners moved: ${from.shortname} → ${into.shortname}`, into.id);
+  audit(S, env, h.meId, 'Learners moved between courses', `${from.shortname} → ${into.shortname}`, `${learners.length} learners, ${summary.records} progress records; ${from.shortname} archived`);
+  return summary;
+});
 /* Clone a course: a new draft with the same settings, sections, activities, quiz questions, files and badges.
    No people come across (enrolments, progress, attempts, submissions, posts, group chats, live-session invitations).
    Administrators (and super administrators) and content moderators only. */

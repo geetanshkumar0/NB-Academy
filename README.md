@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (89 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (90 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -134,7 +134,7 @@ Every POST must include the header `X-NB-Request: 1`. Together with `SameSite=La
 |---|---|
 | Dashboard, timeline, calendar block | Dashboard with timeline, "needs your attention", mini calendar, recent courses, badges |
 | Course categories, catalogue, self enrolment | Home catalogue with search; self enrolment per course |
-| Course format (topics), edit mode, activity chooser | Sections, course index, edit mode, chooser, move/hide/delete, clone a course, import sections from another course |
+| Course format (topics), edit mode, activity chooser | Sections, course index, edit mode, chooser, move/hide/delete, clone a course, import sections from another course, move learners with their progress from a copy back into the original |
 | Activity completion, progress | Manual and automatic completion, progress bars, completion report |
 | Assignment | Online text and file submissions, due dates, late flags, grading with feedback |
 | Quiz | Multiple choice, true/false, short answer, numerical; time limits; attempt limits; review; server-side grading |

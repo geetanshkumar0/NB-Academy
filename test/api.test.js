@@ -1326,6 +1326,49 @@ test('import sections from another course: copies go to the end, the source is u
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-activities.js'), 'utf8'), /data-act="importSections"/);
 });
 
+test('move learners with their progress from a copy of a course back into the original', async () => {
+  const a = await login('admin'), mk = async (u) => { const r = await op(a, 'newUser', {firstname:u, lastname:'Mover', username:u, email:u + '@example.com', welcome:false, password:'Pass@2026', personas:['learner']}); assert.equal(r.status, 200, r.text); return r.json.result.id; };
+  let r = await op(a, 'cloneCourse', {cid:'c1', fullname:'Excel for Data Analysis (new)', shortname:'DA101-NEW'}); assert.equal(r.status, 200, r.text);
+  const copy = r.json.result.id, S = getState(), modsOf = cid => Core.H(S, S.users[0].id).courseMods(cid);
+  const pair = (type) => { const c = modsOf(copy).find(m => m.type === type), o = c && modsOf('c1').find(m => m.type === type && m.name === c.name); return [c, o]; };
+  const [cPage, oPage] = pair('page'), [cQuiz, oQuiz] = pair('quiz');
+  assert.ok(cPage && oPage && cQuiz && oQuiz);
+  // rename one activity in the copy so it has no pair
+  const lone = modsOf(copy).find(m => m.type === 'forum' && !m.news) || modsOf(copy).find(m => m.id !== cPage.id && m.id !== cQuiz.id && m.type !== 'label'); lone.name = 'Only in the copy';
+  const u1 = await mk('mover.one'), u2 = await mk('mover.two');
+  for (const u of [u1, u2]) { const e = await op(a, 'enrolUser', {cid:copy, userId:u, role:'student'}); assert.equal(e.status, 200, e.text); }
+  const e2 = await op(a, 'enrolUser', {cid:'c1', userId:u2, role:'student'}); assert.ok(e2.status === 200 || /already/.test(e2.text));
+  const St = getState(), t0 = Date.now();
+  St.completion[u1 + ':' + cPage.id] = t0 - 5000;
+  St.attempts.push({id:'a_mv1', cmid:cQuiz.id, userId:u1, state:'finished', answers:{}, start:t0 - 9000, finish:t0 - 8000, score:8, max:10});
+  St.resume[u1 + ':' + cPage.id] = {seconds:130, completed:t0 - 5000};
+  // u2 already has the page done in the original, and some time on it in the copy
+  St.completion[u2 + ':' + oPage.id] = t0 - 90000; St.completion[u2 + ':' + cPage.id] = t0 - 1000;
+  St.resume[u2 + ':' + oPage.id] = {seconds:20}; St.resume[u2 + ':' + cPage.id] = {seconds:125, completed:t0 - 1000};
+  // preview changes nothing
+  const before = JSON.stringify({e:St.enrol, c:St.completion, a:St.attempts.length});
+  r = await op(a, 'mergeCourse', {from:copy, into:'c1', preview:true}); assert.equal(r.status, 200, r.text);
+  const pv = r.json.result; assert.equal(pv.learners, 2); assert.equal(pv.alreadyEnrolled, 1); assert.ok(pv.records >= 4);
+  assert.ok(pv.unmatched.some(m => m.name === 'Only in the copy'), 'renamed activity is reported');
+  assert.equal(JSON.stringify({e:getState().enrol, c:getState().completion, a:getState().attempts.length}), before, 'preview changes nothing');
+  assert.equal((await op(await login('rohan'), 'mergeCourse', {from:copy, into:'c1', preview:true})).status, 403, 'administrators only');
+  // move
+  r = await op(a, 'mergeCourse', {from:copy, into:'c1'}); assert.equal(r.status, 200, r.text);
+  const S2 = getState();
+  assert.ok(S2.enrol.some(e => e.courseId === 'c1' && e.userId === u1), 'u1 now in the original');
+  assert.equal(S2.enrol.filter(e => e.courseId === 'c1' && e.userId === u2).length, 1, 'u2 not enrolled twice');
+  assert.ok(!S2.enrol.some(e => e.courseId === copy && [u1, u2].includes(e.userId)), 'no longer in the copy');
+  assert.equal(S2.completion[u1 + ':' + oPage.id], t0 - 5000, 'completion moved'); assert.equal(S2.completion[u1 + ':' + cPage.id], undefined);
+  assert.equal(S2.attempts.find(x => x.id === 'a_mv1').cmid, oQuiz.id, 'quiz attempt moved');
+  assert.equal(S2.resume[u1 + ':' + oPage.id].seconds, 130);
+  assert.equal(S2.completion[u2 + ':' + oPage.id], t0 - 90000, 'earliest completion kept');
+  assert.equal(S2.resume[u2 + ':' + oPage.id].seconds, 125, 'further-along progress kept');
+  const h = Core.H(S2, u1); assert.ok(h.isDone(S2.mods[oPage.id], u1)); assert.ok(h.progress('c1', u1) > 0);
+  assert.equal(S2.courses.find(c => c.id === copy).status, 'archived', 'copy archived');
+  assert.ok(S2.audit.some(x => x.action === 'Learners moved between courses'));
+  assert.equal((await op(a, 'mergeCourse', {from:copy, into:'c1'})).status, 400, 'nothing left to move');
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

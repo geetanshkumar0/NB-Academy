@@ -171,6 +171,20 @@ const A = {
       <fieldset class="field"><legend class="lbl">Sections</legend><div id="islist" class="stack" style="gap:6px;max-height:45vh;overflow:auto">${others[0] ? list(others[0].id) : ''}</div></fieldset>
       <p class="err" id="iserr" role="alert" hidden></p><div class="row"><button class="btn primary" type="submit">Import</button><button class="btn" type="button" data-act="closeModal">Cancel</button></div></form>`);
     ui.importList = list; },
+  // Move learners (with progress) from another course into this one: choose, preview, confirm
+  mergeCourse: d => { const into = h.course(d.id), others = S.courses.filter(x => x.id !== d.id).sort((a, b) => (b.fullname.includes(into.fullname) - a.fullname.includes(into.fullname)) || a.fullname.localeCompare(b.fullname));
+    openModal('Move learners into this course', `<div class="stack"><p class="muted">Learners enrolled in the course you choose move into <b>${esc(into.fullname)}</b> with their progress.</p>
+      <div class="field"><label for="mgfrom">Move learners from</label><select id="mgfrom">${others.map(x => `<option value="${x.id}">${esc(x.fullname)} (${esc(x.shortname)})</option>`).join('')}</select></div>
+      <div class="row"><button class="btn primary" data-act="mergePreview" data-into="${into.id}">Preview</button><button class="btn" data-act="closeModal">Cancel</button></div><div id="mgout"></div></div>`); },
+  mergePreview: async d => { const from = document.getElementById('mgfrom').value, out = document.getElementById('mgout');
+    let r; try { r = (await B.op('mergeCourse', {from, into:d.into, preview:true})).result; } catch (e) { out.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    out.innerHTML = `<div class="card stack" style="margin-top:12px"><b>What will happen</b><ul style="margin:0;padding-left:20px">
+      <li><b>${r.learners}</b> learner${r.learners === 1 ? '' : 's'} move from ${esc(r.from)}${r.alreadyEnrolled ? ` (${r.alreadyEnrolled} already in this course: their records are combined, keeping whichever is further along)` : ''}.</li>
+      <li><b>${r.matched}</b> activit${r.matched === 1 ? 'y is' : 'ies are'} paired by name, carrying <b>${r.records}</b> progress record${r.records === 1 ? '' : 's'}.</li>
+      ${r.unmatched.length ? `<li class="err" style="display:list-item">${r.unmatched.length} activit${r.unmatched.length === 1 ? 'y has' : 'ies have'} no activity with the same name here, so progress on ${r.unmatched.length === 1 ? 'it stays' : 'them stays'} in the other course: ${r.unmatched.map(m => esc(m.name)).join(', ')}. Rename to match first if it should move.</li>` : '<li>Every activity has a match here.</li>'}
+      <li>${esc(r.from)} is then archived (kept, hidden from new enrolments). Forum posts stay there.</li></ul>
+      ${r.learners ? `<div class="row"><button class="btn primary" data-act="mergeGo" data-from="${from}" data-into="${d.into}">Move ${r.learners} learner${r.learners === 1 ? '' : 's'}</button></div>` : '<p class="muted">Nobody is enrolled as a learner there, so there is nothing to move.</p>'}</div>`; },
+  mergeGo: async d => { const r = await act('mergeCourse', {from:d.from, into:d.into}, null, {silent:true}); if (r === FAIL) return; closeModal(); toast(`Moved ${r.learners} learner${r.learners === 1 ? '' : 's'} with their progress`); go('participants', {id:d.into}); },
   newCourse: () => openModal('Create new course', `<form data-form="newCourse" class="stack"><div class="fgrid">
       <div class="field full"><label for="nc1">Course full name</label><input id="nc1" name="fullname" type="text" required></div>
       <div class="field"><label for="nc2">Course short name</label><input id="nc2" name="shortname" type="text" required placeholder="e.g. LD101"></div>
