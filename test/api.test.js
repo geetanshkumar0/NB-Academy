@@ -1404,6 +1404,30 @@ test('server configuration moves learners from a copy into the original once at 
   assert.ok(require('../server/site-admins.js').mergeCourses.some(x => x.from === 'CPMS Tenant Search - NHT (new)' && x.into === 'CPMS Tenant Search - NHT'));
 });
 
+test('only the latest attempt needs grading: grading it clears "Essay to grade" even if older attempts were never marked', async () => {
+  const a = await login('admin'), sid = getState().courses.find(c => c.id === 'c1').sections[0].id;
+  let r = await op(a, 'saveMod', {cid:'c1', sid, type:'quiz', name:'Explain twice', intro:'', visible:true, fields:{gradepass:0, timelimit:0, attempts:0}}); const mid = r.json.result.id;
+  for (const text of ['First essay question', 'Second essay question']) assert.equal((await op(a, 'saveQuestion', {mid, q:{type:'essay', text, mark:5}})).status, 200);
+  const [q1, q2] = getState().mods[mid].questions.map(q => q.id), asha = getState().users.find(u => u.username === 'asha'), cl = await login('asha');
+  const take = async () => { const st = await op(cl, 'startQuiz', {mid}); assert.equal((await op(cl, 'submitQuiz', {aid:st.json.result.id, answers:{[q1]:'Answer one', [q2]:'Answer two'}})).status, 200); return st.json.result.id; };
+  const first = await take(), second = await take();
+  const rohan = getState().users.find(u => u.username === 'rohan'), queue = () => Core.H(getState(), rohan.id).gradingQueue().filter(x => x.a.cmid === mid).map(x => x.a.id);
+  assert.deepEqual(queue(), [second], 'only the latest attempt is listed');
+  assert.ok(getState().notifications.filter(n => n.go === 'review' && n.gid === first).every(n => n.read), 'reminders for the replaced attempt are done');
+  const hr = Core.H(getState(), rohan.id), m = getState().mods[mid];
+  assert.equal(hr.needsGrading(m), 1);
+  const tr = await login('rohan');
+  assert.equal((await op(tr, 'gradeEssay', {aid:second, qid:q1, mark:4})).status, 200);
+  assert.deepEqual(queue(), [second], 'still listed: one of two answers marked');
+  assert.equal((await op(tr, 'gradeEssay', {aid:second, qid:q2, mark:3})).status, 200);
+  assert.deepEqual(queue(), [], 'fully graded latest attempt: nothing to grade');
+  const h2 = Core.H(getState(), rohan.id); assert.equal(h2.needsGrading(getState().mods[mid]), 0); assert.equal(h2.toGrade(h2.latestAttempt(mid, asha.id)), false);
+  assert.equal(getState().attempts.find(x => x.id === first).pending, true, 'the older attempt is left as it was (it can still be marked)');
+  assert.equal((await op(tr, 'gradeEssay', {aid:first, qid:q1, mark:5})).status, 200, 'older attempts can still be marked');
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-activities.js'), 'utf8');
+  assert.match(ui, /const last = h\.latestAttempt\(m\.id, s\.id\), pend = h\.toGrade\(last\);/); assert.match(ui, /still to grade in this attempt/);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

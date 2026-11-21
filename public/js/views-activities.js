@@ -321,9 +321,9 @@ BODIES.quiz = (m, c) => {
   if (ed) html += qbBuilder(m);
   if (h.has('grade:viewall', c.id)) { const st = h.students(c.id), manage = h.has('attempts:manage', c.id);
     html += `<section class="stack" style="margin-bottom:22px"><h2>Results</h2><div class="tw"><table><thead><tr><th>Learner</th><th class="n">Attempts</th><th>Last attempt</th><th class="n">Best</th><th>Result</th>${manage ? '<th></th>' : ''}</tr></thead><tbody>
-      ${st.map(s => { const a = h.attemptsOf(m.id, s.id); const pct = h.quizPercent(m, s.id); const extra = Number(S.extraAttempts[s.id + ':' + m.id]) || 0; const pend = a.some(x => x.pending);
+      ${st.map(s => { const a = h.attemptsOf(m.id, s.id); const pct = h.quizPercent(m, s.id); const extra = Number(S.extraAttempts[s.id + ':' + m.id]) || 0; const last = h.latestAttempt(m.id, s.id), pend = h.toGrade(last);
         return `<tr><td>${esc(fullname(s))}</td><td class="n">${a.length}${m.attempts ? ` / ${m.attempts + extra}` : ''}</td><td class="small">${a.length ? `<button class="link" data-go="review" data-id="${a[a.length - 1].id}">${fmtDate(a[a.length - 1].finish)}</button>` : '–'}</td><td class="n">${fmtPct(pct)}</td>
-          <td>${pend ? '<span class="chip warn">Essay to grade</span>' : pct == null ? '' : m.gradepass && !m.pretest ? (pct >= m.gradepass ? '<span class="chip ok">Pass</span>' : '<span class="chip bad">Fail</span>') : ''}</td>
+          <td>${pend ? `<button class="chip warn" style="border:0;cursor:pointer" data-go="review" data-id="${last.id}" title="Open the attempt to grade">Essay to grade</button>` : pct == null ? '' : m.gradepass && !m.pretest ? (pct >= m.gradepass ? '<span class="chip ok">Pass</span>' : '<span class="chip bad">Fail</span>') : ''}</td>
           ${manage ? `<td><div class="tools">${m.attempts ? `<button class="btn sm ghost" data-act="grantAttempt" data-id="${m.id}" data-u="${s.id}">+1 attempt</button>` : ''}${a.length ? `<button class="btn sm ghost danger" data-act="resetAttempts" data-id="${m.id}" data-u="${s.id}">Reset</button>` : ''}</div></td>` : ''}</tr>`; }).join('') || '<tr><td colspan="6" class="empty">No learners enrolled.</td></tr>'}
       </tbody></table></div></section>${itemAnalysisHTML(m)}`; }
   return html;
@@ -374,7 +374,12 @@ VIEWS.review = (p) => {
   const a = S.attempts.find(x => x.id === p.id); if (!a || !a.review) return notFound();
   const m = S.mods[a.cmid], c = h.course(m.courseId), who = h.user(a.userId), grader = h.has('grade:edit', c.id);
   const ids = Object.keys(a.review);
-  return modShell(m, c, `<div class="tw" style="margin-bottom:20px"><table class="kv"><tbody>
+  // For graders: how many answers in this attempt still need a mark, and whether a newer attempt replaced this one
+  const left = ids.filter(q => a.review[q].pending).length, latest = h.latestAttempt(a.cmid, a.userId);
+  const note = !grader || !a.pending ? '' : latest && latest.id !== a.id
+    ? `<div class="card" style="margin-bottom:16px;padding:12px 16px">This attempt has ${left} unmarked answer${left === 1 ? '' : 's'}, but a newer attempt replaced it, so it does not need grading. <button class="link" data-go="review" data-id="${latest.id}">Open the latest attempt</button></div>`
+    : `<div class="card" style="margin-bottom:16px;padding:12px 16px;border-left:4px solid var(--warn);background:var(--warn-soft)"><b>${left} answer${left === 1 ? '' : 's'} still to grade in this attempt.</b> Enter a mark and press Save under each one.</div>`;
+  return modShell(m, c, `${note}<div class="tw" style="margin-bottom:20px"><table class="kv"><tbody>
     ${a.userId !== S.me ? `<tr><th>Learner</th><td>${esc(fullname(who))}</td></tr>` : ''}
     <tr><th>Started on</th><td>${fmtDate(a.start)}</td></tr><tr><th>State</th><td>Finished${a.overdue ? ' <span class="chip warn">Submitted after the time limit</span>' : ''}${a.pending ? ' <span class="chip warn">Essay being graded</span>' : ''}</td></tr>
     <tr><th>Completed on</th><td>${fmtDate(a.finish)}</td></tr><tr><th>Time taken</th><td>${dur(a.finish - a.start)}</td></tr>

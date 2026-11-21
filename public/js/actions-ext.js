@@ -161,7 +161,9 @@ Object.assign(F, {
   attendance: (d, f) => { const marks = {}; for (const [k, v] of Object.entries(d)) if (k.startsWith('att:') && v) marks[k.slice(4)] = v; return act('liveAttendance', {mid:d.mid, marks}, 'Attendance saved'); },
   recording: d => act('liveRecording', {mid:d.mid, fileId:d.fileId || undefined, url:d.url}, 'Recording saved'),
   feedback: async (d) => { const answers = {}; for (const [k, v] of Object.entries(d)) if (k.startsWith('q:')) answers[k.slice(2)] = /^\d+$/.test(v) && S.mods[d.mid].questions.find(q => q.id === k.slice(2))?.type !== 'text' ? Number(v) : v; await act('submitFeedback', {mid:d.mid, answers}, 'Thank you for your feedback', {errEl:'fberr'}); },
-  gradeEssay: d => act('gradeEssay', d, 'Mark saved'),
+  gradeEssay: async d => { const r = await act('gradeEssay', d, null, {silent:true}); if (r === FAIL) return;
+    const a = S.attempts.find(x => x.id === d.aid), left = a ? Object.values(a.review || {}).filter(x => x.pending).length : 0;
+    toast(left ? `Mark saved. ${left} more answer${left === 1 ? '' : 's'} to grade in this attempt.` : 'Mark saved. This attempt is fully graded.'); },
   publish: async (d, f) => { const r = await act('publishCourse', {cid:d.cid, notes:d.notes, mode:d.mode || 'keep'}, null); if (r !== FAIL) toast(`Published version ${r.version}${r.restarted ? `. ${r.restarted} learners restarted.` : ''}`); },
   branding: (d) => act('saveBranding', {primary:d.primary, accent:d.accent, logo:d.logo || undefined, cert:{template:d.template, signatureName:d.signatureName, signatureTitle:d.signatureTitle, body:d.body}}, 'Branding saved'),
   security: (d, f) => act('saveSecurity', {...d, upper:checked(f, 'upper'), lower:checked(f, 'lower'), digit:checked(f, 'digit'), special:checked(f, 'special')}, 'Security settings saved'),

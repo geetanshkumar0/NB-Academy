@@ -193,9 +193,13 @@ function H(S, meId) {
      stays at 100% when activities are added later; a new cycle (recertification, reset) clears completedAt and counts afresh. */
   h.progress = (cid, uid) => { if (h.enrolOf(cid, uid)?.completedAt) return 100; const ms = h.courseMods(cid).filter(h.trackable); if (!ms.length) return 0; return Math.round(ms.filter(m => h.isDone(m, uid)).length / ms.length * 100); };
   /* Quiz attempts with subjective answers still to grade, that this person can grade (newest last) */
-  h.gradingQueue = (uid = meId) => S.attempts.filter(a => a.state === 'finished' && a.pending && !a.archived && !a.preview).map(a => ({a, m:S.mods[a.cmid]})).filter(x => x.m && h.has('grade:edit', x.m.courseId, uid) && h.isLearner(x.m.courseId, x.a.userId)).sort((x, y) => x.a.finish - y.a.finish);
+  /* Only a learner's latest attempt needs grading: a newer attempt replaces older ones with essays still unmarked
+     (those can still be marked from their review page, but no longer count as "to grade"). */
+  h.latestAttempt = (cmid, uid) => { const at = h.attemptsOf(cmid, uid).filter(a => !a.preview); return at[at.length - 1] || null; };
+  h.toGrade = a => !!a && a.pending && a.state === 'finished' && !a.archived && !a.preview && h.latestAttempt(a.cmid, a.userId)?.id === a.id;
+  h.gradingQueue = (uid = meId) => S.attempts.filter(a => h.toGrade(a)).map(a => ({a, m:S.mods[a.cmid]})).filter(x => x.m && h.has('grade:edit', x.m.courseId, uid) && h.isLearner(x.m.courseId, x.a.userId)).sort((x, y) => x.a.finish - y.a.finish);
   h.needsGrading = m => m.type === 'assign' ? S.submissions.filter(s => s.cmid === m.id && s.status === 'submitted' && s.grade == null && !s.archived && h.isLearner(m.courseId, s.userId)).length
-    : m.type === 'quiz' ? S.attempts.filter(a => a.cmid === m.id && a.pending && !a.archived && a.state === 'finished').length : 0;
+    : m.type === 'quiz' ? S.attempts.filter(a => a.cmid === m.id && h.toGrade(a)).length : 0;
   h.certEligible = (m, uid) => {
     const reasons = [];
     if (m.requireCompletion && h.progress(m.courseId, uid) < 100) reasons.push('Complete every required activity in the course');
@@ -1558,6 +1562,9 @@ op('submitQuiz', (S, h, p, env) => {
   const m = modOf(S, a.cmid); if (p.answers) a.answers = Object.fromEntries(Object.entries(p.answers).map(([k, v]) => [k, str(v, 500)]));
   let score = 0, max = 0; for (const q of m.questions) { score += gradeQ(q, a.answers[q.id]); max += q.mark; }
   Object.assign(a, {state:'finished', score, max, finish:env.now(), review:reviewOf(m, a.answers)});
+  // this attempt replaces the learner's older ones: their 'to grade' reminders are done
+  const older = new Set(S.attempts.filter(x => x !== a && x.cmid === a.cmid && x.userId === a.userId && x.pending).map(x => x.id));
+  if (older.size) for (const n of S.notifications) if (n.go === 'review' && older.has(n.gid) && !n.read) n.read = true;
   if (Object.values(a.review).some(r => r.pending)) {
     a.pending = true; const n = Object.values(a.review).filter(r => r.pending).length;
     // Tell the course's trainers; if the course has none, its content moderators, else the administrators
