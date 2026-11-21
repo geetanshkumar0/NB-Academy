@@ -115,15 +115,18 @@ function mergeCoursesAtStart(list) {
     const key = norm(from) + ' → ' + norm(into); if (done[key]) continue;
     const f = find(from), t = find(into);
     if (f.length !== 1 || t.length !== 1) { console.log(`Move learners "${from}" → "${into}": ${f.length} and ${t.length} matching courses; skipped`); continue; }
+    // Act as an administrator directly (not through Core.run, whose sign-in checks refuse an account that still has to
+    // change its starting password or set up two-step sign-in). Nothing here may stop the server from starting.
     const admin = S.users.find(u => u.builtinAdmin && !u.suspended) || S.users.find(u => u.admin && !u.suspended);
     if (!admin) { console.log('Move learners: no administrator account; skipped'); continue; }
-    const plan = Core.run(Core.clone(S), admin.id, 'mergeCourse', {from:f[0].id, into:t[0].id, preview:true}, env);
-    if (!plan.learners) { done[key] = Date.now(); store.save(S); console.log(`Move learners "${from}" → "${into}": nobody to move`); continue; }
+    const merge = (st, payload) => Core._.OPS.mergeCourse(st, Core.H(st, admin.id), payload, env);
     try {
+      const plan = merge(Core.clone(S), {from:f[0].id, into:t[0].id, preview:true});
+      if (!plan.learners) { S.site.coursesMerged = {...(S.site.coursesMerged || {}), [key]:Date.now()}; store.save(S); console.log(`Move learners "${from}" → "${into}": nobody to move`); continue; }
       const dir = path.join(DATA, 'backups'); fs.mkdirSync(dir, {recursive:true});
       const file = path.join(dir, 'before-moving-learners-' + new Date().toISOString().replace(/[:.]/g, '-') + '.db');
       store.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
-      const r = runOp(admin.id, 'mergeCourse', {from:f[0].id, into:t[0].id});
+      const r = mutate(() => merge(S, {from:f[0].id, into:t[0].id}));
       S.site.coursesMerged = {...(S.site.coursesMerged || {}), [key]:Date.now()}; store.save(S);
       console.log(`Moved ${r.learners} learners (${r.records} progress records) from "${f[0].fullname}" to "${t[0].fullname}". Backup: ${file}`);
     } catch (e) { console.log(`Move learners "${from}" → "${into}" failed: ${e.message}`); }
@@ -205,7 +208,7 @@ if (process.env.NB_MEET_APP_ID) S.site.meetings.appId = process.env.NB_MEET_APP_
 // Demo mode keeps the demo accounts (including 'admin'); the remove list applies to the real site
 removeAccounts(process.env.NB_REMOVE_ACCOUNTS !== undefined ? process.env.NB_REMOVE_ACCOUNTS.split(',') : DEMO ? [] : siteConfig.remove);
 if (!DEMO) unenrolLearner(siteConfig.unenrolLearner);
-if (!DEMO) mergeCoursesAtStart(siteConfig.mergeCourses);
+if (!DEMO) try { mergeCoursesAtStart(siteConfig.mergeCourses); } catch (e) { console.log('Move learners at start-up failed: ' + e.message); }
 
 /* Run an operation. If it fails part-way, reload the last saved state so nothing half-done remains. */
 function runOp(uid, name, payload) {

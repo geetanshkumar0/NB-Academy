@@ -1379,8 +1379,12 @@ test('server configuration moves learners from a copy into the original once at 
   const backups = () => { const d = path.join(process.env.NB_DATA_DIR, 'backups'); return fs.existsSync(d) ? fs.readdirSync(d).filter(f => f.startsWith('before-moving-learners')).length : 0; };
   const nb = backups();
   getState().courses.find(c => c.id === 'c3').fullname = 'Python Fundamentals - NHT';
+  // every administrator still has to change the starting password (what stopped the first version on the live server)
+  const admins = getState().users.filter(u => u.admin || u.builtinAdmin), was = admins.map(u => u.mustChangePassword);
+  admins.forEach(u => u.mustChangePassword = true);
   try {
-    mergeCoursesAtStart([{from:'Python Fundamentals - NHT (new)', into:'Python Fundamentals - NHT'}]); // dash typed differently: still found
+    assert.doesNotThrow(() => mergeCoursesAtStart([{from:'Python Fundamentals - NHT (new)', into:'Python Fundamentals - NHT'}])); // dash typed differently: still found
+    admins.forEach((u, i) => { const cur = getState().users.find(x => x.id === u.id); if (cur) cur.mustChangePassword = was[i]; });
     const S2 = getState();
     assert.ok(S2.enrol.some(e => e.courseId === 'c3' && e.userId === uid), 'moved into the original');
     assert.ok(!S2.enrol.some(e => e.courseId === copy && e.userId === uid));
