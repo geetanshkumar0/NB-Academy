@@ -133,7 +133,7 @@ op('retryEmail', (S, h, p) => { need(h.has('site:config'), 'Not allowed.'); cons
 const uids = (S, a) => [...new Set((Array.isArray(a) ? a : []).filter(id => S.users.some(u => u.id === id)))];
 /* ---------------- Personas: what a person does on the site (learner, trainer, team lead, administrator) ---------------- */
 function applyPersonas(S, h, env, u, p) {
-  const want = new Set((Array.isArray(p.personas) ? p.personas : []).filter(x => ['learner', 'trainer', 'teamlead', 'moderator', 'admin'].includes(x)));
+  const want = new Set((Array.isArray(p.personas) ? p.personas : []).filter(x => ['learner', 'trainer', 'teamlead', 'moderator', 'hrbp', 'admin'].includes(x)));
   if (u.builtinAdmin) ['learner', 'trainer', 'teamlead', 'admin'].forEach(x => want.add(x)); // the super administrator always holds every persona
   need(want.size, 'Choose at least one persona.', 400);
   if (want.has('admin') !== !!u.admin) { need(h.isAdmin(), 'Only site administrators can grant or remove administrator access.'); need(!(u.id === h.meId && !want.has('admin')), 'You cannot remove your own administrator access.', 400); need(!(u.builtinAdmin && !want.has('admin')), 'This is a built-in site administrator set in the server configuration, so administrator access cannot be removed here.', 400); need(!(u.admin && !want.has('admin')) || h.isSuperAdmin(), 'Only the super administrator can remove administrator access.'); u.admin = want.has('admin'); }
@@ -141,6 +141,12 @@ function applyPersonas(S, h, env, u, p) {
   if (want.has('moderator') !== isMod) {
     need(h.isAdmin(), 'Only site administrators can grant or remove Content Moderator access.');
     if (want.has('moderator')) S.sysroles.push({id:env.uid('sr'), userId:u.id, roleId:'moderator'}); else S.sysroles = S.sysroles.filter(r => !(r.userId === u.id && r.roleId === 'moderator'));
+  }
+  const isHR = S.sysroles.some(r => r.userId === u.id && r.roleId === 'hrbp');
+  if (want.has('hrbp') !== isHR && !u.builtinAdmin) {
+    need(h.isAdmin(), 'Only site administrators can grant or remove HRBP access.');
+    need(!u.hrTemp, 'Temporary HR accounts cannot be given HRBP access.', 400);
+    if (want.has('hrbp')) S.sysroles.push({id:env.uid('sr'), userId:u.id, roleId:'hrbp'}); else S.sysroles = S.sysroles.filter(r => !(r.userId === u.id && r.roleId === 'hrbp'));
   }
   u.personas = ['learner', 'trainer'].filter(x => want.has(x));
   const tl = S.sysroles.find(r => r.userId === u.id && r.roleId === 'teamlead');
@@ -160,7 +166,7 @@ function applyPersonas(S, h, env, u, p) {
   for (const e of S.enrol.filter(e => e.userId === u.id && e.role === 'trainer' && !tc.has(e.courseId))) S.enrol = S.enrol.filter(x => x !== e);
   for (const cid of tc) { const e = S.enrol.find(x => x.userId === u.id && x.courseId === cid); if (!e) S.enrol.push({id:env.uid('e'), courseId:cid, userId:u.id, role:'trainer', time:env.now()}); else if (e.role === 'student' || e.role === 'teacher') e.role = 'trainer'; }
   if (joined.length) applyRules(S, env, u.id);
-  const names = {learner:'Learner', trainer:'Trainer', teamlead:'Team Lead', moderator:'Content Moderator', admin:'Administrator'};
+  const names = {learner:'Learner', trainer:'Trainer', teamlead:'Team Lead', moderator:'Content Moderator', hrbp:'HRBP', admin:'Administrator'};
   audit(S, env, h.meId, 'Personas set', u.username, [...want].map(x => names[x]).join(', '));
 }
 const _newUser = OPS.newUser;
@@ -175,6 +181,83 @@ op('setPersonas', (S, h, p, env) => {
   need(h.mayManage(u.id) || u.id === h.meId && h.isAdmin(), 'Only administrators can change the access of an administrator or content moderator.');
   applyPersonas(S, h, env, u, p);
 });
+/* ---------------- HR courses ----------------
+   HR courses (course.hr) are built by administrators and content moderators and assigned by HRBPs (and administrators)
+   to any employee, by name and email. Someone new to NB Academy gets a temporary account (user.hrTemp), emailed a link
+   to set a password. Every HR assignment is due 7 days later (HR_DAYS, fixed). Reminders go out 2 days and 1 day before;
+   at the due date the assigning HRBP is told if it was not completed, and temporary accounts are disabled (marked inactive)
+   once all their HR courses are past due, whether completed or not. Their records, certificates and reports stay. */
+const HR_DAYS = 7, HR_REMIND = [2, 1];
+const hrDueText = t => fmtD(t);
+op('hrAssign', (S, h, p, env) => {
+  need(h.hrAccess(), 'Only HRBPs and administrators can assign HR courses.');
+  const c = courseOf(S, p.cid); need(c.hr, 'That is not an HR course.', 400);
+  need(c.status !== 'draft' && c.status !== 'archived', c.status === 'draft' ? 'This HR course is still a draft. Publish it before assigning it.' : 'This HR course is archived.', 400);
+  const people = (Array.isArray(p.people) ? p.people : []).slice(0, 1000);
+  need(people.length, 'Add at least one person (name and email).', 400);
+  const now = env.now(), due = now + HR_DAYS * D, res = {created:0, assigned:0, renewed:0, skipped:[], due};
+  const seen = new Set();
+  for (const raw of people) {
+    const email = String(raw.email || '').trim().toLowerCase(), name = Core.fullNameOf(raw);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { res.skipped.push({who:raw.email || name || '(blank)', why:'Not a valid email address'}); continue; }
+    if (seen.has(email)) continue; seen.add(email);
+    let u = S.users.find(x => String(x.email || '').toLowerCase() === email), fresh = false;
+    if (u && u.suspended && !u.hrTemp) { res.skipped.push({who:email, why:'This account is marked inactive'}); continue; }
+    if (u && h.editsCourse(c.id, u.id)) { res.skipped.push({who:email, why:'Builds or manages this course'}); continue; }
+    if (!u) {
+      if (!name) { res.skipped.push({who:email, why:'Name is missing'}); continue; }
+      let team = ''; try { team = Core.normTeam(S, raw.team); } catch (e) { team = ''; }
+      const base = (email.split('@')[0].replace(/[^A-Za-z0-9._-]/g, '') || 'employee').slice(0, 50); let un = base;
+      for (let k = 2; Core.findUser(S, un); k++) un = `${base}${k}`;
+      u = {id:env.uid('u'), firstname:name.slice(0, 200), lastname:'', username:un, email, department:team, admin:false, created:now, hrTemp:true, mustChangePassword:true, createdBy:h.meId,
+        ...env.hash(env.defaultPassword || Core.DEFAULT_PASSWORD)};
+      S.users.push(u); fresh = true; res.created++;
+      audit(S, env, h.meId, 'HR temporary account created', un, `${name} <${email}>`);
+    } else if (u.hrTemp && u.suspended) { u.suspended = false; delete u.inactiveSince; delete u.hrExpired; audit(S, env, h.meId, 'HR temporary account reopened', u.username, c.shortname); }
+    let e = h.enrolOf(c.id, u.id);
+    if (e && !h.isLearner(c.id, u.id)) { res.skipped.push({who:email, why:'Already in this course in another role'}); continue; }
+    if (e && e.completedAt && !p.again) { res.skipped.push({who:email, why:`Already completed on ${fmtD(e.completedAt)}`}); continue; }
+    if (!e) { e = {id:env.uid('e'), courseId:c.id, userId:u.id, role:'student', time:now}; S.enrol.push(e); res.assigned++; } else res.renewed++;
+    if (e.completedAt) { e.completedAt = null; e.cycle = (e.cycle || 1) + 1; }
+    Object.assign(e, {hr:true, due, mandatory:true, assignedBy:h.meId, assignedAt:now, source:'hr', hrRem:[], hrMissed:false, remindersSent:[], lockNotified:false});
+    if (u.hrTemp) u.hrUntil = Math.max(u.hrUntil || 0, due);
+    const access = fresh || u.mustChangePassword
+      ? `Your NB Academy account: username ${u.username}. Set your password and start here (the link works for 7 days): ${linkTo(S, 'setpassword', makeToken(S, env, u.id, 'setpw', HR_DAYS * D))}`
+      : `Start here: ${linkTo(S, 'course', c.id)}`;
+    notifyT(S, env, 'hrAssigned', u.id, {course:c.fullname, due:hrDueText(due), sender:h.fullname(h.meId), access, expires:u.hrTemp ? ' Your access to NB Academy ends after the due date.' : '', short:`Due ${hrDueText(due)}`}, 'course', c.id);
+    log(S, env, u.id, 'HR course assigned', c.id);
+  }
+  audit(S, env, h.meId, 'HR course assigned', c.shortname, `${res.assigned + res.renewed} people (${res.created} new accounts), due ${hrDueText(due)}${res.skipped.length ? `; ${res.skipped.length} skipped` : ''}`);
+  return res;
+});
+/* Scheduler part: reminders, missed deadlines, end of access for temporary accounts */
+function hrTick(S, env) {
+  const now = env.now(); let n = 0;
+  for (const e of S.enrol.filter(x => x.hr && x.due)) {
+    const h = H(S, e.userId), u = h.user(e.userId), c = h.course(e.courseId); if (!u || !c || c.status === 'archived' || !h.isLearner(c.id, u.id)) continue;
+    if (e.completedAt) continue;
+    const left = e.due - now;
+    if (left > 0) {
+      if (u.suspended) continue;
+      e.hrRem ||= []; const d = HR_REMIND.find(x => left <= x * D && !e.hrRem.includes(x));
+      if (d != null) { HR_REMIND.filter(x => x >= d).forEach(x => e.hrRem.includes(x) || e.hrRem.push(x)); n++;
+        notifyT(S, env, 'hrReminder', u.id, {course:c.fullname, due:hrDueText(e.due), days:d === 1 ? '1 day' : `${d} days`, progress:h.progress(c.id, u.id), expires:u.hrTemp ? ' Your access to NB Academy ends after the due date.' : '', short:`Due ${hrDueText(e.due)}`}, 'course', c.id); }
+    } else if (!e.hrMissed) {
+      e.hrMissed = true; n++;
+      const to = S.users.find(x => x.id === e.assignedBy && !x.suspended) ? [e.assignedBy] : S.users.filter(x => x.admin && !x.suspended).map(x => x.id);
+      for (const id of to) notifyT(S, env, 'hrMissed', id, {learner:personName(u), email:u.email, course:c.fullname, due:hrDueText(e.due), progress:h.progress(c.id, u.id), short:`${personName(u)} · ${c.shortname}`}, 'hranalytics', null);
+      log(S, env, u.id, 'HR course not completed by the due date', c.id);
+    }
+  }
+  for (const u of S.users.filter(x => x.hrTemp && !x.suspended)) {
+    const mine = S.enrol.filter(e => e.userId === u.id && e.hr && e.due);
+    if (!mine.length || mine.some(e => e.due > now)) continue;
+    Object.assign(u, {suspended:true, inactiveSince:now, hrExpired:true}); n++;
+    audit(S, env, null, 'HR temporary access ended', u.username, `${mine.length} HR course${mine.length === 1 ? '' : 's'}, ${mine.filter(e => e.completedAt).length} completed`);
+  }
+  return n;
+}
+
 /* ---------------- Super administrator: remove administrator access ---------------- */
 op('removeAdmin', (S, h, p, env) => {
   need(h.isSuperAdmin(), 'Only the super administrator can remove administrators.');
@@ -280,6 +363,7 @@ op('assign', (S, h, p, env) => {
   const kind = p.kind === 'path' ? 'path' : 'course';
   const cids = kind === 'path' ? (S.paths.find(x => x.id === p.id)?.courses || []) : [p.id];
   need(cids.length && cids.every(id => S.courses.some(c => c.id === id)), 'Choose a course or learning path.', 400);
+  need(!cids.some(id => S.courses.find(c => c.id === id)?.hr), 'HR courses are assigned from the HR Courses tab.', 400);
   const global = h.has('course:assign', null);
   need(global || cids.every(cid => h.has('course:assign', cid)), kind === 'path' ? 'You can only assign learning paths whose courses are all tagged to you.' : 'You cannot assign this course.');
   const scope = h.trainerScope();
@@ -616,9 +700,10 @@ op('verifyAudit', (S, h) => { need(h.has('audit:view'), 'You cannot view the aud
 
 /* ---------------- Scheduler: reminders, overdue locks, recertification, live sessions ---------------- */
 function tick(S, env) {
-  const now = env.now(); let n = 0;
+  const now = env.now(); let n = hrTick(S, env);
   const days = (S.site.reminders || [7, 3, 1]).slice().sort((a, b) => b - a);
   for (const e of S.enrol) {
+    if (e.hr) continue; // HR courses have their own reminders and deadline handling (hrTick)
     const h = H(S, e.userId); if (!h.user(e.userId) || h.user(e.userId).suspended || !e.due || !h.isLearner(e.courseId, e.userId)) continue;
     const c = h.course(e.courseId); if (!c || c.status === 'archived') continue;
     const st = h.status(c.id, e.userId); if (st === 'completed') continue;
@@ -660,6 +745,9 @@ function learnerRows(S, h, filter = {}) {
   const rows = [];
   for (const e of S.enrol) {
     const u = h.user(e.userId), c = h.course(e.courseId); if (!u || !c || u.admin || !h.role(e.role)?.caps?.['mod:submit']) continue;
+    // HR courses and temporary HR accounts appear only in HR analytics (filter.hr) or a report on that one course
+    if ((c.hr || u.hrTemp) && !filter.hr && !(filter.courses && filter.courses.has(c.id))) continue;
+    if (filter.hr && !c.hr) continue;
     if (filter.users && !filter.users.has(u.id)) continue; if (filter.courses && !filter.courses.has(c.id)) continue;
     if (filter.department && (u.department || '') !== filter.department) continue;
     const status = h.status(c.id, u.id), prog = h.progress(c.id, u.id), total = h.courseTotal(c.id, u.id);
@@ -815,6 +903,46 @@ SEED_HOOKS.push((S, env, files, ids) => {
     files[id] = x.text != null ? x.text : {type:x.type, base64:x.base64};
     if (f) f.size = x.text != null ? x.text.length : Math.floor(x.base64.length * 3 / 4);
   }
+});
+
+/* Demo HR data: an HRBP, two HR courses, and people at each stage (completed, in progress, not completed and switched off) */
+SEED_HOOKS.push((S, env) => {
+  const t0 = env.now(), day = n => t0 + n * D, pw = env.hash ? env.hash('demo') : {password:'demo'};
+  const U = (id, name, un, email, extra = {}) => S.users.push({id, firstname:name, lastname:'', username:un, email, admin:false, department:'', created:day(-20), lastLogin:day(-1), termsAccepted:1, prefsSet:true, mustChangePassword:false, ...pw, ...extra});
+  U('u_hema', 'Hema Pillai', 'hema', 'hema@nbacademy.example', {department:'Learning & Development'});
+  S.sysroles.push({id:'sr_hema', userId:'u_hema', roleId:'hrbp'});
+  if (!S.categories.some(k => k.id === 'k_hr')) S.categories.push({id:'k_hr', name:'HR & Compliance'});
+  const mk = (cid, fullname, shortname, summary, mods) => {
+    S.courses.push({id:cid, fullname, shortname, catId:'k_hr', summary, visible:true, selfenrol:false, hr:true, status:'published', version:1, created:day(-30), sections:[{id:cid + 's0', name:'General', summary:'', mods:[]}, {id:cid + 's1', name:'The course', summary:'', mods:[]}]});
+    const c = S.courses.find(x => x.id === cid);
+    mods.forEach((m, i) => { const id = `${cid}m${i}`; S.mods[id] = {id, courseId:cid, visible:true, intro:'', ...m}; c.sections[1].mods.push(id); });
+    const cert = `${cid}cert`; S.mods[cert] = {id:cert, courseId:cid, type:'certificate', name:'Certificate of completion', intro:'Issued automatically when you complete this course.', visible:true, requireCompletion:true, autoIssue:true, validityDays:0}; c.sections[1].mods.push(cert);
+    return c;
+  };
+  mk('c_hr1', 'POSH Awareness', 'HR-POSH', 'Prevention of sexual harassment at the workplace: what it is, how to report it, and how complaints are handled.', [
+    {type:'page', name:'Our POSH policy', content:'## Why this matters\nEveryone has the right to a safe workplace.\n\n## What counts as harassment\nUnwelcome conduct of a sexual nature, verbal, non-verbal or physical.\n\n## How to report\nWrite to the Internal Committee at ic@company.example. Every complaint is handled confidentially.'},
+    {type:'quiz', name:'POSH check', intro:'Three questions. Pass mark 60%.', timelimit:0, attempts:0, maxgrade:10, gradepass:60, questions:[
+      {id:'hq1', type:'mc', text:'Who handles POSH complaints?', mark:1, options:[{text:'Your manager'}, {text:'The Internal Committee', correct:true}, {text:'IT support'}]},
+      {id:'hq2', type:'tf', text:'A complaint is kept confidential.', mark:1, answer:true},
+      {id:'hq3', type:'mcm', text:'Which of these can be harassment? Tick all that apply.', mark:1, options:[{text:'Unwelcome comments', correct:true}, {text:'Unwelcome messages', correct:true}, {text:'A team lunch invitation'}]}]}]);
+  mk('c_hr2', 'Code of Conduct', 'HR-COC', 'How we work: integrity, conflicts of interest, gifts, data privacy and speaking up.', [
+    {type:'page', name:'The Code of Conduct', content:'## Integrity first\nBe honest with customers, colleagues and partners.\n\n## Conflicts of interest\nTell your manager about anything that could affect your judgement.\n\n## Speaking up\nRaise concerns at ethics@company.example. Retaliation is not tolerated.'}]);
+  // people: temporary accounts at each stage, and one permanent employee
+  const T = (id, name, un, team, created, extra = {}) => U(id, name, un, `${un}@nbacademy.example`, {department:team, created:day(created), hrTemp:true, createdBy:'u_hema', ...extra});
+  const A = (cid, uid, assigned, extra = {}) => S.enrol.push({id:`e_${cid}_${uid}`, courseId:cid, userId:uid, role:'student', time:day(assigned), hr:true, due:day(assigned + 7), mandatory:true, assignedBy:'u_hema', assignedAt:day(assigned), source:'hr', hrRem:[], remindersSent:[], ...extra});
+  T('u_t1', 'Kavya Nair', 'kavya.nair', 'Legal Sales', -4, {hrUntil:day(3)});
+  A('c_hr1', 'u_t1', -4, {startedAt:day(-3), completedAt:day(-2)});
+  S.completion['u_t1:c_hr1m0'] = day(-3);
+  S.attempts.push({id:'a_hr1', cmid:'c_hr1m1', userId:'u_t1', state:'finished', answers:{hq1:1, hq2:true, hq3:'0,1'}, start:day(-2.1), finish:day(-2), score:10, max:10});
+  S.completion['u_t1:c_hr1m1'] = day(-2);
+  S.certIssued.push({id:'ci_hr1', cmid:'c_hr1cert', userId:'u_t1', code:'POSH4K7Q2M', time:day(-2), expires:null, grade:100});
+  T('u_t2', 'Arjun Mehra', 'arjun.mehra', 'Owner Servicing', -4, {hrUntil:day(3)});
+  A('c_hr1', 'u_t2', -4, {startedAt:day(-1)}); S.completion['u_t2:c_hr1m0'] = day(-1);
+  T('u_t3', 'Sneha Joshi', 'sneha.joshi', 'Legal Sales', -12, {hrUntil:day(-5), suspended:true, inactiveSince:day(-5), hrExpired:true, lastLogin:day(-9)});
+  A('c_hr1', 'u_t3', -12, {startedAt:day(-10), hrRem:[2, 1], hrMissed:true}); S.completion['u_t3:c_hr1m0'] = day(-10);
+  T('u_t4', 'Rahul Kumar', 'rahul.kumar', 'NRI Sales', -1, {hrUntil:day(6), mustChangePassword:true, lastLogin:null});
+  A('c_hr2', 'u_t4', -1);
+  A('c_hr2', 'u7', -2);
 });
 
 Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner});

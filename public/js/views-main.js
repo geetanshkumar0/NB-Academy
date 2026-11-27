@@ -3,7 +3,7 @@
 
 /* ---------- Login, forgot password, two-step code, set password from a link ---------- */
 function viewLogin() {
-  const demo = [['admin', 'Administrator'], ['rohan', 'Trainer · DA101, TE110 · also a learner'], ['priya', 'Trainer · BS201, BS150, new hires'], ['vikram', 'Team Lead · Analytics Team'], ['asha', 'Learner · one course overdue'], ['kabir', 'Learner · access request pending'], ['nisha', 'New hire · first login'], ['sana', 'Custom role · Course reviewer']]
+  const demo = [['admin', 'Administrator'], ['rohan', 'Trainer · DA101, TE110 · also a learner'], ['priya', 'Trainer · BS201, BS150, new hires'], ['vikram', 'Team Lead · Analytics Team'], ['asha', 'Learner · one course overdue'], ['kabir', 'Learner · access request pending'], ['nisha', 'New hire · first login'], ['sana', 'Custom role · Course reviewer'], ['hema', 'HRBP · assigns HR courses']]
     .filter(([un]) => !window.__demoUsers || window.__demoUsers.includes(un));
   const site = window.__site || {name:S?.site?.name || 'NB Academy', tagline:'Courses, assessments and progress tracking for every learner.'};
   const lv = ui.loginView;
@@ -82,7 +82,7 @@ function courseCard(c, opts = {}) {
   const lock = st && (st === 'overdue' || h.pathLock(c.id));
   return `<article class="ccard" data-s="${esc((c.fullname + ' ' + c.shortname).toLowerCase())}">
     <button class="ccard-img" style="${pattern(c.id)}" data-go="course" data-id="${c.id}" aria-label="Open ${esc(c.fullname)}">${esc(c.shortname)}${lock ? `<span style="margin-left:auto">${lockIcon()}</span>` : ''}</button>
-    <div class="ccard-b"><div class="eyebrow">${esc(h.cat(c.catId)?.name || '')}</div>
+    <div class="ccard-b"><div class="eyebrow">${c.hr ? '<span class="chip brand" style="margin-right:6px">HR</span>' : ''}${esc(h.cat(c.catId)?.name || '')}</div>
       <h3><button class="link" data-go="course" data-id="${c.id}">${esc(c.fullname)}</button></h3>
       <div class="row" style="gap:6px">${st ? statusChip(st) : ''}${e?.mandatory && st && st !== 'completed' ? '<span class="chip warn">Mandatory</span>' : ''}${c.status === 'archived' ? '<span class="chip">Archived</span>' : c.status === 'draft' ? '<span class="chip">Draft</span>' : ''}${!c.visible ? '<span class="chip">Hidden</span>' : ''}</div>
       ${st && e?.due && st !== 'completed' ? `<div class="small ${st === 'overdue' ? '' : 'muted'}" style="${st === 'overdue' ? 'color:var(--bad)' : ''}">${st === 'overdue' ? 'Was due' : 'Due'} ${fmtDate(e.due)}</div>` : ''}
@@ -196,10 +196,11 @@ function libraryHTML() {
 
 VIEWS.home = () => {
   if (currentMode() === 'learner') return VIEWS.mycourses({tab:'library'});
-  const byCat = S.categories.map(k => ({k, cs:S.courses.filter(c => c.catId === k.id)})).filter(x => x.cs.length);
+  const regular = S.courses.filter(c => !c.hr); // HR courses live in the HR Courses tab
+  const byCat = S.categories.map(k => ({k, cs:regular.filter(c => c.catId === k.id)})).filter(x => x.cs.length);
   return `${phead([['Courses']], 'Courses')}
     <div class="dash"><div>
-    <div class="spread" style="margin-bottom:14px"><span class="muted small">${S.courses.length} courses in ${byCat.length} categories</span><div class="row"><input type="search" id="hsearch" data-filter="#catalog" placeholder="Search all courses" aria-label="Search all courses" style="max-width:260px">${h.has('course:create') ? '<button class="btn primary" data-act="newCourse">Create course</button>' : ''}</div></div>
+    <div class="spread" style="margin-bottom:14px"><span class="muted small">${regular.length} courses in ${byCat.length} categories${S.courses.some(c => c.hr) && h.hrSees() ? ` · HR courses are in <button class="link" data-go="hrcourses">HR Courses</button>` : ''}</span><div class="row"><input type="search" id="hsearch" data-filter="#catalog" placeholder="Search all courses" aria-label="Search all courses" style="max-width:260px">${h.has('course:create') ? '<button class="btn primary" data-act="newCourse">Create course</button>' : ''}</div></div>
     <div id="catalog" class="stack" style="gap:24px">${byCat.map(({k, cs}) => `<section class="stack" style="gap:10px" data-group><div class="eyebrow">${esc(k.name)}</div>
       ${cs.map(c => { const t = h.teachers(c.id); const n = h.students(c.id).length;
         return `<article class="card" data-s="${esc((c.fullname + ' ' + c.shortname + ' ' + c.summary).toLowerCase())}" style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:16px">

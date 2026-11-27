@@ -53,7 +53,7 @@ VIEWS.team = () => {
 /* ---------- Trainer workspace ---------- */
 VIEWS.trainer = () => {
   // The super administrator sees every active course here; trainers see the courses tagged to them
-  const cids = h.seesAll() ? S.courses.filter(c => c.status !== 'archived').map(c => c.id) : S.enrol.filter(e => e.userId === S.me && ['trainer', 'editingteacher', 'teacher'].includes(e.role)).map(e => e.courseId).filter(id => h.course(id));
+  const cids = h.seesAll() ? S.courses.filter(c => c.status !== 'archived' && !c.hr).map(c => c.id) : S.enrol.filter(e => e.userId === S.me && ['trainer', 'editingteacher', 'teacher'].includes(e.role)).map(e => e.courseId).filter(id => h.course(id));
   if (!h.isTrainer()) return notFound('The Trainer workspace is for people with the Trainer persona.');
   const queue = cids.flatMap(cid => h.courseMods(cid).filter(m => (m.type === 'assign' || m.type === 'quiz') && h.needsGrading(m)).map(m => ({m, n:h.needsGrading(m), c:h.course(cid)})));
   const sessions = cids.flatMap(cid => h.courseMods(cid).filter(m => m.type === 'live' && m.start && m.start + (m.duration || 60) * 6e4 > now() - 7 * D).map(m => ({m, c:h.course(cid)}))).sort((a, b) => a.m.start - b.m.start);
@@ -77,7 +77,7 @@ VIEWS.trainer = () => {
 /* ---------- Assign training (trainers within scope; administrators globally) ---------- */
 function assignForm(kind, id) {
   const global = h.has('course:assign', null);
-  const courses = S.courses.filter(c => c.status === 'published' && (global || h.has('course:assign', c.id)));
+  const courses = S.courses.filter(c => !c.hr && c.status === 'published' && (global || h.has('course:assign', c.id)));
   const paths = S.paths.filter(p => global || p.courses.every(cid => h.has('course:assign', cid)));
   const scope = h.trainerScope();
   const learners = S.users.filter(u => !u.suspended && (!u.admin || u.builtinAdmin || u.personas?.includes('learner')) && (global || scope.has(u.id)));
@@ -119,11 +119,11 @@ VIEWS.analytics = () => {
   const a = ui.ana;
   let rows = C.learnerRows(S, h, {department:a.department || null, courses:a.course ? new Set([a.course]) : null});
   const all = C.summarize(rows);
-  const learners = S.users.filter(u => !u.admin);
+  const learners = S.users.filter(u => !u.admin && !u.hrTemp);
   const active = learners.filter(u => u.lastLogin && now() - u.lastLogin < 30 * D).length;
   const certs = S.certIssued.filter(c => !c.expires || c.expires > now());
   const expiring = certs.filter(c => c.expires && c.expires > now() && c.expires - now() < 60 * D).length;
-  const depts = [...new Set(S.users.map(u => u.department).filter(Boolean))].sort();
+  const depts = [...new Set(S.users.filter(u => !u.hrTemp).map(u => u.department).filter(Boolean))].sort();
   const grp = ['department', 'trainer', 'course', 'learner'].includes(a.group) ? a.group : 'department';
   const keyOf = {department:r => r.u.department || '(no team)', course:r => `${r.c.shortname} · ${r.c.fullname}`, learner:r => fullname(r.u),
     trainer:r => h.teachers(r.c.id).map(t => fullname(t)).join(', ') || '(no trainer)'}[grp];
@@ -135,7 +135,7 @@ VIEWS.analytics = () => {
     <div class="spread" style="margin-bottom:12px"><div class="row">
       <label class="row small">Group by <select id="anagroup" class="sel-sm">${[['department', 'Team'], ['trainer', 'Trainer'], ['course', 'Course'], ['learner', 'Individual learner']].map(([k, l]) => `<option value="${k}" ${grp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <select id="anadept" class="sel-sm" aria-label="Team"><option value="">All teams</option>${depts.map(x => `<option ${a.department === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      <select id="anacourse" class="sel-sm" aria-label="Course"><option value="">All courses</option>${S.courses.map(c => `<option value="${c.id}" ${a.course === c.id ? 'selected' : ''}>${esc(c.shortname)}</option>`).join('')}</select></div>
+      <select id="anacourse" class="sel-sm" aria-label="Course"><option value="">All courses</option>${S.courses.filter(c => !c.hr).map(c => `<option value="${c.id}" ${a.course === c.id ? 'selected' : ''}>${esc(c.shortname)}</option>`).join('')}</select></div>
       <button class="btn sm" data-act="exportAnalytics">Export CSV</button></div>
     <div class="tw" style="margin-bottom:24px"><table><thead><tr><th>${{department:'Team', trainer:'Trainer', course:'Course', learner:'Learner'}[grp]}</th><th class="n">Learners</th><th class="n">Assignments</th><th class="n">Completed</th><th class="n">In progress</th><th class="n">Not started</th><th class="n">Overdue</th><th>Completion</th><th class="n">Hours</th></tr></thead><tbody>
       ${table.map(({k, s}) => `<tr><td>${grp === 'learner' ? `<button class="link" data-go="record" data-id="${groups.get(k)[0].u.id}">${esc(k)}</button>` : esc(k)}</td><td class="n">${s.learners}</td><td class="n">${s.total}</td><td class="n">${s.completed}</td><td class="n">${s.inprogress}</td><td class="n">${s.notstarted}</td><td class="n">${s.overdue ? `<b style="color:var(--bad)">${s.overdue}</b>` : 0}</td><td style="min-width:140px"><div class="prog"><div class="bar"><i style="width:${s.completionRate}%"></i></div><span class="num">${fmtPct(s.completionRate)}</span></div></td><td class="n">${s.creditHours.toFixed(1)}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No data for this filter.</td></tr>'}
@@ -216,7 +216,7 @@ VIEWS.sessionEdit = p => {
   const v = s || {mode:'room', duration:60, start:Math.ceil((now() + D) / 36e5) * 36e5}, sel = new Set(s?.invitees || []);
   const users = S.users.filter(u => !u.suspended || sel.has(u.id)).sort((a, b) => fullname(a).localeCompare(fullname(b)));
   const coursesOf = {}; for (const e of S.enrol) (coursesOf[e.userId] ||= []).push(e.courseId);
-  const courses = S.courses.filter(c => c.status !== 'archived').sort((a, b) => a.fullname.localeCompare(b.fullname)), teams = [...new Set(users.map(u => u.department).filter(Boolean))].sort();
+  const courses = S.courses.filter(c => c.status !== 'archived' && !c.hr).sort((a, b) => a.fullname.localeCompare(b.fullname)), teams = [...new Set(users.map(u => u.department).filter(Boolean))].sort();
   const ready = S.site.meetings?.ready;
   return `${phead([['Live sessions', 'sessions'], [s ? 'Edit' : 'Schedule']], s ? `Edit: ${s.name}` : 'Schedule a live session')}
   <form data-form="session" class="stack" style="max-width:980px">${s ? `<input type="hidden" name="id" value="${s.id}">` : ''}
@@ -243,3 +243,55 @@ VIEWS.sessionEdit = p => {
     <span class="err" id="sesserr" hidden></span>
     <div class="row"><button class="btn primary" type="submit">${s ? 'Save and notify changes' : 'Schedule and send invitations'}</button><button class="btn ghost" type="button" data-go="${s ? 'session' : 'sessions'}" ${s ? `data-id="${s.id}"` : ''}>Cancel</button></div></form>`;
 };
+
+/* ---------- HR Courses (HRBPs, administrators; content moderators build) ---------- */
+const HR_STATUS = {notstarted:['Not started', ''], inprogress:['In progress', 'brand'], completed:['Completed', 'ok'], overdue:['Not completed by due date', 'bad']};
+const hrD = t => t ? new Date(t).toLocaleDateString('en-IN', {day:'numeric', month:'short', ...(new Date(t).getFullYear() !== new Date().getFullYear() ? {year:'numeric'} : {})}) : '–';
+const hrChip = st => `<span class="chip ${HR_STATUS[st]?.[1] || ''}">${HR_STATUS[st]?.[0] || st}</span>`;
+function hrTabs(on, actions = '') {
+  return `<div class="spread" style="align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:18px">${h.hrAccess() ? `<nav class="tabs" aria-label="HR" style="margin:0;flex:1"><button class="tab ${on === 'courses' ? 'on' : ''}" data-go="hrcourses">Courses</button><button class="tab ${on === 'analytics' ? 'on' : ''}" data-go="hranalytics">HR Analytics</button></nav>` : '<span></span>'}<div class="row" style="gap:8px">${actions}</div></div>`;
+}
+VIEWS.hrcourses = () => {
+  if (!h.hrSees()) return notFound('HR Courses are for HRBPs, administrators and content moderators.');
+  const build = h.isAdmin() || h.isModerator(), assign = h.hrAccess();
+  const cs = S.courses.filter(c => c.hr && c.status !== 'archived' && (build || c.status !== 'draft')).sort((a, b) => a.fullname.localeCompare(b.fullname));
+  const rows = C.learnerRows(S, h, {hr:true});
+  return `${phead([['HR Courses']], 'HR Courses')}
+    ${hrTabs('courses', `${build ? '<button class="btn" data-act="newCourse" data-hr="1">+ New HR course</button>' : ''}${assign && cs.some(c => c.status === 'published') ? '<button class="btn primary" data-act="hrAssign">Assign HR course</button>' : ''}`)}
+    <p class="muted" style="margin-top:0;max-width:75ch">Mandatory courses for every employee, kept apart from the other courses and reports. HRBPs assign them by name and email: people new to ${esc(S.site.name)} get a temporary account, everyone gets <b>7 days</b>, reminders 2 days and 1 day before, and a certificate when they finish. Temporary accounts are switched off after the due date; their records stay.</p>
+    <div class="tw"><table><thead><tr><th>Course</th><th class="n">Assigned</th><th class="n">Completed</th><th class="n">In progress</th><th class="n">Not started</th><th class="n">Not completed by due date</th><th></th></tr></thead><tbody>
+    ${cs.map(c => { const rr = rows.filter(r => r.c.id === c.id), n = st => rr.filter(r => r.status === st).length;
+      return `<tr><td><button class="link" data-go="course" data-id="${c.id}"><b>${esc(c.fullname)}</b></button><br><span class="mono muted small">${esc(c.shortname)}</span>${c.status === 'draft' ? ' <span class="chip warn">Draft: publish it to assign</span>' : ''}</td>
+        <td class="n">${rr.length}</td><td class="n">${n('completed')}</td><td class="n">${n('inprogress')}</td><td class="n">${n('notstarted')}</td><td class="n">${n('overdue') ? `<span class="chip bad">${n('overdue')}</span>` : 0}</td>
+        <td><div class="tools">${assign && c.status === 'published' ? `<button class="btn sm" data-act="hrAssign" data-id="${c.id}">Assign</button>` : ''}${rr.length && assign ? `<button class="btn sm ghost" data-act="hraCourse" data-id="${c.id}">People</button>` : ''}${h.canEdit(c.id) ? `<button class="btn sm ghost" data-go="csettings" data-id="${c.id}">Settings</button>` : ''}</div></td></tr>`; }).join('')
+      || `<tr><td colspan="7" class="empty">${build ? 'No HR courses yet. Create one with <b>+ New HR course</b>, or tick <b>HR course</b> in an existing course\'s settings.' : 'No HR courses yet. Administrators and content moderators create them.'}</td></tr>`}
+    </tbody></table></div>`;
+};
+VIEWS.hranalytics = () => {
+  if (!h.hrAccess()) return notFound('HR Analytics are for HRBPs and administrators.');
+  const f = ui.hra || (ui.hra = {});
+  const all = C.learnerRows(S, h, {hr:true}), hrCourses = S.courses.filter(c => c.hr).sort((a, b) => a.fullname.localeCompare(b.fullname));
+  const bys = [...new Set(all.map(r => r.e.assignedBy).filter(Boolean))].map(id => h.user(id)).filter(Boolean);
+  const teams = [...new Set(all.map(r => r.u.department).filter(Boolean))].sort();
+  const rows = all.filter(r => (!f.course || r.c.id === f.course) && (!f.status || r.status === f.status) && (!f.by || r.e.assignedBy === f.by) && (!f.team || (r.u.department || '') === f.team) && (!f.kind || (f.kind === 'temp' ? !!r.u.hrTemp : !r.u.hrTemp)))
+    .sort((a, b) => (b.e.assignedAt || 0) - (a.e.assignedAt || 0));
+  const sm = C.summarize(rows), certs = rows.filter(r => hrCert(r)).length;
+  const sel = (k, label, opts) => `<select class="sel-sm" data-change="hraFilter" data-k="${k}" aria-label="${label}"><option value="">${label}</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${f[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  return `${phead([['HR Analytics']], 'HR Analytics')}
+    ${hrTabs('analytics', '<button class="btn" data-act="exportHR">Download Excel (CSV)</button>')}
+    <div class="row" style="margin-bottom:14px;gap:8px;flex-wrap:wrap">${sel('course', 'All HR courses', hrCourses.map(c => [c.id, c.fullname]))}${sel('status', 'Any status', Object.entries(HR_STATUS).map(([k, [l]]) => [k, l]))}${sel('by', 'Assigned by anyone', bys.map(u => [u.id, fullname(u)]))}${sel('team', 'All teams', teams.map(t => [t, t]))}${sel('kind', 'All accounts', [['temp', 'Temporary accounts'], ['perm', 'Permanent accounts']])}
+      ${Object.values(f).some(Boolean) ? '<button class="btn sm ghost" data-act="hraClear">Clear filters</button>' : ''}</div>
+    <div class="stats" style="margin-bottom:16px">${[['Assigned', sm.total], ['Completed', sm.completed], ['Completion rate', fmtPct(sm.completionRate)], ['In progress', sm.inprogress], ['Not started', sm.notstarted], ['Not completed by due date', sm.overdue], ['Certificates issued', certs]].map(([l, v]) => `<div class="stat"><span class="lbl">${l}</span><b class="num">${v}</b></div>`).join('')}</div>
+    <div class="card" style="margin-bottom:20px">${distBar(sm).replace('>Overdue <', '>Not completed by due date <')}</div>
+    <div class="spread" style="margin-bottom:10px"><h2 style="margin:0">People</h2><input type="search" data-filter="#hralist" placeholder="Search name, email or course" aria-label="Search people" style="max-width:280px"></div>
+    <div class="tw"><table><thead><tr><th>Person</th><th>Course</th><th>Status</th><th>Assigned</th><th>Due</th><th>Completed</th><th class="n">Score</th><th>Certificate</th><th>Account</th></tr></thead><tbody id="hralist">
+    ${rows.map(r => { const ci = hrCert(r), by = h.user(r.e.assignedBy);
+      return `<tr data-s="${esc((fullname(r.u) + ' ' + r.u.email + ' ' + r.c.fullname + ' ' + r.c.shortname).toLowerCase())}"><td><b>${esc(fullname(r.u))}</b><br><span class="muted small">${esc(r.u.email)}${r.u.department ? ` · ${esc(r.u.department)}` : ''}</span></td>
+        <td class="small"><b>${esc(r.c.shortname)}</b><br><span class="muted">${esc(r.c.fullname)}</span></td><td style="white-space:nowrap">${hrChip(r.status)}${r.status !== 'completed' ? `<br><span class="muted small">${r.progress}% done</span>` : ''}</td>
+        <td class="small" style="white-space:nowrap">${hrD(r.e.assignedAt)}${by ? `<br><span class="muted">by ${esc(fullname(by))}</span>` : ''}</td><td class="small" style="white-space:nowrap">${hrD(r.due)}</td><td class="small" style="white-space:nowrap">${hrD(r.completedAt)}</td>
+        <td class="n">${fmtPct(r.total)}</td><td class="small mono">${ci ? esc(ci.code) : '–'}</td>
+        <td class="small" style="white-space:nowrap">${r.u.hrTemp ? `<span class="chip ${r.u.suspended ? '' : 'warn'}">Temporary</span><br><span class="muted">${r.u.suspended ? 'Access ended' : `Until ${hrD(r.u.hrUntil || r.due)}`}</span>` : '<span class="chip">Permanent</span>'}</td></tr>`; }).join('')
+      || `<tr><td colspan="9" class="empty">${all.length ? 'Nobody matches these filters.' : 'No HR courses have been assigned yet.'}</td></tr>`}
+    </tbody></table></div>`;
+};
+function hrCert(r) { const ids = new Set(h.courseMods(r.c.id).filter(m => m.type === 'certificate').map(m => m.id)); return S.certIssued.filter(x => x.userId === r.u.id && ids.has(x.cmid) && !x.archived).sort((a, b) => b.time - a.time)[0] || null; }

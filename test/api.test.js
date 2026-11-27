@@ -563,12 +563,12 @@ test('the super administrator holds every persona and can be assigned training',
   const g = (await call('POST', '/api/login', {username:'geetansh.kumar', password:'Super@2026x'})).cookie; assert.ok(g);
   let st = (await call('GET', '/api/state', null, g)).json.state;
   const me = st.users.find(u => u.id === st.me), H = require('../public/core.js').H(getState(), me.id);
-  assert.deepEqual(H.personas(), ['learner', 'trainer', 'teamlead', 'moderator', 'admin']);
+  assert.deepEqual(H.personas(), ['learner', 'trainer', 'teamlead', 'moderator', 'hrbp', 'admin']);
   assert.ok(H.isTrainer() && H.isTeamLead() && H.learnerPersona());
   assert.equal(H.cohortsLed().length, getState().cohorts.length, 'sees every cohort as team lead');
   // unticking personas does not take them away
   assert.equal((await op(g, 'setPersonas', {userId:me.id, personas:['admin']})).status, 200);
-  assert.deepEqual(require('../public/core.js').H(getState(), me.id).personas(), ['learner', 'trainer', 'teamlead', 'moderator', 'admin']);
+  assert.deepEqual(require('../public/core.js').H(getState(), me.id).personas(), ['learner', 'trainer', 'teamlead', 'moderator', 'hrbp', 'admin']);
   // can be assigned a course like any learner
   const a = await login('admin');
   const r = await op(a, 'assign', {kind:'course', id:'c1', users:[me.id], due:Date.now() + 7 * 864e5, mandatory:true});
@@ -1462,6 +1462,95 @@ test('one full name per person: forms and uploads take a full name, and stored f
   assert.match(ui('actions-ext.js'), /dv\(`D2:D\$\{n\}`[^\n]*\[\['E', 'H', 'K'\], \['F', 'I', 'L'\]\]/, 'Excel template dropdowns follow the columns (team D, courses E/H/K, roles F/I/L)');
 });
 
+test('HR courses: HRBP assigns by name and email, 7 days, reminders, certificate, temporary access ends, kept apart from everything else', async () => {
+  const a = await login('admin'), cat = getState().categories[0].id;
+  // an HRBP (granted by an administrator)
+  let r = await op(a, 'newUser', {fullname:'Hema HRBP', username:'hema.hr', email:'hema.hr@example.com', welcome:false, password:'Pass@2026', personas:['hrbp']}); assert.equal(r.status, 200, r.text);
+  const hrbpId = r.json.result.id; Object.assign(getState().users.find(u => u.id === hrbpId), {mustChangePassword:false, termsAccepted:99, prefsSet:true});
+  assert.ok(getState().sysroles.some(x => x.userId === hrbpId && x.roleId === 'hrbp'));
+  assert.ok(Core.H(getState(), hrbpId).personas().includes('hrbp'));
+  const hr = await login('hema.hr', 'Pass@2026');
+  // only administrators and content moderators build HR courses
+  assert.equal((await op(hr, 'newCourse', {fullname:'POSH', shortname:'POSH', catId:cat, hr:true})).status, 403);
+  r = await op(a, 'newCourse', {fullname:'Prevention of Sexual Harassment', shortname:'POSH-26', catId:cat, hr:true, selfenrol:true}); assert.equal(r.status, 200, r.text);
+  const cid = r.json.result.id, S0 = getState(), c = S0.courses.find(x => x.id === cid);
+  assert.equal(c.hr, true); assert.equal(c.selfenrol, false, 'HR courses are never self-enrol');
+  const cert = Object.values(S0.mods).find(m => m.courseId === cid && m.type === 'certificate'); assert.ok(cert && cert.requireCompletion, 'a certificate is added automatically');
+  const sid = c.sections[0].id;
+  r = await op(a, 'saveMod', {cid, sid, type:'page', name:'Policy', intro:'', visible:true, fields:{content:'Read the policy.'}}); assert.equal(r.status, 200, r.text); const page = r.json.result.id;
+  assert.equal((await op(hr, 'hrAssign', {cid, people:[{name:'X', email:'x@example.com'}]})).status, 400, 'drafts cannot be assigned');
+  assert.equal((await op(a, 'publishCourse', {cid})).status, 200);
+  // a trainer cannot assign
+  assert.equal((await op(await login('rohan'), 'hrAssign', {cid, people:[{name:'X', email:'x@example.com'}]})).status, 403);
+  // assign: one new employee (temporary account), one existing user, one bad row
+  const asha = getState().users.find(u => u.username === 'asha'), t0 = Date.now();
+  r = await op(hr, 'hrAssign', {cid, people:[{fullname:'Tara Menon', email:'Tara.Menon@corp.example', team:'Legal Sales'}, {name:'Asha Verma', email:asha.email}, {name:'Oops', email:'not-an-email'}]});
+  assert.equal(r.status, 200, r.text); const res = r.json.result;
+  assert.equal(res.created, 1); assert.equal(res.assigned, 2); assert.equal(res.skipped.length, 1);
+  assert.ok(Math.abs(res.due - (t0 + 7 * 864e5)) < 60e3, 'due in exactly 7 days');
+  const S1 = getState(), kavya = S1.users.find(u => u.email === 'tara.menon@corp.example');
+  assert.ok(kavya && kavya.hrTemp && kavya.mustChangePassword); assert.equal(kavya.firstname, 'Tara Menon'); assert.equal(kavya.username, 'tara.menon');
+  assert.equal(asha.hrTemp, undefined, 'existing accounts are not made temporary');
+  const ek = S1.enrol.find(e => e.courseId === cid && e.userId === kavya.id); assert.ok(ek.hr && ek.assignedBy === hrbpId);
+  const mk = S1.outbox.filter(m => m.to === 'tara.menon@corp.example' && m.key === 'hrAssigned').pop(); assert.ok(mk, 'assignment email');
+  assert.match(mk.body, /setpassword/); assert.match(mk.body, /7 days/); assert.match(mk.body, /access to NB Academy ends after the due date/);
+  const ma = S1.outbox.filter(m => m.to === asha.email && m.key === 'hrAssigned').pop(); assert.ok(ma); assert.doesNotMatch(ma.body, /setpassword/);
+  // kept apart: a team lead / trainer / regular analytics do not see it; the learner sees their own
+  const rohanSt = (await call('GET', '/api/state', null, await login('rohan'))).json.state;
+  assert.ok(!rohanSt.courses.some(x => x.id === cid) && !rohanSt.enrol.some(e => e.courseId === cid) && !rohanSt.users.some(u => u.id === kavya.id), 'trainers see nothing of HR');
+  const priyaSt = (await call('GET', '/api/state', null, await login('priya'))).json.state;
+  assert.ok(!priyaSt.enrol.some(e => e.courseId === cid), 'team leads see nothing of HR');
+  const ashaSt = (await call('GET', '/api/state', null, await login('asha'))).json.state;
+  assert.ok(ashaSt.courses.some(x => x.id === cid) && ashaSt.enrol.some(e => e.courseId === cid && e.userId === asha.id), 'the learner sees their own');
+  assert.ok(!ashaSt.users.some(u => u.id === kavya.id), 'learners do not see temporary accounts');
+  const hA = Core.H(getState(), getState().users.find(u => u.username === 'admin').id);
+  assert.ok(!Core.learnerRows(getState(), hA).some(x => x.c.id === cid || x.u.hrTemp), 'regular analytics leave HR out');
+  assert.equal(Core.learnerRows(getState(), hA, {hr:true}).filter(x => x.c.id === cid).length, 2, 'HR analytics have it');
+  const hrSt = (await call('GET', '/api/state', null, hr)).json.state;
+  assert.ok(hrSt.courses.some(x => x.id === cid) && hrSt.users.some(u => u.id === kavya.id && u.hrTemp) && hrSt.enrol.filter(e => e.courseId === cid).length === 2, 'HRBPs see HR courses and people');
+  assert.ok(Core.H(getState(), hrbpId).canView(cid) && !Core.H(getState(), hrbpId).canEdit(cid), 'HRBPs can look through but not edit');
+  // a temporary account sees only its HR course and the people who run it, and cannot enrol in anything else
+  Object.assign(getState().users.find(u => u.id === kavya.id), {mustChangePassword:false, termsAccepted:99, prefsSet:true});
+  const tl = await login('tara.menon', 'Welcome@1'), tst = (await call('GET', '/api/state', null, tl)).json.state;
+  assert.deepEqual(tst.courses.map(x => x.id), [cid], 'only the HR course');
+  assert.ok(!tst.users.some(u => u.username === 'asha' || u.id === asha.id), 'not the staff directory'); assert.ok(tst.users.some(u => u.id === hrbpId), 'but the HRBP who assigned it');
+  assert.equal((await op(tl, 'enrolMe', {cid:'c1'})).status, 403);
+  // reminders at 2 days and 1 day, once each
+  const S2 = getState(), e2 = id => S2.enrol.find(e => e.courseId === cid && e.userId === id);
+  e2(kavya.id).due = Date.now() + 1.5 * 864e5; runTick(); runTick();
+  assert.equal(getState().outbox.filter(m => m.to === 'tara.menon@corp.example' && m.key === 'hrReminder').length, 1, 'one reminder');
+  getState().enrol.find(e => e.courseId === cid && e.userId === kavya.id).due = Date.now() + 0.5 * 864e5; runTick();
+  assert.equal(getState().outbox.filter(m => m.to === 'tara.menon@corp.example' && m.key === 'hrReminder').length, 2, 'second reminder at 1 day');
+  assert.equal(getState().outbox.filter(m => m.to === 'tara.menon@corp.example' && m.key === 'deadline').length, 0, 'no regular deadline emails');
+  // Asha completes: certificate issued
+  getState().completion[asha.id + ':' + page] = Date.now(); Core._.checkBadges(getState(), {now:() => Date.now(), uid:p => (p || 'x') + Math.random().toString(36).slice(2)}, asha.id, cid);
+  assert.ok(getState().enrol.find(e => e.courseId === cid && e.userId === asha.id).completedAt);
+  assert.ok(getState().certIssued.some(x => x.userId === asha.id && x.cmid === cert.id), 'certificate issued on completion');
+  // due date passes: HRBP told about Kavya (not about Asha), Kavya's temporary access ends; Asha's account stays
+  for (const e of getState().enrol.filter(e => e.courseId === cid)) e.due = Date.now() - 1000;
+  runTick();
+  const missed = getState().outbox.filter(m => m.to === 'hema.hr@example.com' && m.key === 'hrMissed');
+  assert.equal(missed.length, 1); assert.match(missed[0].subject, /Tara Menon/);
+  const k2 = getState().users.find(u => u.id === kavya.id); assert.equal(k2.suspended, true); assert.equal(k2.hrExpired, true);
+  assert.ok(!getState().users.find(u => u.id === asha.id).suspended, 'permanent accounts stay');
+  assert.ok(getState().enrol.some(e => e.courseId === cid && e.userId === kavya.id), 'records stay');
+  assert.equal((await call('POST', '/api/login', {username:'tara.menon', password:'Welcome@1'})).status, 401, 'cannot sign in any more');
+  runTick(); assert.equal(getState().outbox.filter(m => m.to === 'hema.hr@example.com' && m.key === 'hrMissed').length, 1, 'told once');
+  // assigning again reopens the temporary account with a new 7 days
+  r = await op(hr, 'hrAssign', {cid, people:[{name:'Tara Menon', email:'tara.menon@corp.example'}]}); assert.equal(r.status, 200); assert.equal(r.json.result.renewed, 1);
+  assert.equal(getState().users.find(u => u.id === kavya.id).suspended, false);
+  // someone who completed is skipped unless "again"
+  r = await op(hr, 'hrAssign', {cid, people:[{name:'Asha', email:asha.email}]}); assert.equal(r.json.result.skipped.length, 1); assert.match(r.json.result.skipped[0].why, /Already completed/);
+  // only administrators grant HRBP
+  const mod = await op(hr, 'setPersonas', {userId:asha.id, personas:['learner', 'hrbp']}); assert.equal(mod.status, 403);
+  // HR courses cannot be given out through the regular tools
+  assert.equal((await op(a, 'assign', {kind:'course', id:cid, users:[asha.id], due:Date.now() + 864e5})).status, 400);
+  const zoya = getState().users.find(u => u.username === 'zoya');
+  r = await op(a, 'enrolUser', {cid, userId:zoya.id, role:'student'}); assert.equal(r.status, 400); assert.match(r.text, /HR Courses tab/);
+  // a course with learners cannot switch between HR and regular
+  r = await op(a, 'courseSettings', {cid, fullname:c.fullname, shortname:c.shortname, catId:cat, summary:'', visible:true, hr:false}); assert.equal(r.status, 400);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;
@@ -1510,7 +1599,7 @@ test('a demo site started without --demo is cleaned: backup first, then only rea
   });
   assert.match(await run(['--demo']), /Loaded demo data/);
   const out = await run([]);
-  assert.match(out, /Demo data removed: 6 courses/);
+  assert.match(out, /Demo data removed: 8 courses/);
   const db = new DatabaseSync(path.join(d, 'nbacademy.db'));
   const rows = coll => db.prepare('SELECT data FROM records WHERE coll = ?').all(coll).map(r => JSON.parse(r.data));
   const users = rows('users');

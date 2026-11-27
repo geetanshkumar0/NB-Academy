@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (93 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (94 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -348,3 +348,13 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 ## Inactive accounts
 
 Administrators (and only they) can **Mark as inactive** on Site administration › Users, and **Mark as active** again; the list can be filtered to Active or Inactive. An inactive person cannot sign in (an open session ends), gets no emails or reminders, and cannot be enrolled in or assigned new training. Their enrolments, progress, grades, certificates and place in reports all stay, and they show with an **Inactive** label. Stored as `user.suspended` (op `suspendUser`).
+
+## HR courses
+
+Mandatory HR courses (POSH, Code of Conduct and the like), kept apart from everything else.
+
+- **Who:** administrators and content moderators build them (tick **HR course** in course settings, or **+ New HR course** in the HR Courses tab; a certificate activity is added automatically). **HRBPs** (a site role granted by an administrator under Edit access) and administrators assign them and see HR Analytics.
+- **Assigning:** HR Courses › Assign: paste one person per line, `Full name, email` (team optional; an Excel copy works). People not yet on NB Academy get a **temporary account** and an email with a link to set their password; existing people are enrolled and emailed.
+- **Deadline:** always **7 days**. Reminders 2 days and 1 day before. At the due date the assigning HRBP is told about anyone who did not finish, and temporary accounts are switched off (marked inactive) once all their HR courses are past due, finished or not. Records, certificates and reports stay. Assigning again reopens the account with a new 7 days.
+- **Kept apart:** HR courses, their enrolments and temporary accounts do not appear in Courses, the regular Analytics, the Users list, trainer or team lead views, or the regular Assign/Enrol tools. Learners see their own HR course in My learning with an HR label. Temporary accounts see only their HR courses.
+- **HR Analytics:** totals, a status bar, filters (course, status, HRBP, team, temporary/permanent) and every person with assigned/due/completed dates, score and certificate code; download as CSV.

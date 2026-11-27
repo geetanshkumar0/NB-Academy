@@ -249,7 +249,7 @@ Object.assign(F, {
 document.addEventListener('change', e => { if (e.target.name !== 'mode' || !e.target.form || e.target.form.dataset.form !== 'chat') return; const el = e.target.form.querySelector('[data-chatpick]'); if (el) el.hidden = e.target.value !== 'custom'; });
 
 /* ---------- Personas: shared by "Add a new user" and the user profile ---------- */
-const PERSONAS = [['learner', 'Learner', 'Takes assigned training and courses'], ['trainer', 'Trainer', 'Delivers and grades courses and cohorts tagged to them'], ['teamlead', 'Team Lead', 'Monitors and reminds the cohorts mapped to them'], ['moderator', 'Content Moderator', 'Adds users, creates courses, uploads content and builds quizzes; Trainer and Team Lead access everywhere'], ['admin', 'Administrator', 'Manages the whole site']];
+const PERSONAS = [['learner', 'Learner', 'Takes assigned training and courses'], ['trainer', 'Trainer', 'Delivers and grades courses and cohorts tagged to them'], ['teamlead', 'Team Lead', 'Monitors and reminds the cohorts mapped to them'], ['moderator', 'Content Moderator', 'Adds users, creates courses, uploads content and builds quizzes; Trainer and Team Lead access everywhere'], ['hrbp', 'HRBP', 'Assigns HR courses to employees and sees HR Analytics (HR courses are built by administrators and content moderators)'], ['admin', 'Administrator', 'Manages the whole site']];
 function personaFields(u) {
   const on = new Set(u ? h.personas(u.id) : ['learner']);
   // Content moderators have Trainer and Team Lead access built in: tick those only when also given on their own
@@ -260,7 +260,7 @@ function personaFields(u) {
   const inC = key => u ? S.cohorts.filter(c => c[key].includes(u.id)).map(c => c.id) : [];
   const coItems = S.cohorts.map(c => [c.id, c.name, [c.department, `${c.members.length} members`].filter(Boolean).join(' · ')]);
   const tCourses = u ? S.enrol.filter(e => e.userId === u.id && e.role === 'trainer').map(e => e.courseId) : [];
-  const box = ([k, l, sub]) => ((k === 'admin' || k === 'moderator') && !h.isAdmin()) ? '' : u?.builtinAdmin ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="${k}"> <span><b>${l}</b><br><span class="muted small">Always on for the super administrator</span></span></label>` : (k === 'admin' && (u?.builtinAdmin || (u?.admin && !h.isSuperAdmin())) ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="admin"> <span><b>${l}</b><br><span class="muted small">${u.builtinAdmin ? 'Super administrator: set in the server configuration' : 'Only the super administrator can remove this'}</span></span></label>` : `<label class="check persona"><input type="checkbox" name="personas" value="${k}" ${on.has(k) ? 'checked' : ''}> <span><b>${l}</b><br><span class="muted small">${sub}</span></span></label>`);
+  const box = ([k, l, sub]) => (['admin', 'moderator', 'hrbp'].includes(k) && !h.isAdmin()) ? '' : u?.builtinAdmin ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="${k}"> <span><b>${l}</b><br><span class="muted small">Always on for the super administrator</span></span></label>` : (k === 'admin' && (u?.builtinAdmin || (u?.admin && !h.isSuperAdmin())) ? `<label class="check persona"><input type="checkbox" checked disabled><input type="hidden" name="personas" value="admin"> <span><b>${l}</b><br><span class="muted small">${u.builtinAdmin ? 'Super administrator: set in the server configuration' : 'Only the super administrator can remove this'}</span></span></label>` : `<label class="check persona"><input type="checkbox" name="personas" value="${k}" ${on.has(k) ? 'checked' : ''}> <span><b>${l}</b><br><span class="muted small">${sub}</span></span></label>`);
   const sec = (k, html) => `<div class="field full" data-pfor="${k}" ${on.has(k) ? '' : 'hidden'}>${html}</div>`;
   return `<div class="personagrid">${PERSONAS.map(box).join('')}</div>
     <p class="muted small" style="margin:0">People with more than one persona switch between them with the view switcher in the top bar.</p>
@@ -556,3 +556,60 @@ F.editAccess = async (d, f) => {
     cleanUploads: async () => { try { show(await B.req('POST', '/api/admin/storage/clean', {})); toast('Unfinished uploads older than 15 minutes removed'); } catch (e) { toast(e.message, true); } },
   });
 }
+
+/* ---------- HR Courses: assign by name and email, analytics filters and export ---------- */
+// One person per line: "Full name, email" (comma or tab, so an Excel copy works), an optional team after the email; a header row is skipped
+function hrParse(text) {
+  const out = [], bad = [];
+  const lines = String(text || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  lines.forEach((raw, i) => {
+    const parts = raw.split(/\t|,|;/).map(x => x.trim()).filter(Boolean), ei = parts.findIndex(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
+    if (ei < 0) { if (!(i === 0 && /^(full ?)?name\b.*\be-?mail/i.test(raw))) bad.push(raw); return; } // a first row of column titles is skipped
+    out.push({name:parts.slice(0, ei).join(' ').replace(/\s+/g, ' ').trim(), email:parts[ei].toLowerCase(), team:parts.slice(ei + 1).join(' ').trim()});
+  });
+  return {people:out, bad};
+}
+function hrPreview() {
+  const el = document.getElementById('hrpv'), ta = document.getElementById('hrppl'); if (!el || !ta) return;
+  const {people, bad} = hrParse(ta.value), known = people.filter(p => S.users.some(u => (u.email || '').toLowerCase() === p.email));
+  const noName = people.filter(p => !p.name && !known.includes(p));
+  el.innerHTML = people.length || bad.length ? `<b>${people.length}</b> ${people.length === 1 ? 'person' : 'people'}${people.length ? `: ${people.length - known.length} new (temporary accounts), ${known.length} already on ${esc(S.site.name)}` : ''}.
+    ${noName.length ? `<div class="err" style="display:block">Add a name for: ${noName.map(p => esc(p.email)).join(', ')}</div>` : ''}${bad.length ? `<div class="err" style="display:block">No email address found on: ${bad.slice(0, 5).map(esc).join(' | ')}${bad.length > 5 ? ` and ${bad.length - 5} more` : ''}</div>` : ''}` : 'Nobody added yet.';
+}
+document.addEventListener('input', e => { if (e.target.id === 'hrppl') hrPreview(); });
+Object.assign(A, {
+  hrAssign: d => {
+    const cs = S.courses.filter(c => c.hr && c.status === 'published').sort((a, b) => a.fullname.localeCompare(b.fullname));
+    if (!cs.length) return toast('Publish an HR course first.');
+    const due = new Date(Date.now() + 7 * D);
+    openModal('Assign HR course', `<form data-form="hrAssign" class="stack">
+      <div class="field"><label for="hrc">HR course</label><select id="hrc" name="cid">${cs.map(c => `<option value="${c.id}" ${c.id === d?.id ? 'selected' : ''}>${esc(c.fullname)}</option>`).join('')}</select></div>
+      <div class="field"><label for="hrppl">People: one per line, <b>Full name, email</b> (team optional)</label>
+        <textarea id="hrppl" name="people" rows="8" placeholder="Kavya Nair, kavya.nair@nobroker.in&#10;Rahul Kumar, rahul.kumar@nobroker.in, Legal Sales" required></textarea>
+        <span class="hint">You can paste from Excel: columns Name, Email (and Team). People who are not on ${esc(S.site.name)} yet get a temporary account and an email to set their password.</span></div>
+      <p class="muted small" id="hrpv" role="status">Nobody added yet.</p>
+      <label class="check"><input type="checkbox" name="again"> <span>Also assign again to people who already completed this course</span></label>
+      <div class="card" style="padding:10px 14px"><b>Due ${fmtDateOnly(due)}</b> <span class="muted small">(7 days from now, fixed). Reminders go out 2 days and 1 day before. Temporary accounts are switched off after the due date.</span></div>
+      <p class="err" id="hrerr" role="alert" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Assign and send emails</button></div></form>`);
+  },
+  hraFilter: () => {},
+  hraClear: () => { ui.hra = {}; render(); },
+  hraCourse: d => { ui.hra = {course:d.id}; go('hranalytics'); },
+  exportHR: () => {
+    const f = ui.hra || {}, rows = C.learnerRows(S, h, {hr:true}).filter(r => (!f.course || r.c.id === f.course) && (!f.status || r.status === f.status) && (!f.by || r.e.assignedBy === f.by) && (!f.team || (r.u.department || '') === f.team) && (!f.kind || (f.kind === 'temp' ? !!r.u.hrTemp : !r.u.hrTemp)));
+    const d = t => t ? new Date(t).toISOString().slice(0, 10) : '';
+    download(`hr-courses-${new Date().toISOString().slice(0, 10)}.csv`, csv([['Name', 'Email', 'Team', 'Course', 'Course short name', 'Status', 'Progress %', 'Score %', 'Assigned on', 'Assigned by', 'Due', 'Completed on', 'Certificate code', 'Account'],
+      ...rows.map(r => { const ci = hrCert(r); return [fullname(r.u), r.u.email, r.u.department || '', r.c.fullname, r.c.shortname, HR_STATUS[r.status][0], r.progress, r.total == null ? '' : r.total.toFixed(1), d(r.e.assignedAt), r.e.assignedBy ? fullname(h.user(r.e.assignedBy)) : '', d(r.due), d(r.completedAt), ci ? ci.code : '', r.u.hrTemp ? (r.u.suspended ? 'Temporary, access ended' : 'Temporary') : 'Permanent']; })]));
+  },
+});
+Object.assign(F, {
+  hrAssign: async (d, f) => {
+    const {people, bad} = hrParse(d.people);
+    if (!people.length) { const e = document.getElementById('hrerr'); e.hidden = false; e.textContent = 'Add at least one person: Full name, email.'; return; }
+    const r = await act('hrAssign', {cid:d.cid, people, again:checked(f, 'again')}, null, {silent:true, errEl:'hrerr'}); if (r === FAIL) return;
+    const c = h.course(d.cid), n = r.assigned + r.renewed;
+    openModal('HR course assigned', `<div class="stack"><p><b>${n}</b> ${n === 1 ? 'person' : 'people'} assigned <b>${esc(c.fullname)}</b>, due <b>${fmtDateOnly(r.due)}</b>.${r.created ? ` ${r.created} temporary account${r.created === 1 ? ' was' : 's were'} created.` : ''} ${S.site.emailOn ? 'Emails are on their way.' : '<span class="err" style="display:inline">Email is not set up, so nobody was emailed.</span>'}</p>
+      ${r.skipped.length || bad.length ? `<div><b>Not assigned (${r.skipped.length + bad.length})</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${r.skipped.map(s => `<li>${esc(s.who)}: ${esc(s.why)}</li>`).join('')}${bad.map(b => `<li>${esc(b)}: no email address</li>`).join('')}</ul></div>` : ''}
+      <div class="mfoot"><button class="btn" data-act="hraCourse" data-id="${c.id}">See people</button><button class="btn primary" data-act="closeModal">Done</button></div></div>`);
+  },
+});

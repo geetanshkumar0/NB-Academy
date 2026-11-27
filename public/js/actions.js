@@ -185,14 +185,14 @@ const A = {
       <li>${esc(r.from)} is then archived (kept, hidden from new enrolments). Forum posts stay there.</li></ul>
       ${r.learners ? `<div class="row"><button class="btn primary" data-act="mergeGo" data-from="${from}" data-into="${d.into}">Move ${r.learners} learner${r.learners === 1 ? '' : 's'}</button></div>` : '<p class="muted">Nobody is enrolled as a learner there, so there is nothing to move.</p>'}</div>`; },
   mergeGo: async d => { const r = await act('mergeCourse', {from:d.from, into:d.into}, null, {silent:true}); if (r === FAIL) return; closeModal(); toast(`Moved ${r.learners} learner${r.learners === 1 ? '' : 's'} with their progress`); go('participants', {id:d.into}); },
-  newCourse: () => openModal('Create new course', `<form data-form="newCourse" class="stack"><div class="fgrid">
+  newCourse: d => openModal(d?.hr ? 'Create HR course' : 'Create new course', `<form data-form="newCourse" class="stack"><div class="fgrid">${d?.hr ? '<input type="hidden" name="hr" value="1"><p class="muted full">An HR course is kept apart from other courses. HRBPs assign it; people get 7 days, and a certificate is issued on completion (a certificate activity is added for you).</p>' : ''}
       <div class="field full"><label for="nc1">Course full name</label><input id="nc1" name="fullname" type="text" required></div>
       <div class="field"><label for="nc2">Course short name</label><input id="nc2" name="shortname" type="text" required placeholder="e.g. LD101"></div>
       <div class="field"><label for="nc3">Category</label><select id="nc3" name="catId">${S.categories.map(k => `<option value="${k.id}">${esc(k.name)}</option>`).join('')}</select></div>
       <div class="field full"><label for="nc4">Course summary</label><textarea id="nc4" name="summary" rows="3"></textarea></div>
       <div class="field"><label for="nc5">Number of sections</label><input id="nc5" name="sections" type="number" min="0" max="20" value="4"></div>
-      <div class="field"><label for="nc6">Teacher</label><select id="nc6" name="teacher"><option value="">None yet</option>${S.users.filter(u => !u.admin).map(u => `<option value="${u.id}">${esc(fullname(u))}</option>`).join('')}</select></div>
-      <label class="check full"><input type="checkbox" name="groupChat" checked> <span>Create a group chat for everyone in this course <span class="muted small">(people enrolled later join automatically; you can add more chats from the course's Group chats tab)</span></span></label></div>
+      ${d?.hr ? '' : `<div class="field"><label for="nc6">Teacher</label><select id="nc6" name="teacher"><option value="">None yet</option>${S.users.filter(u => !u.admin && !u.hrTemp).map(u => `<option value="${u.id}">${esc(fullname(u))}</option>`).join('')}</select></div>`}
+      <label class="check full" ${d?.hr ? 'hidden' : ''}><input type="checkbox" name="groupChat" ${d?.hr ? '' : 'checked'}> <span>Create a group chat for everyone in this course <span class="muted small">(people enrolled later join automatically; you can add more chats from the course's Group chats tab)</span></span></label></div>
       <p class="err" id="ncerr" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save and display</button></div></form>`, true),
   deleteCourse: d => { const c = h.course(d.id); confirmBox('Delete course', `Delete <b>${esc(c.fullname)}</b> with all its activities, enrolments and grades? This cannot be undone.`, async () => { if (await act('deleteCourse', {id:c.id}, 'Course deleted', {silent:true}) !== FAIL) go('admin', {t:'courses'}); }); },
   renameGroup: d => { const g = S.groups.find(x => x.id === d.id); openModal('Rename group', `<form data-form="renameGroup" class="stack"><input type="hidden" name="gid" value="${g.id}"><input type="hidden" name="cid" value="${d.cid}"><div class="field"><label for="rg">Group name</label><input id="rg" name="name" type="text" value="${esc(g.name)}" required></div><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`); },
@@ -245,7 +245,7 @@ const F = {
   cloneCourse: async d => { const r = await act('cloneCourse', d, 'Course cloned. It is a draft until you publish it.', {errEl:'clerr'}); if (r !== FAIL) { closeModal(); go('course', {id:r.id}); } },
   newCourse: async d => { const r = await act('newCourse', d, 'Course created', {silent:true, errEl:'ncerr'}); if (r !== FAIL) { closeModal(); go('course', {id:r.id}); } },
   newUser: async (d, f) => { const r = await act('newUser', {...d, admin:checked(f, 'admin')}, 'User created', {silent:true, errEl:'nuerr'}); if (r !== FAIL) { closeModal(); render(); } },
-  courseSettings: async (d, f) => { if (await act('courseSettings', {...d, visible:checked(f, 'visible'), selfenrol:checked(f, 'selfenrol')}, 'Course settings saved', {silent:true}) !== FAIL) go('course', {id:d.cid}); },
+  courseSettings: async (d, f) => { const hrBox = f.querySelector('[name=hr]'); if (await act('courseSettings', {...d, visible:checked(f, 'visible'), selfenrol:checked(f, 'selfenrol'), ...(hrBox && !hrBox.disabled ? {hr:hrBox.checked} : {})}, 'Course settings saved', {silent:true}) !== FAIL) go('course', {id:d.cid}); },
   modSettings: async (d, f) => {
     const fields = {};
     for (const [k, v] of Object.entries(d)) if (!['cid', 'type', 'mid', 'sid', 'name', 'intro', 'visible', 'requires', 'rubric', 'fquestions'].includes(k)) fields[k] = v;
@@ -389,6 +389,7 @@ document.addEventListener('change', e => {
   else if (t.dataset.csv) readText(t, 'csvtext');
   else if (t.dataset.restore) readText(t, 'rtext');
   else if (t.dataset.award) act('awardBadge', {bid:t.dataset.award, userId:t.dataset.u, on:t.checked}, t.checked ? 'Badge awarded' : 'Badge revoked');
+  else if (t.dataset.change === 'hraFilter') { ui.hra = {...(ui.hra || {}), [t.dataset.k]:t.value}; render(); }
   else if (t.dataset.change === 'importFrom') { const l = document.getElementById('islist'); if (l && ui.importList) l.innerHTML = ui.importList(t.value); }
   else if (t.dataset.change === 'userStatus') { const l = document.getElementById('ulist'); if (l) l.dataset.only = t.value; ui.userStatus = t.value; }
   else if (t.dataset.change === 'changeRole') act('changeRole', {cid:t.dataset.cid, userId:t.dataset.u, role:t.value}, 'Role changed');

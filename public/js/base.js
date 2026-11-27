@@ -342,6 +342,7 @@ function modes() {
   if (ps.includes('teamlead')) m.push(['teamlead', 'Team Lead']);
   if (ps.includes('trainer')) m.push(['trainer', 'Trainer']);
   if (ps.includes('moderator')) m.push(['moderator', 'Content Moderator']);
+  if (ps.includes('hrbp')) m.push(['hrbp', 'HRBP']);
   if (ps.includes('admin') || (!ps.includes('moderator') && canSiteAdmin()) || h.has('analytics:site') || h.has('access:approve')) m.push(['admin', 'Admin']);
   if (!m.length) m.push(['learner', 'Learner']);
   return m;
@@ -352,7 +353,7 @@ function currentMode() {
   return ui.mode;
 }
 function setMode(m) { ui.mode = m; try { localStorage.setItem('nb.mode.' + S.me, m); } catch (e) {} if (m !== 'admin' && m !== 'trainer') ui.editing = false; go(homeFor(m)); }
-const homeFor = m => ({learner:'dashboard', teamlead:'team', trainer:'trainer', moderator:'home', admin:'analytics'}[m] || 'dashboard');
+const homeFor = m => ({learner:'dashboard', teamlead:'team', trainer:'trainer', moderator:'home', hrbp:'hrcourses', admin:'analytics'}[m] || 'dashboard');
 
 /* ---------- Rendering ---------- */
 const app = document.getElementById('app');
@@ -450,16 +451,18 @@ function keepCaretInView(t) {
 document.addEventListener('input', e => { const t = e.target; if (t.tagName === 'TEXTAREA' && !t.closest('.qb-card,.tform')) { growArea(t); keepCaretInView(t); } });
 function navbar() {
   const u = me(), v = ui.view.name, mode = currentMode(), ms = modes();
-  const L = {learner:[['dashboard', 'Dashboard'], ['mycourses', 'My learning'], ['home', 'Library'], ['calendar', 'Calendar']],
+  const L = {learner:u.hrTemp ? [['dashboard', 'Dashboard'], ['mycourses', 'My learning']] : [['dashboard', 'Dashboard'], ['mycourses', 'My learning'], ['home', 'Library'], ['calendar', 'Calendar']],
+    hrbp:[['hrcourses', 'HR Courses'], ['hranalytics', 'HR Analytics']],
     teamlead:[['team', 'Team workspace'], ['calendar', 'Calendar']],
     trainer:[['trainer', 'Trainer workspace'], ['mycourses', 'My courses'], ['calendar', 'Calendar']],
-    moderator:[['home', 'Courses'], ['admin', 'Site administration']],
-    admin:[['analytics', 'Analytics'], ...(h.has('access:approve') ? [['approvals', 'Approvals']] : []), ['home', 'Courses'], ['sessions', 'Live sessions'], ...(canSiteAdmin() ? [['admin', 'Site administration']] : [])]}[mode];
+    moderator:[['home', 'Courses'], ['hrcourses', 'HR Courses'], ['admin', 'Site administration']],
+    admin:[['analytics', 'Analytics'], ...(h.has('access:approve') ? [['approvals', 'Approvals']] : []), ['home', 'Courses'], ['hrcourses', 'HR Courses'], ['sessions', 'Live sessions'], ...(canSiteAdmin() ? [['admin', 'Site administration']] : [])]}[mode];
   // Anyone invited to a live session also gets the Live sessions tab
   if (mode !== 'admin' && (S.sessions || []).length) L.splice(L.length - 1, 0, ['sessions', 'Live sessions']);
   const pending = h.has('access:approve') ? S.accessRequests.filter(r => r.status === 'pending').length : 0;
   const courseCtx = ['course', 'participants', 'groups', 'grades', 'badges', 'creports', 'csettings', 'mod', 'attempt', 'review', 'discussion', 'grader', 'submit', 'lessonplay', 'wsassess'].includes(v);
-  const on = k => (k === v || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
+  const hrCtx = courseCtx && ui.view.p && (h.course(ui.view.p.id)?.hr || h.course(S.mods[ui.view.p.id]?.courseId)?.hr);
+  const on = k => (k === v || (k === 'hrcourses' && (v === 'hranalytics' && mode !== 'hrbp' || hrCtx && mode !== 'learner')) || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && !hrCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
   const um = h.unreadMessages(), un = h.unreadNotifications(), gq = h.gradingQueue().length;
   // The first four pages sit in the bar; any others (e.g. Site administration) are in the small ▾ menu after them
   const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;

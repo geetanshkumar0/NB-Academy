@@ -92,6 +92,7 @@ const BUILTIN_ROLES = [
   {id:'teacher', name:'Non-editing teacher', builtin:true, desc:'Grades and supports learners but cannot change course content.', caps:capSet(['course:view','course:viewhidden','course:viewparticipants','grade:viewall','grade:edit','report:view','forum:post','forum:deleteany','glossary:approve','badges:award','message:send'])},
   {id:'student', name:'Learner', builtin:true, desc:'Takes part in courses. Tracked for completion, deadlines and grades.', caps:capSet(['course:view','course:viewparticipants','mod:submit','forum:post','message:send'])},
   {id:'moderator', name:'Content Moderator', builtin:true, desc:'Site role. Adds users, creates courses, builds course content and quizzes, and has Trainer and Team Lead access for every course and cohort. Cannot change site settings or roles, delete courses or users, log in as others, or manage administrators.', caps:capSet(['course:view','course:viewhidden','course:update','course:manageactivities','course:viewparticipants','course:enrol','group:manage','grade:viewall','grade:edit','report:view','forum:post','forum:addnews','forum:deleteany','glossary:approve','badges:manage','badges:award','backup:course','course:assign','attempts:manage','live:manage','message:send','user:manage','user:upload','course:create','qbank:manage','team:view'])},
+  {id:'hrbp', name:'HRBP', builtin:true, desc:'Site role. Assigns HR courses (mandatory courses built by administrators and content moderators) to any employee, by name and email, and sees HR analytics. HR courses and their records are kept apart from everything else.', caps:{}},
   {id:'teamlead', name:'Team Lead', builtin:true, desc:'Site role. Monitors the cohorts mapped to them: progress, deadlines, at-risk learners and reminders. Cannot create courses, manage users or assign courses.', caps:capSet(['team:view','message:send'])}
 ];
 
@@ -124,7 +125,8 @@ function H(S, meId) {
   };
   h.hasAnywhere = (cap, uid = meId) => h.has(cap, null, uid) || S.enrol.some(e => e.userId === uid && h.role(e.role)?.caps?.[cap]);
   h.canView = cid => {
-    const c = h.course(cid); if (!c || !h.has('course:view', cid)) return false;
+    const c = h.course(cid); if (c?.hr && h.isHRBP() && c.status !== 'draft') return true; // HRBPs can look through the HR courses they assign
+    if (!c || !h.has('course:view', cid)) return false;
     if (c.status === 'draft') return h.has('course:update', cid) || h.has('course:manageactivities', cid);
     return c.visible || h.has('course:viewhidden', cid);
   };
@@ -238,6 +240,12 @@ function H(S, meId) {
   /* Super administrators and content moderators see every course and cohort in the Trainer and Team Lead views */
   h.seesAll = (uid = meId) => !!h.user(uid)?.builtinAdmin || h.sysrole('moderator', uid);
   h.isModerator = (uid = meId) => !h.user(uid)?.suspended && h.sysrole('moderator', uid);
+  /* HR courses (course.hr): kept apart from everything else. HRBPs and administrators assign them and see HR analytics;
+     content moderators (and administrators) build them. Learners see only their own. */
+  h.isHRBP = (uid = meId) => !h.user(uid)?.suspended && (h.sysrole('hrbp', uid) || !!h.user(uid)?.builtinAdmin);
+  h.hrAccess = (uid = meId) => h.isAdmin(uid) || h.isHRBP(uid);
+  h.hrSees = (uid = meId) => h.hrAccess(uid) || h.isModerator(uid);
+  h.isHRCourse = cid => !!h.course(cid)?.hr;
   /* Who may change someone's account: administrators, managers and moderators only by an administrator */
   h.mayManage = uid => { const u = h.user(uid); if (!u) return false; if (uid === meId) return true; return u.admin || h.sysrole('manager', uid) || h.sysrole('moderator', uid) ? h.isAdmin() : h.has('user:manage'); };
   h.cohortsLed = (uid = meId) => h.seesAll(uid) ? S.cohorts : S.cohorts.filter(c => c.leads.includes(uid));
@@ -251,10 +259,11 @@ function H(S, meId) {
   h.learnerPersona = (uid = meId) => !!h.user(uid)?.builtinAdmin || !!h.user(uid)?.personas?.includes('learner') || h.learnsAnything(uid);
   /* Personas a person can switch between: learner, trainer, team lead, administrator */
   /* The super administrator (built-in admin) holds every persona */
-  h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; if (u.builtinAdmin) return ['learner', 'trainer', 'teamlead', 'moderator', 'admin']; const out = [];
-    if (h.learnerPersona(uid) || (!u.admin && !h.sysrole('manager', uid) && !h.isTrainer(uid) && !h.isTeamLead(uid))) out.push('learner');
+  h.personas = (uid = meId) => { const u = h.user(uid); if (!u) return []; if (u.builtinAdmin) return ['learner', 'trainer', 'teamlead', 'moderator', 'hrbp', 'admin']; const out = [];
+    if (h.learnerPersona(uid) || (!u.admin && !h.sysrole('manager', uid) && !h.isTrainer(uid) && !h.isTeamLead(uid) && !h.sysrole('hrbp', uid) && !h.isModerator(uid))) out.push('learner');
     if (h.isTrainer(uid)) out.push('trainer'); if (h.isTeamLead(uid)) out.push('teamlead');
     if (h.isModerator(uid)) out.push('moderator');
+    if (h.sysrole('hrbp', uid) && !u.suspended) out.push('hrbp');
     if (u.admin || h.sysrole('manager', uid)) out.push('admin'); return out; };
   h.unreadMessages = () => S.messages.filter(x => x.to === meId && !x.read).length + (S.chats || []).filter(c => h.inChat(c)).reduce((n, c) => n + h.chatUnread(c), 0);
   /* Super administrator: the built-in administrators from server/site-admins.js */
@@ -527,6 +536,9 @@ const DEFAULT_TEMPLATES = {
   accessApproved:{label:'Access approved', subject:'Access restored: {course}', body:'Hi {firstname},\n\nYour request was approved. {course} is unlocked with a new due date of {due}. Your earlier progress is intact.\n\n{remarks}\n\n{link}', email:true, inapp:true},
   accessRejected:{label:'Access declined', subject:'Access request declined: {course}', body:'Hi {firstname},\n\nYour request for access to {course} was declined.\n\nRemarks: {remarks}', email:true, inapp:true},
   graded:{label:'Work graded', subject:'Your work has been graded: {item}', body:'Hi {firstname},\n\n{item} in {course} has been graded: {grade}.\n\nSee the feedback here: {link}', email:false, inapp:true},
+  hrAssigned:{label:'HR course assigned', subject:'Mandatory course: {course} (complete by {due})', body:'Hi {firstname},\n\n{sender} has assigned you the mandatory course {course}. You have 7 days to complete it, until {due}.\n\n{access}\n\nWhen you finish, your certificate is issued automatically.{expires}', email:true, inapp:true},
+  hrReminder:{label:'HR course reminder', subject:'Reminder: complete {course} by {due}', body:'Hi {firstname},\n\nYou have {days} left to complete the mandatory course {course}. It is due on {due}, and you are {progress}% through it.{expires}\n\nContinue here: {link}', email:true, inapp:true},
+  hrMissed:{label:'HR course not completed (to the HRBP)', subject:'Not completed: {learner} · {course}', body:'Hi {firstname},\n\n{learner} ({email}) did not complete {course} by the due date, {due}. They had reached {progress}%.\n\nSee HR Analytics: {link}', email:true, inapp:true},
   certificate:{label:'Certificate issued', subject:'Your certificate for {course}', body:'Congratulations {firstname}!\n\nYou have completed {course}. Your certificate verification code is {code}.{expiry}\n\nView or download it here: {link}', email:true, inapp:true},
   recert:{label:'Recertification due', subject:'Recertification due: {course}', body:'Hi {firstname},\n\nYour certificate for {course} expires on {expires}. The course has been assigned to you again. Please complete it by {due} to stay certified.\n\n{link}', email:true, inapp:true},
   nudge:{label:'Reminder from a team lead or trainer', subject:'Reminder from {sender}: {course}', body:'Hi {firstname},\n\n{sender} is reminding you to complete {course}.{duepart}\n\n{link}', email:true, inapp:true},
@@ -850,6 +862,13 @@ function checkBadges(S, env, uid, cid) {
   }
 }
 
+/* Every HR course issues a certificate on completion: add a certificate activity at the end if it has none */
+function hrCertificate(S, env, c) {
+  if (c.sections.some(s => s.mods.some(id => S.mods[id]?.type === 'certificate'))) return;
+  const id = env.uid('m'), sec = c.sections[c.sections.length - 1];
+  S.mods[id] = {id, courseId:c.id, type:'certificate', name:'Certificate of completion', intro:'Issued automatically when you complete this course.', visible:true, requireCompletion:true, autoIssue:true, validityDays:0};
+  sec.mods.push(id);
+}
 function issueCert(S, env, h, m, uid) {
   const code = (env.uid('') + env.uid('')).replace(/[^a-z0-9]/gi, '').slice(0, 10).toUpperCase();
   const t = env.now(), expires = m.validityDays ? t + m.validityDays * D : null;
@@ -873,6 +892,7 @@ function welcomeUser(S, env, u) { const tok = makeToken(S, env, u.id, 'setpw', 7
 function assignCourse(S, env, byId, uid, cid, due, opts = {}) {
   const h = H(S, byId || uid), c = h.course(cid); if (!c || c.status === 'archived' || c.status === 'draft') return false;
   if (h.user(uid)?.suspended) return false; // inactive people get no new training (cohorts, rules, bulk assignment skip them)
+  if (c.hr) return false; // HR courses are assigned only from the HR Courses tab
   let e = h.enrolOf(cid, uid), fresh = false;
   if (!e) { e = {id:env.uid('e'), courseId:cid, userId:uid, role:'student', time:env.now()}; S.enrol.push(e); fresh = true; }
   else if (!h.role(e.role)?.caps?.['mod:submit']) return false;
@@ -1029,10 +1049,12 @@ op('newCourse', (S, h, p, env) => {
   need(!S.courses.some(c => c.shortname.toLowerCase() === shortname.toLowerCase()), 'That short name is already used by another course.', 400);
   need(h.cat(p.catId), 'Choose a category.', 400);
   const cid = env.uid('c'), n = Math.max(0, Math.min(20, Number(p.sections) || 0));
-  const c = {id:cid, fullname:req(p.fullname, 'Full name', 200), shortname, catId:p.catId, summary:str(p.summary), visible:true, selfenrol:!!p.selfenrol, status:'draft', version:0, hours:Math.max(0, Number(p.hours) || 0), sequential:!!p.sequential, created:env.now(), sections:[{id:env.uid('s'), name:'General', summary:'', mods:[]}]};
+  need(!p.hr || h.isAdmin() || h.isModerator(), 'Only administrators and content moderators can create HR courses.');
+  const c = {id:cid, fullname:req(p.fullname, 'Full name', 200), shortname, catId:p.catId, summary:str(p.summary), visible:true, selfenrol:!!p.selfenrol && !p.hr, ...(p.hr ? {hr:true} : {}), status:'draft', version:0, hours:Math.max(0, Number(p.hours) || 0), sequential:!!p.sequential, created:env.now(), sections:[{id:env.uid('s'), name:'General', summary:'', mods:[]}]};
   for (let i = 1; i <= n; i++) c.sections.push({id:env.uid('s'), name:`Topic ${i}`, summary:'', mods:[]});
   S.courses.push(c);
   const fm = env.uid('m'); S.mods[fm] = {id:fm, courseId:cid, type:'forum', name:'Announcements', intro:'General news and announcements.', news:true, visible:true}; c.sections[0].mods.push(fm);
+  if (c.hr) hrCertificate(S, env, c);
   if (p.teacher && h.user(p.teacher)) { S.enrol.push({id:env.uid('e'), courseId:cid, userId:p.teacher, role:'trainer', time:env.now()}); notify(S, env, p.teacher, `You are now a trainer for ${c.fullname}`, 'The course is still a draft', 'course', cid); }
   log(S, env, h.meId, `Course created: ${shortname}`, cid);
   return {id:cid};
@@ -1053,7 +1075,11 @@ op('courseSettings', (S, h, p, env) => {
   const c = courseOf(S, p.cid); need(h.has('course:update', c.id), 'You cannot change this course\'s settings.');
   const shortname = req(p.shortname, 'Short name', 40);
   need(!S.courses.some(x => x.id !== c.id && x.shortname.toLowerCase() === shortname.toLowerCase()), 'That short name is already used by another course.', 400);
-  Object.assign(c, {fullname:req(p.fullname, 'Full name', 200), shortname, catId:h.cat(p.catId) ? p.catId : c.catId, summary:str(p.summary), visible:!!p.visible, selfenrol:!!p.selfenrol, hours:Math.max(0, Number(p.hours) || 0), sequential:!!p.sequential});
+  if (p.hr !== undefined && !!p.hr !== !!c.hr) { need(h.isAdmin() || h.isModerator(), 'Only administrators and content moderators can make a course an HR course.');
+    need(!S.enrol.some(e => e.courseId === c.id && h.isLearner(c.id, e.userId)), 'People are already enrolled in this course, so it cannot change between HR course and regular course. Clone it instead.', 400);
+    if (p.hr) c.hr = true; else delete c.hr; }
+  Object.assign(c, {fullname:req(p.fullname, 'Full name', 200), shortname, catId:h.cat(p.catId) ? p.catId : c.catId, summary:str(p.summary), visible:!!p.visible, selfenrol:!!p.selfenrol && !c.hr, hours:Math.max(0, Number(p.hours) || 0), sequential:!!p.sequential});
+  if (c.hr) hrCertificate(S, env, c);
   log(S, env, h.meId, 'Course settings updated', c.id);
 });
 op('newUser', (S, h, p, env) => {
@@ -1288,6 +1314,7 @@ op('restoreCourse', (S, h, p, env) => {
 
 /* Enrolment & groups */
 op('enrolMe', (S, h, p, env) => {
+  need(!h.me()?.hrTemp, 'Your account is only for the HR courses assigned to you.');
   const c = courseOf(S, p.cid); need(c.visible && c.selfenrol !== false && (c.status || 'published') === 'published', 'Self enrolment is not available for this course.');
   need(!h.isAdmin(), 'Administrators can already see every course.', 400);
   if (!h.enrolOf(c.id)) { S.enrol.push({id:env.uid('e'), courseId:c.id, userId:h.meId, role:'student', time:env.now()}); log(S, env, h.meId, 'User self-enrolled', c.id);
@@ -1297,6 +1324,7 @@ op('enrolUser', (S, h, p, env) => {
   const c = courseOf(S, p.cid); need(h.has('course:enrol', c.id), 'You cannot enrol users in this course.');
   need(h.user(p.userId) && h.role(p.role), 'User or role not found.', 404); need(!h.enrolOf(c.id, p.userId), 'This user is already enrolled.', 400);
   need(!h.user(p.userId).suspended, `${h.fullname(p.userId)} is inactive. Mark them as active first.`, 400);
+  need(!c.hr || !h.role(p.role)?.caps?.['mod:submit'], 'Learners are given HR courses from the HR Courses tab (7 days, with reminders and a certificate).', 400);
   need(c.status !== 'archived', 'Archived courses do not accept new enrolments.', 400);
   S.enrol.push({id:env.uid('e'), courseId:c.id, userId:p.userId, role:p.role, time:env.now()});
   notify(S, env, p.userId, `You are enrolled in ${c.fullname}`, `Role: ${h.role(p.role).name}`, 'course', c.id);
@@ -1795,18 +1823,25 @@ function view(S, meId) {
   const V = {version:VERSION, me:meId, site, roles:clone(S.roles), sysroles:clone(S.sysroles), categories:clone(S.categories), now:Date.now()};
   const manageUsers = h.has('user:manage');
   const team = new Set(h.teamMembers(meId)), scope = h.trainerScope(meId);
-  V.users = S.users.map(u => ({id:u.id, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:!!u.admin, created:u.created, suspended:!!u.suspended, inactiveSince:u.inactiveSince || null, department:u.department || '', personas:u.personas || [], builtinAdmin:!!u.builtinAdmin,
+  // HR courses, their enrolments and the temporary HR accounts reach only HR staff (and each learner's own)
+  const hrSees = h.hrSees(meId), hrCourse = new Set(S.courses.filter(c => c.hr).map(c => c.id));
+  // A temporary HR account sees only the courses it is enrolled in, and only the people who run them (not the staff directory)
+  const tempMe = !!me.hrTemp, mine = new Set(S.enrol.filter(e => e.userId === meId).map(e => e.courseId));
+  const hrOk = cid => (tempMe ? mine.has(cid) : true) && (!hrCourse.has(cid) || hrSees || mine.has(cid));
+  const hrStaff = h.hrAccess(meId); // HRBPs and administrators: every record of every HR course (HR analytics)
+  const tempSees = tempMe && new Set([meId, ...S.enrol.filter(e => mine.has(e.courseId) && !h.role(e.role)?.caps?.['mod:submit']).map(e => e.userId), ...S.enrol.filter(e => e.userId === meId).map(e => e.assignedBy).filter(Boolean)]);
+  V.users = S.users.filter(u => tempMe ? tempSees.has(u.id) : (!u.hrTemp || hrSees || u.id === meId)).map(u => ({id:u.id, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:!!u.admin, created:u.created, suspended:!!u.suspended, inactiveSince:u.inactiveSince || null, department:u.department || '', personas:u.personas || [], builtinAdmin:!!u.builtinAdmin, ...(u.hrTemp ? {hrTemp:true, hrUntil:u.hrUntil || null} : {}),
     ...(u.id === meId || manageUsers ? {username:u.username, lastLogin:u.lastLogin || null, locked:!!(u.lockedUntil && u.lockedUntil > Date.now()), mfaEnabled:!!u.mfaEnabled, auth:u.auth || 'manual', mustChangePassword:!!u.mustChangePassword} : {}),
     ...(u.id === meId ? {prefs:u.prefs || {}, prefsSet:!!u.prefsSet, termsAccepted:u.termsAccepted || 0} : {}),
     ...(team.has(u.id) || scope.has(u.id) ? {lastLogin:u.lastLogin || null} : {})}));
-  const visibleCourse = c => h.canView(c.id) || ((c.status || 'published') === 'published' && c.visible);
+  const visibleCourse = c => hrOk(c.id) && (h.canView(c.id) || ((c.status || 'published') === 'published' && c.visible));
   V.courses = clone(S.courses.filter(visibleCourse));
-  const viewable = new Set(S.courses.filter(c => h.canView(c.id)).map(c => c.id));
+  const viewable = new Set(S.courses.filter(c => hrOk(c.id) && h.canView(c.id)).map(c => c.id));
   // Oversight: learners whose progress this user may see without being in the course (team leads; trainers' cohorts; site analytics)
   const siteAnalytics = h.has('analytics:site');
   const oversee = uid => siteAnalytics || team.has(uid) || scope.has(uid);
-  const overseeCourses = new Set(S.enrol.filter(e => oversee(e.userId)).map(e => e.courseId));
-  V.enrol = S.enrol.filter(e => e.userId === meId || (viewable.has(e.courseId) && h.has('course:viewparticipants', e.courseId)) || ['editingteacher', 'teacher', 'trainer'].includes(e.role) || oversee(e.userId)).map(clone);
+  const overseeCourses = new Set(S.enrol.filter(e => oversee(e.userId) && hrOk(e.courseId)).map(e => e.courseId));
+  V.enrol = S.enrol.filter(e => e.userId === meId || (hrStaff && hrCourse.has(e.courseId)) || (hrOk(e.courseId) && ((viewable.has(e.courseId) && h.has('course:viewparticipants', e.courseId)) || ['editingteacher', 'teacher', 'trainer'].includes(e.role) || oversee(e.userId)))).map(clone);
   V.groups = clone(S.groups.filter(g => viewable.has(g.courseId) && (h.has('group:manage', g.courseId) || h.has('grade:viewall', g.courseId) || g.members.includes(meId))));
   V.mods = {};
   const stripAnswers = vm => {
@@ -1828,7 +1863,7 @@ function view(S, meId) {
     V.mods[m.id] = vm;
   }
   const modVisible = cmid => !!V.mods[cmid];
-  const allIn = cmid => { const m = S.mods[cmid]; return m && modVisible(cmid) && h.has('grade:viewall', m.courseId); };
+  const allIn = cmid => { const m = S.mods[cmid]; return m && modVisible(cmid) && (h.has('grade:viewall', m.courseId) || (hrStaff && hrCourse.has(m.courseId))); };
   const own = x => x.userId === meId;
   const ok = x => modVisible(x.cmid) && (own(x) || allIn(x.cmid) || oversee(x.userId));
   V.completion = Object.fromEntries(Object.entries(S.completion).filter(([k]) => { const [u, m] = k.split(':'); return u === meId || allIn(m) || (oversee(u) && modVisible(m)); }));
@@ -1842,7 +1877,7 @@ function view(S, meId) {
   V.wsSubs = S.wsSubs.filter(s => modVisible(s.cmid) && (own(s) || allIn(s.cmid) || oversee(s.userId) || myAllocs.some(a => a.subId === s.id))).map(s => (own(s) || allIn(s.cmid) || oversee(s.userId)) ? clone(s) : {...clone(s), userId:null});
   V.wsAllocs = S.wsAllocs.filter(a => modVisible(a.cmid) && (a.reviewer === meId || allIn(a.cmid) || (S.wsSubs.find(s => s.id === a.subId)?.userId === meId && (S.mods[a.cmid].phase || 1) >= 4)))
     .map(a => (a.reviewer === meId || allIn(a.cmid)) ? clone(a) : {...clone(a), reviewer:null});
-  V.certIssued = clone(S.certIssued.filter(x => own(x) || allIn(x.cmid) || oversee(x.userId)));
+  V.certIssued = clone(S.certIssued.filter(x => own(x) || allIn(x.cmid) || (oversee(x.userId) && hrOk(S.mods[x.cmid]?.courseId))));
   V.liveSignups = clone(S.liveSignups.filter(ok));
   V.feedbackResponses = S.feedbackResponses.filter(x => modVisible(x.cmid) && (own(x) || allIn(x.cmid))).map(x => !own(x) && S.mods[x.cmid]?.anonymous && !h.isAdmin() ? {...clone(x), userId:null} : clone(x));
   V.resume = Object.fromEntries(Object.entries(S.resume).filter(([k]) => { const [u, m] = k.split(':'); return modVisible(m) && (u === meId || allIn(m) || oversee(u)); }));
