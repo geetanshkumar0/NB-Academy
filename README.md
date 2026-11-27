@@ -39,7 +39,7 @@ Other commands:
 
 ```bash
 node server/server.js --reset --demo   # wipe the database and load fresh demo data (local testing only)
-node --test test/api.test.js           # run the API test suite (94 tests, including fake SMTP, LDAP and OIDC servers)
+node --test test/api.test.js           # run the API test suite (95 tests, including fake SMTP, LDAP and OIDC servers)
 node tools/build-preview.js            # build dist/preview.html (browser-only demo edition)
 ```
 
@@ -357,5 +357,7 @@ Mandatory HR courses (POSH, Code of Conduct and the like), kept apart from every
 - **Assigning:** HR Courses › Assign: paste one person per line, `Full name, email` (team optional; an Excel copy works). People not yet on NB Academy get a **temporary account** and an email with a link to set their password; existing people are enrolled and emailed.
 - **Deadline:** always **7 days**. Reminders 2 days and 1 day before. At the due date the assigning HRBP is told about anyone who did not finish, and temporary accounts are switched off (marked inactive) once all their HR courses are past due, finished or not. Records, certificates and reports stay. Assigning again reopens the account with a new 7 days.
 - **Participants page** of an HR course: learners only, with one **Assign Course** button and **Bulk upload** (Excel or CSV: Full name, Email, Team; template on the page). The due date cannot be changed and roles are not shown. HRBPs can remind and remove learners there.
+- **Google Sheet sync** (Site administration › HR Google Sheet, also HR Courses › Google Sheet): a private sheet with the columns Emp ID, Emp Email, Full Name, Business Unit (not used), Date Of Joining, Course Name (full or short name of an HR course; several separated by commas) is read every 5 minutes, and each new row is assigned as if an HRBP had assigned it. Each email gets each course once. A joining date in the future waits for that day. The first read records the rows already there without assigning them, unless chosen otherwise. Rows that cannot be assigned are listed and tried again once they change.
+  - Access is through a Google **service account**: an administrator creates one in Google Cloud Console (Google Sheets API enabled, JSON key), uploads the key on that page (kept in `data/.google-sa.json`, never sent to browsers; or set `NB_GOOGLE_SA_FILE`), and the sheet is shared with the service account's email as Viewer. The server needs outbound HTTPS to oauth2.googleapis.com and sheets.googleapis.com.
 - **Kept apart:** HR courses, their enrolments and temporary accounts do not appear in Courses, the regular Analytics, the Users list, trainer or team lead views, or the regular Assign/Enrol tools. Learners see their own HR course in My learning with an HR label. Temporary accounts see only their HR courses.
 - **HR Analytics:** totals, a status bar, filters (course, status, HRBP, team, temporary/permanent) and every person with assigned/due/completed dates, score and certificate code; download as CSV.

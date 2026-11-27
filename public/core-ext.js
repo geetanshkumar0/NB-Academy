@@ -214,6 +214,8 @@ op('hrAssign', (S, h, p, env) => {
       S.users.push(u); fresh = true; res.created++;
       audit(S, env, h.meId, 'HR temporary account created', un, `${name} <${email}>`);
     } else if (u.hrTemp && u.suspended) { u.suspended = false; delete u.inactiveSince; delete u.hrExpired; audit(S, env, h.meId, 'HR temporary account reopened', u.username, c.shortname); }
+    if (raw.empId && !u.empId) u.empId = String(raw.empId).trim().slice(0, 40);
+    if (raw.doj && !u.doj) u.doj = raw.doj;
     let e = h.enrolOf(c.id, u.id);
     if (e && !h.isLearner(c.id, u.id)) { res.skipped.push({who:email, why:'Already in this course in another role'}); continue; }
     if (e && e.completedAt && !p.again) { res.skipped.push({who:email, why:`Already completed on ${fmtD(e.completedAt)}`}); continue; }
@@ -229,6 +231,95 @@ op('hrAssign', (S, h, p, env) => {
   }
   audit(S, env, h.meId, 'HR course assigned', c.shortname, `${res.assigned + res.renewed} people (${res.created} new accounts), due ${hrDueText(due)}${res.skipped.length ? `; ${res.skipped.length} skipped` : ''}`);
   return res;
+});
+/* ---------- HR courses from a Google Sheet ----------
+   The server reads the sheet (Emp ID | Emp Email | Full Name | Business Unit | Date Of Joining | Course Name; columns found by
+   their titles, Business Unit ignored) every 5 minutes and passes the rows here. Each email + course is assigned once (cfg.done).
+   The first read after switching on only records the rows already there, unless "assign those too" was chosen (cfg.started).
+   A joining date in the future waits for that day. A row that cannot be assigned is reported and retried only once it changes. */
+const HR_TZ_MIN = 330; // dates in the sheet are Indian dates
+const ymd = (y, m, d) => (y < 100 ? 2000 + y : y) * 1e4 + m * 100 + d;
+const okDay = n => { const y = Math.floor(n / 1e4), m = Math.floor(n / 100) % 100, d = n % 100; if (y < 1990 || y > 2100 || m < 1 || m > 12 || d < 1) return null; const t = new Date(Date.UTC(y, m - 1, d)); return t.getUTCMonth() === m - 1 ? n : null; };
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function sheetDay(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' || /^\d{4,6}(\.\d+)?$/.test(String(v).trim())) { const t = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(v)) * D); return okDay(ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate())); }
+  const x = String(v).trim(); let m;
+  if ((m = x.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return okDay(ymd(+m[1], +m[2], +m[3]));
+  if ((m = x.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/))) return okDay(ymd(+m[3], +m[2], +m[1])); // day first
+  const mon = w => MONTHS.indexOf(String(w).slice(0, 3).toLowerCase()) + 1;
+  if ((m = x.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-/]+([A-Za-z]{3,})[\s\-/,]+(\d{2,4})$/)) && mon(m[2])) return okDay(ymd(+m[3], mon(m[2]), +m[1]));
+  if ((m = x.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})$/)) && mon(m[1])) return okDay(ymd(+m[3], mon(m[1]), +m[2]));
+  return null;
+}
+const dayText = n => `${n % 100} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.floor(n / 100) % 100 - 1]} ${Math.floor(n / 1e4)}`;
+const sheetId = v => { const x = String(v || '').trim(), m = x.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/); return m ? m[1] : /^[A-Za-z0-9_-]{20,}$/.test(x) ? x : ''; };
+function hrSheetApply(S, env, values, o = {}) {
+  const cfg = S.site.hrSheet; if (!cfg?.sheetId) throw new OpError('No Google Sheet is set up.', 400);
+  const hb = H(S, cfg.by); if (!hb.hrAccess(cfg.by)) throw new OpError('The person who set up the Google Sheet no longer has HR access. An HRBP or administrator needs to save the sheet settings again.', 400);
+  const rows = (Array.isArray(values) ? values : []).map(r => (Array.isArray(r) ? r : []).map(v => v == null ? '' : v));
+  const hi = rows.slice(0, 10).findIndex(r => r.some(v => /e-?mail/i.test(String(v))));
+  if (hi < 0) throw new OpError('The sheet needs a header row: Emp ID, Emp Email, Full Name, Date Of Joining, Course Name.', 400);
+  const head = rows[hi].map(v => String(v).trim().toLowerCase()), col = re => head.findIndex(v => re.test(v));
+  const C = {email:col(/e-?mail/), name:col(/^(full ?name|name|employee name|emp name)$/), id:col(/^(emp(loyee)? ?(id|code|no\.?|number))$/), doj:col(/joining|^doj$/), course:col(/course/)};
+  const missing = [['Emp Email', C.email], ['Course Name', C.course]].filter(x => x[1] < 0).map(x => x[0]);
+  if (missing.length) throw new OpError(`The sheet has no ${missing.join(' or ')} column.`, 400);
+  const now = env.now(), t = new Date(now + HR_TZ_MIN * 6e4), today = ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+  const done = o.preview ? {...(cfg.done || {})} : (cfg.done ||= {}), failed = o.preview ? {...(cfg.failed || {})} : (cfg.failed ||= {});
+  const first = !cfg.started, res = {rows:0, assign:[], assigned:[], waiting:[], already:0, recorded:0, problems:[], first};
+  const hrCourses = S.courses.filter(c => c.hr && c.status !== 'archived'), groups = new Map();
+  const problem = (row, who, why) => res.problems.push({row, who, why});
+  rows.slice(hi + 1).forEach((r, k) => {
+    const rowNo = hi + k + 2, cell = i => i < 0 ? '' : String(r[i] ?? '').trim();
+    if (!r.some(v => String(v).trim() !== '')) return; res.rows++;
+    const email = cell(C.email).toLowerCase(), name = cell(C.name), empId = cell(C.id), dojRaw = C.doj < 0 ? '' : r[C.doj];
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return problem(rowNo, email || name || empId, 'No valid email address');
+    const names = cell(C.course).split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+    if (!names.length) return problem(rowNo, email, 'Course Name is empty');
+    const doj = sheetDay(dojRaw); if (String(dojRaw ?? '').trim() !== '' && !doj) return problem(rowNo, email, `Date Of Joining "${dojRaw}" is not a date (use e.g. 27/11/2026)`);
+    for (const cn of names) {
+      const lc = cn.toLowerCase(), found = hrCourses.filter(c => c.fullname.trim().toLowerCase() === lc || c.shortname.trim().toLowerCase() === lc);
+      if (found.length !== 1) { problem(rowNo, email, found.length ? `"${cn}" matches more than one HR course` : `"${cn}" is not an HR course on ${S.site.name}`); continue; }
+      const c = found[0], key = `${email}|${c.id}`;
+      if (done[key]) { res.already++; continue; }
+      if (first) { done[key] = now; res.recorded++; continue; }
+      if (c.status === 'draft') { problem(rowNo, email, `${c.fullname} is still a draft`); continue; }
+      if (doj && doj > today) { res.waiting.push({row:rowNo, who:email, course:c.fullname, on:dayText(doj)}); continue; }
+      const u = S.users.find(x => String(x.email || '').toLowerCase() === email);
+      if (u && hb.enrolOf(c.id, u.id)) { done[key] = now; res.already++; continue; }
+      const sig = JSON.stringify([email, name, empId, String(dojRaw ?? '')]);
+      if (failed[key]?.sig === sig) { problem(rowNo, email, failed[key].why); continue; }
+      const one = {row:rowNo, who:email, name, course:c.fullname, key, sig};
+      res.assign.push(one); if (!groups.has(c.id)) groups.set(c.id, []);
+      groups.get(c.id).push({...one, fullname:name, email, empId, doj:doj ? dayText(doj) : ''});
+    }
+  });
+  if (!o.preview) {
+    for (const [cid, people] of groups) {
+      let r; try { r = OPS.hrAssign(S, hb, {cid, people}, env); } catch (er) { r = {skipped:people.map(p => ({who:p.email, why:er.message}))}; }
+      for (const p of people) {
+        const u = S.users.find(x => String(x.email || '').toLowerCase() === p.email), e = u && hb.enrolOf(cid, u.id);
+        if (e && e.hr) { done[p.key] = now; delete failed[p.key]; res.assigned.push({row:p.row, who:p.email, name:p.name, course:p.course}); }
+        else { const why = r.skipped?.find(x => String(x.who).toLowerCase() === p.email)?.why || 'Could not be assigned'; failed[p.key] = {sig:p.sig, why}; problem(p.row, p.email, why); }
+      }
+    }
+    if (first) cfg.started = now;
+    cfg.last = {time:now, rows:res.rows, assigned:res.assigned.length, waiting:res.waiting.length, already:res.already, recorded:res.recorded, problems:res.problems.slice(0, 100), error:''};
+    if (res.assigned.length) audit(S, env, cfg.by, 'HR courses assigned from Google Sheet', cfg.sheetId, `${res.assigned.length} assignment${res.assigned.length === 1 ? '' : 's'}`);
+  }
+  res.assign = res.assign.map(({key, sig, ...x}) => x);
+  return res;
+}
+op('hrSheetSettings', (S, h, p, env) => {
+  need(h.hrAccess() || h.has('site:config'), 'Only HRBPs and administrators can set up the HR Google Sheet.');
+  const old = S.site.hrSheet || {};
+  if (typeof p.on === 'boolean' && !p.sheet && old.sheetId) { S.site.hrSheet = {...old, on:p.on, by:p.on ? h.meId : old.by, byName:p.on ? h.fullname(h.meId) : old.byName}; if (p.on) { audit(S, env, h.meId, 'HR Google Sheet sync switched on', old.sheetId); return {on:true}; } audit(S, env, h.meId, 'HR Google Sheet sync switched off', old.sheetId || ''); return {on:false}; }
+  const id = sheetId(p.sheet); need(id, 'Paste the link of the Google Sheet (https://docs.google.com/spreadsheets/d/…).', 400);
+  const tab = str(p.tab, 100).trim(), restart = old.sheetId !== id; // a different sheet starts afresh; switching off and on again just pauses
+  S.site.hrSheet = {...old, sheetId:id, tab, on:p.on !== false, by:h.meId, byName:h.fullname(h.meId),
+    ...(restart ? {started:p.existing ? env.now() : null, last:null} : {})};
+  audit(S, env, h.meId, 'HR Google Sheet set up', id, `${tab ? `tab ${tab}, ` : ''}${S.site.hrSheet.on ? 'on' : 'off'}${restart ? (p.existing ? ', rows already there are assigned too' : ', rows already there are only recorded') : ''}`);
+  return {sheetId:id};
 });
 /* Scheduler part: reminders, missed deadlines, end of access for temporary accounts */
 function hrTick(S, env) {
@@ -946,6 +1037,6 @@ SEED_HOOKS.push((S, env) => {
   A('c_hr2', 'u7', -2);
 });
 
-Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner});
+Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner, hrSheetApply, sheetDay, sheetId});
 return Core;
 });

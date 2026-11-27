@@ -1820,6 +1820,7 @@ function view(S, meId) {
   site.emailOn = !!S.site.email?.enabled; // whether emails go out: everyone may know this, only administrators see the settings
   if (!h.has('site:config')) { delete site.email; delete site.sso; delete site.ldap; delete site.templates; site.meetings = {ready:meetReady}; }
   else { site.email.passSet = !!site.email.pass; site.email.pass = ''; site.sso.secretSet = !!site.sso.clientSecret; site.sso.clientSecret = ''; site.meetings = {...mt, secret:'', secretSet:!!(mt.secret || mt.secretInEnv), ready:meetReady}; }
+  if (site.hrSheet) { if (!h.hrAccess() && !h.has('site:config')) delete site.hrSheet; else { site.hrSheet.doneCount = Object.keys(site.hrSheet.done || {}).length; delete site.hrSheet.done; delete site.hrSheet.failed; } }
   const V = {version:VERSION, me:meId, site, roles:clone(S.roles), sysroles:clone(S.sysroles), categories:clone(S.categories), now:Date.now()};
   const manageUsers = h.has('user:manage');
   const team = new Set(h.teamMembers(meId)), scope = h.trainerScope(meId);

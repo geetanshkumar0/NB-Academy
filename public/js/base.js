@@ -462,7 +462,7 @@ function navbar() {
   const pending = h.has('access:approve') ? S.accessRequests.filter(r => r.status === 'pending').length : 0;
   const courseCtx = ['course', 'participants', 'groups', 'grades', 'badges', 'creports', 'csettings', 'mod', 'attempt', 'review', 'discussion', 'grader', 'submit', 'lessonplay', 'wsassess'].includes(v);
   const hrCtx = courseCtx && ui.view.p && (h.course(ui.view.p.id)?.hr || h.course(S.mods[ui.view.p.id]?.courseId)?.hr);
-  const on = k => (k === v || (k === 'hrcourses' && (v === 'hranalytics' && mode !== 'hrbp' || hrCtx && mode !== 'learner')) || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && !hrCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
+  const on = k => (k === v || (k === 'hrcourses' && (v === 'hrsheet' || v === 'hranalytics' && mode !== 'hrbp' || hrCtx && mode !== 'learner')) || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && !hrCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
   const um = h.unreadMessages(), un = h.unreadNotifications(), gq = h.gradingQueue().length;
   // The first four pages sit in the bar; any others (e.g. Site administration) are in the small ▾ menu after them
   const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${HR_BETA.includes(k) ? ' ' + BETA : ''}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;

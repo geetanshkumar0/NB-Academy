@@ -14,7 +14,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nbacademy-test-'));
 process.env.NB_DATA_DIR = dir;
 process.env.NB_DEMO = '1'; // the tests run against the demo data
 process.env.NB_REMOVE_ACCOUNTS = ''; // the tests use the demo accounts; removal is tested directly below
-const {server, getState, deliverMail, runTick, removeAccounts, unenrolLearner, mergeCoursesAtStart, removeDemoData, _store} = require('../server/server.js');
+const {server, getState, deliverMail, runTick, syncHRSheet, removeAccounts, unenrolLearner, mergeCoursesAtStart, removeDemoData, _store} = require('../server/server.js');
 const Core = require('../public/core.js');
 let base;
 const extras = [];
@@ -1556,6 +1556,70 @@ test('HR courses: HRBP assigns by name and email, 7 days, reminders, certificate
   r = await op(hr, 'unenrol', {cid, userId:kavya.id}); assert.equal(r.status, 200, r.text);
   assert.ok(!getState().enrol.some(e => e.courseId === cid && e.userId === kavya.id), 'removed by the HRBP');
   assert.equal((await op(hr, 'unenrol', {cid:'c1', userId:asha.id})).status, 403, 'but not from regular courses');
+});
+
+test('HR courses from a private Google Sheet: service account key, new rows assigned once, joining dates, problems reported', async () => {
+  // a fake Google: token endpoint checks the signed JWT, Sheets API needs the token
+  const {publicKey, privateKey} = crypto.generateKeyPairSync('rsa', {modulusLength:2048});
+  const SID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', serial = d => Math.floor((Date.now() + 330 * 6e4) / 864e5) + 25569 + d;
+  let values = [['Emp ID', 'Emp Email', 'Full Name', 'Business Unit', 'Date Of Joining', 'Course Name'], ['E001', 'old.joiner@corp.example', 'Old Joiner', 'Sales', serial(-40), 'POSH Awareness']];
+  const g = http.createServer((req, res) => { let b = ''; req.on('data', d => b += d); req.on('end', () => {
+    const J = (st, o) => { res.writeHead(st, {'Content-Type':'application/json'}); res.end(JSON.stringify(o)); };
+    if (req.url === '/token') { const jwt = new URLSearchParams(b).get('assertion').split('.'); const ok = crypto.verify('RSA-SHA256', Buffer.from(jwt[0] + '.' + jwt[1]), publicKey, Buffer.from(jwt[2], 'base64url'));
+      const cl = JSON.parse(Buffer.from(jwt[1], 'base64url')); return ok && /spreadsheets\.readonly/.test(cl.scope) ? J(200, {access_token:'tok', expires_in:3600}) : J(400, {error:'invalid_grant'}); }
+    if (req.headers.authorization !== 'Bearer tok') return J(401, {});
+    return req.url.startsWith(`/v4/spreadsheets/${SID}/values/`) ? J(200, {values}) : J(404, {error:{message:'not found'}}); }); });
+  await new Promise(r => g.listen(0, '127.0.0.1', r)); extras.push(g);
+  process.env.NB_GOOGLE_TOKEN_URL = `http://127.0.0.1:${g.address().port}/token`; process.env.NB_SHEETS_API = `http://127.0.0.1:${g.address().port}`;
+  const a = await login('admin'), hr = await login('hema'), key = JSON.stringify({type:'service_account', client_email:'nb-sheets@nb-academy.iam.gserviceaccount.com', private_key:privateKey.export({type:'pkcs8', format:'pem'}), token_uri:'https://oauth2.googleapis.com/token'});
+  // only administrators add the key; it never reaches the browser
+  assert.equal((await call('POST', '/api/hr-sheet/key', {key}, hr)).status, 403);
+  assert.equal((await call('POST', '/api/hr-sheet/key', {key:'{"nope":1}'}, a)).status, 400);
+  let r = await call('POST', '/api/hr-sheet/key', {key}, a); assert.equal(r.status, 200, r.text); assert.equal(r.json.email, 'nb-sheets@nb-academy.iam.gserviceaccount.com');
+  assert.doesNotMatch(r.text, /PRIVATE KEY/); assert.equal((await state(hr)).hrSheetAccount, 'nb-sheets@nb-academy.iam.gserviceaccount.com');
+  // the HRBP connects the sheet; trainers cannot
+  assert.equal((await op(await login('rohan'), 'hrSheetSettings', {sheet:SID})).status, 403);
+  assert.equal((await op(hr, 'hrSheetSettings', {sheet:'not a link'})).status, 400);
+  r = await op(hr, 'hrSheetSettings', {sheet:`https://docs.google.com/spreadsheets/d/${SID}/edit#gid=0`}); assert.equal(r.status, 200, r.text);
+  assert.equal(getState().site.hrSheet.sheetId, SID);
+  // first read: rows already in the sheet are only recorded, nobody is emailed
+  r = await call('POST', '/api/hr-sheet/sync', {}, hr); assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.result.recorded, 1); assert.equal(r.json.result.assigned.length, 0);
+  assert.ok(!getState().users.some(u => u.email === 'old.joiner@corp.example'));
+  // new rows: joined today (two courses), joins in 10 days, unknown course, bad date
+  values = [...values, ['E101', 'neha.new@corp.example', 'Neha New', 'Ops', serial(0), 'HR-POSH, Code of Conduct'], ['E102', 'later@corp.example', 'Lata Later', '', serial(10), 'POSH Awareness'],
+    ['E103', 'nocourse@corp.example', 'No Course', '', serial(0), 'Fire Safety'], ['E104', 'baddate@corp.example', 'Bad Date', '', 'soon', 'POSH Awareness'], ['', '', '', '', '', '']];
+  // checking first changes nothing
+  r = await call('POST', '/api/hr-sheet/sync', {preview:true}, hr); assert.equal(r.status, 200, r.text); assert.equal(r.json.result.assign.length, 2);
+  assert.ok(!getState().users.some(u => u.email === 'neha.new@corp.example'), 'a check changes nothing');
+  r = await call('POST', '/api/hr-sheet/sync', {}, hr); const res = r.json.result;
+  assert.equal(res.assigned.length, 2, JSON.stringify(res)); assert.equal(res.waiting.length, 1); assert.equal(res.problems.length, 2);
+  assert.ok(res.problems.some(p => /not an HR course/.test(p.why) && p.row === 5)); assert.ok(res.problems.some(p => /not a date/.test(p.why)));
+  const neha = getState().users.find(u => u.email === 'neha.new@corp.example'); assert.ok(neha.hrTemp); assert.equal(neha.empId, 'E101'); assert.equal(neha.firstname, 'Neha New');
+  assert.equal(getState().enrol.filter(e => e.userId === neha.id && e.hr).length, 2);
+  assert.equal(getState().enrol.find(e => e.userId === neha.id).assignedBy, 'u_hema');
+  const mails = () => getState().outbox.filter(m => m.to === 'neha.new@corp.example' && m.key === 'hrAssigned').length; assert.equal(mails(), 2);
+  // read again: nothing twice, and the rows with problems are not retried until they change
+  const audits = getState().audit.length;
+  r = await call('POST', '/api/hr-sheet/sync', {}, hr); assert.equal(r.json.result.assigned.length, 0); assert.equal(mails(), 2); assert.equal(getState().audit.length, audits, 'quiet when nothing changes');
+  values[4][5] = 'POSH Awareness';
+  r = await call('POST', '/api/hr-sheet/sync', {}, hr); assert.equal(r.json.result.assigned.length, 1); assert.equal(r.json.result.assigned[0].who, 'nocourse@corp.example');
+  // the joining day arrives
+  values[3][4] = serial(0); r = await call('POST', '/api/hr-sheet/sync', {}, hr); assert.equal(r.json.result.assigned.length, 1);
+  // the scheduler reads it too; switched off, it does not
+  values.push(['E105', 'sched@corp.example', 'Sam Sched', '', '', 'POSH Awareness']); await syncHRSheet();
+  assert.ok(getState().enrol.some(e => e.userId === getState().users.find(u => u.email === 'sched@corp.example')?.id));
+  assert.equal((await op(hr, 'hrSheetSettings', {on:false})).status, 200); values.push(['E106', 'off@corp.example', 'Off', '', '', 'POSH Awareness']); await syncHRSheet();
+  assert.ok(!getState().users.some(u => u.email === 'off@corp.example'));
+  assert.equal((await call('POST', '/api/hr-sheet/sync', {}, hr)).status, 400);
+  // privacy: the sheet settings and the list of rows done stay with HR staff
+  assert.equal((await state(await login('asha'))).site.hrSheet, undefined); assert.equal((await state(hr)).site.hrSheet.done, undefined);
+  // a sheet not shared with the service account says so
+  r = await op(hr, 'hrSheetSettings', {sheet:'9ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ'}); assert.equal(r.status, 200);
+  r = await call('POST', '/api/hr-sheet/sync', {}, hr); assert.equal(r.status, 400); assert.match(r.json.error, /Share it with nb-sheets@/);
+  assert.match(getState().site.hrSheet.last.error, /Share it with/);
+  // dates as people type them
+  for (const [v, want] of [['27/11/2026', 20261127], ['2026-11-27', 20261127], ['27-Nov-2026', 20261127], ['27 November 2026', 20261127], ['Nov 27, 2026', 20261127], [46353, 20261127], ['31/02/2026', null], ['tomorrow', null]]) assert.equal(Core.sheetDay(v), want, String(v));
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

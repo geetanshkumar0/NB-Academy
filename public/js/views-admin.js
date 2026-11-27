@@ -2,7 +2,7 @@
 'use strict';
 
 const ADMIN_GROUPS = [
-  ['Site', [['general', 'General', 'site:config'], ['branding', 'Branding and certificates', 'site:config'], ['security', 'Security', 'site:config'], ['integrations', 'Email, sign-in and meetings', 'site:config'], ['notifications', 'Notifications and terms', 'site:config'], ['outbox', 'Email log', 'site:config']]],
+  ['Site', [['general', 'General', 'site:config'], ['branding', 'Branding and certificates', 'site:config'], ['security', 'Security', 'site:config'], ['integrations', 'Email, sign-in and meetings', 'site:config'], ['notifications', 'Notifications and terms', 'site:config'], ['hrsheet', 'HR Google Sheet', 'site:config'], ['outbox', 'Email log', 'site:config']]],
   ['People', [['users', 'Users', 'user:manage'], ['upload', 'Upload users', 'user:upload'], ['cohorts', 'Cohorts and mapping', 'cohort:manage'], ['roles', 'Roles and permissions', 'role:manage']]],
   ['Learning', [['courses', 'Courses and categories', 'course:create'], ['paths', 'Learning paths and rules', 'path:manage'], ['qbank', 'Question bank', 'qbank:manage'], ['restore', 'Restore course', 'backup:restore']]],
   ['Compliance', [['audit', 'Audit log', 'audit:view'], ['logs', 'Activity logs', 'site:viewlogs']]]];
@@ -13,6 +13,7 @@ VIEWS.admin = (p) => {
   return `${phead([['Site administration']], all.find(t => t[0] === tab)[1])}<div class="admingrid">${nav}<div style="min-width:0">${ADMIN[tab](p)}</div></div>`;
 };
 const ADMIN = {};
+ADMIN.hrsheet = () => hrSheetPanel();
 ADMIN.general = () => `<div class="stats" style="margin-bottom:22px">
     <div class="stat"><b>${S.users.length}</b><span class="muted small">Users</span></div><div class="stat"><b>${S.courses.length}</b><span class="muted small">Courses</span></div>
     <div class="stat"><b>${S.enrol.length}</b><span class="muted small">Enrolments</span></div><div class="stat"><b>${S.cohorts.length}</b><span class="muted small">Cohorts</span></div></div>

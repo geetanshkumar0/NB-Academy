@@ -249,7 +249,59 @@ const HR_STATUS = {notstarted:['Not started', ''], inprogress:['In progress', 'b
 const hrD = t => t ? new Date(t).toLocaleDateString('en-IN', {day:'numeric', month:'short', ...(new Date(t).getFullYear() !== new Date().getFullYear() ? {year:'numeric'} : {})}) : '–';
 const hrChip = st => `<span class="chip ${HR_STATUS[st]?.[1] || ''}">${HR_STATUS[st]?.[0] || st}</span>`;
 function hrTabs(on, actions = '') {
-  return `<div class="spread" style="align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:18px">${h.hrAccess() ? `<nav class="tabs" aria-label="HR" style="margin:0;flex:1"><button class="tab ${on === 'courses' ? 'on' : ''}" data-go="hrcourses">Courses</button><button class="tab ${on === 'analytics' ? 'on' : ''}" data-go="hranalytics">HR Analytics</button></nav>` : '<span></span>'}<div class="row" style="gap:8px">${actions}</div></div>`;
+  return `<div class="spread" style="align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:18px">${h.hrAccess() ? `<nav class="tabs" aria-label="HR" style="margin:0;flex:1"><button class="tab ${on === 'courses' ? 'on' : ''}" data-go="hrcourses">Courses</button><button class="tab ${on === 'analytics' ? 'on' : ''}" data-go="hranalytics">HR Analytics</button><button class="tab ${on === 'sheet' ? 'on' : ''}" data-go="hrsheet">Google Sheet</button></nav>` : '<span></span>'}<div class="row" style="gap:8px">${actions}</div></div>`;
+}
+// Google Sheet sync: the sheet HR keeps (Emp ID | Emp Email | Full Name | Business Unit | Date Of Joining | Course Name), read every 5 minutes
+const hrWhen = t => t ? `${hrD(t)}, ${fmtTime(t)}` : '';
+function hrSheetResult(r) {
+  const list = (title, xs, f) => xs.length ? `<div><b>${title} (${xs.length})</b><div class="tw" style="margin-top:6px;max-height:240px;overflow:auto"><table><tbody>${xs.slice(0, 200).map(f).join('')}</tbody></table></div></div>` : '';
+  return `<div class="stack">${r.first ? `<p class="card" style="padding:10px 14px;margin:0">First read: the <b>${r.recorded}</b> row${r.recorded === 1 ? '' : 's'} already in the sheet ${r.recorded === 1 ? 'is' : 'are'} recorded and not assigned. Rows added from now on are assigned.</p>` : ''}
+    <p class="muted" style="margin:0">${r.rows} row${r.rows === 1 ? '' : 's'} in the sheet · ${r.already} already assigned before</p>
+    ${list(r.assigned ? 'Assigned now' : 'Would be assigned', r.assigned?.length ? r.assigned : r.assign || [], x => `<tr><td class="small">Row ${x.row}</td><td>${esc(x.name || '')}<br><span class="muted small">${esc(x.who)}</span></td><td class="small">${esc(x.course)}</td></tr>`)}
+    ${list('Waiting for the joining date', r.waiting || [], x => `<tr><td class="small">Row ${x.row}</td><td class="small">${esc(x.who)}</td><td class="small">${esc(x.course)}</td><td class="small">${esc(x.on)}</td></tr>`)}
+    ${list('Not assigned', r.problems || [], x => `<tr><td class="small">Row ${x.row}</td><td class="small">${esc(x.who || '')}</td><td class="small err" style="display:table-cell">${esc(x.why)}</td></tr>`)}
+    ${!(r.assigned?.length || r.assign?.length || r.waiting?.length || r.problems?.length || r.first) ? '<p style="margin:0">Nothing new to assign.</p>' : ''}</div>`;
+}
+VIEWS.hrsheet = () => {
+  if (!h.hrAccess()) return notFound('The HR Google Sheet is for HRBPs and administrators.');
+  return `${phead([['HR Courses', 'hrcourses'], ['Google Sheet']], 'HR Courses').replace('</h1>', ` ${BETA}</h1>`)}${hrTabs('sheet')}${hrSheetPanel()}`;
+};
+// Shared by HR Courses › Google Sheet and Site administration › HR Google Sheet
+function hrSheetPanel() {
+  const cfg = S.site.hrSheet || {}, acct = S.hrSheetAccount, L = cfg.last, srv = B.server;
+  const link = cfg.sheetId ? `https://docs.google.com/spreadsheets/d/${cfg.sheetId}/edit` : '';
+  return `${srv ? '' : '<p class="card" style="padding:10px 14px">The Google Sheet sync runs on the server. In this preview you can see the page, but it cannot read a sheet.</p>'}
+    <p class="muted" style="margin-top:0;max-width:75ch">Keep one private Google Sheet of joiners. Every 5 minutes ${esc(S.site.name)} reads it and assigns each new row's course, exactly as if an HRBP had assigned it: email, 7 days, reminders and a temporary account for people new to ${esc(S.site.name)}. Each person gets each course once.</p>
+    <div class="dash"><div class="stack">
+    ${cfg.sheetId ? `<section class="block"><header><h2>Sync</h2><div class="tools">${cfg.on ? '<span class="chip ok">On</span>' : '<span class="chip">Off</span>'}</div></header><div class="bb stack" style="gap:10px">
+      <p style="margin:0"><a href="${link}" target="_blank" rel="noopener">Open the sheet</a>${cfg.tab ? ` · tab <b>${esc(cfg.tab)}</b>` : ' · first tab'} · set up by ${esc(cfg.byName || '')} · ${cfg.doneCount || 0} assignment${cfg.doneCount === 1 ? '' : 's'} made from it</p>
+      ${L ? `<p class="small" style="margin:0">Last read ${hrWhen(L.time)}${L.error ? '' : `: ${L.rows} rows, <b>${L.assigned}</b> assigned${L.waiting ? `, ${L.waiting} waiting for their joining date` : ''}${L.recorded ? `, ${L.recorded} already there recorded` : ''}${L.problems?.length ? `, <span class="err" style="display:inline">${L.problems.length} not assigned</span>` : ''}`}.</p>` : `<p class="small muted" style="margin:0">Not read yet. ${cfg.started ? '' : 'The first read only records the rows already in the sheet.'}</p>`}
+      ${L?.error ? `<p class="err" style="display:block;margin:0">${esc(L.error)}</p>` : ''}
+      ${L?.problems?.length && !L.error ? `<details><summary class="small">Rows not assigned (${L.problems.length})</summary><ul class="small" style="margin:6px 0 0;padding-left:18px">${L.problems.map(x => `<li>Row ${x.row}${x.who ? ` (${esc(x.who)})` : ''}: ${esc(x.why)}</li>`).join('')}</ul><p class="small muted">Fix the row in the sheet; it is tried again once it changes.</p></details>` : ''}
+      <div class="row">${cfg.on ? `<button class="btn primary" data-act="hrSheetRun" ${srv ? '' : 'disabled'}>Read now</button>` : ''}<button class="btn" data-act="hrSheetCheck" ${srv ? '' : 'disabled'}>Check (no changes)</button><button class="btn ghost" data-act="hrSheetOn" data-on="${cfg.on ? '' : '1'}">${cfg.on ? 'Switch off' : 'Switch on'}</button></div>
+    </div></section>` : ''}
+    <section class="block"><header><h2>1. Google service account</h2></header><div class="bb stack" style="gap:10px">
+      ${acct ? `<p style="margin:0">Share the sheet with this address as <b>Viewer</b> (Share › add people). It is the only way ${esc(S.site.name)} can read it; the sheet stays private.</p>
+        <div class="row"><code class="mono" id="gsaemail" style="padding:6px 10px;background:var(--surface-2);border-radius:8px">${esc(acct)}</code><button class="btn sm" data-act="copyText" data-t="gsaemail">Copy</button></div>
+        ${h.isAdmin() || h.has('site:config') ? `<p class="small muted" style="margin:0">Replace the key: <input type="file" accept=".json,application/json" data-gkey="1" aria-label="New key file"> · <button class="link danger" data-act="gkeyRemove">Remove the key</button></p>` : ''}`
+      : h.isAdmin() || h.has('site:config') ? `<p style="margin:0">${esc(S.site.name)} reads the sheet with a Google <b>service account</b>, a robot Google account of your company. Once, in <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>:</p>
+        <ol class="small" style="margin:0;padding-left:18px"><li>Create or pick a project, then <b>APIs &amp; Services › Library › Google Sheets API › Enable</b>.</li><li><b>IAM &amp; Admin › Service accounts › Create service account</b> (any name, e.g. nb-academy-sheets; no roles needed).</li><li>Open it › <b>Keys › Add key › Create new key › JSON</b>. A .json file downloads.</li><li>Choose that file here:</li></ol>
+        <div class="field"><label for="gkey">Service account key (.json)</label><input id="gkey" type="file" accept=".json,application/json" data-gkey="1" ${srv ? '' : 'disabled'}><span class="hint">Kept on the server only; never shown again. If your organisation blocks key creation, your Google Workspace admin can allow it for this project.</span></div>`
+      : '<p style="margin:0">An administrator needs to add the Google service account key on this page first.</p>'}
+    </div></section>
+    <section class="block"><header><h2>2. The sheet</h2></header><div class="bb">
+      <form data-form="hrSheet" class="stack">
+        <div class="field"><label for="hss">Link of the Google Sheet</label><input id="hss" name="sheet" type="url" value="${esc(link)}" placeholder="https://docs.google.com/spreadsheets/d/…" required></div>
+        <div class="field"><label for="hst">Tab name (optional)</label><input id="hst" name="tab" type="text" value="${esc(cfg.tab || '')}" placeholder="Leave empty for the first tab" style="max-width:280px"></div>
+        <label class="check"><input type="checkbox" name="existing"> <span>Also assign the rows already in the sheet${cfg.sheetId ? ' (only when you change to a different sheet)' : ''}. Otherwise they are recorded and only new rows are assigned.</span></label>
+        <p class="err" id="hserr" role="alert" hidden></p><div><button class="btn primary" type="submit" ${acct || !srv ? '' : 'disabled'}>${cfg.sheetId ? 'Save' : 'Save and switch on'}</button></div>
+      </form></div></section>
+    </div><div class="stack">
+    <section class="block"><header><h2>Sheet format</h2></header><div class="bb small stack" style="gap:8px">
+      <p style="margin:0">A header row with these titles (any order):</p>
+      <table><tbody><tr><td><b>Emp ID</b></td><td>Kept on the account.</td></tr><tr><td><b>Emp Email</b></td><td>Required. One course per person is assigned once.</td></tr><tr><td><b>Full Name</b></td><td>Required for people new to ${esc(S.site.name)}.</td></tr><tr><td><b>Business Unit</b></td><td class="muted">Not used.</td></tr><tr><td><b>Date Of Joining</b></td><td>The course is assigned on this day (today or earlier: straight away). Empty: straight away.</td></tr><tr><td><b>Course Name</b></td><td>Required. The HR course's full or short name; several separated by commas.</td></tr></tbody></table>
+      <p class="muted" style="margin:0">HR courses: ${S.courses.filter(c => c.hr && c.status === 'published').map(c => `${esc(c.fullname)} (${esc(c.shortname)})`).join(', ') || 'none published yet'}.</p>
+    </div></section></div></div>`;
 }
 VIEWS.hrcourses = () => {
   if (!h.hrSees()) return notFound('HR Courses are for HRBPs, administrators and content moderators.');

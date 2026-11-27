@@ -628,6 +628,16 @@ Object.assign(A, {
       <p class="err" id="hrerr" role="alert" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Assign and send emails</button></div></form>`);
   },
   hrTemplate: () => download('hr-course-assign-template.xlsx', XL.hrTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+  hrSheetCheck: async () => {
+    try { const r = await B.req('POST', '/api/hr-sheet/sync', {preview:true}); openModal('Check of the Google Sheet', `${hrSheetResult(r.result)}<p class="muted small">Nothing was changed. ${S.site.hrSheet?.on ? 'The next read (within 5 minutes, or Read now) does this.' : 'Switch the sync on to do this.'}</p><div class="mfoot"><button class="btn primary" data-act="closeModal">Close</button></div>`); }
+    catch (e) { toast(e.message, true); try { setState(await B.init()); render(); } catch (er) {} }
+  },
+  hrSheetRun: async () => {
+    try { const r = await B.req('POST', '/api/hr-sheet/sync', {}); setState(r.state); render(); openModal('Google Sheet read', `${hrSheetResult(r.result)}<div class="mfoot"><button class="btn primary" data-act="closeModal">Done</button></div>`); }
+    catch (e) { toast(e.message, true); try { setState(await B.init()); render(); } catch (er) {} }
+  },
+  hrSheetOn: async d => { if (await act('hrSheetSettings', {on:!!d.on}, d.on ? 'Google Sheet sync switched on' : 'Google Sheet sync switched off') !== FAIL) render(); },
+  gkeyRemove: () => confirmBox('Remove the Google key', 'Remove the service account key? The sheet can no longer be read until an administrator adds a key again.', async () => { try { setState((await B.req('POST', '/api/hr-sheet/key', {remove:true})).state); render(); toast('Key removed'); } catch (e) { toast(e.message, true); } }, 'Remove'),
   hraFilter: () => {},
   hraClear: () => { ui.hra = {}; render(); },
   hraCourse: d => { ui.hra = {course:d.id}; go('hranalytics'); },
@@ -638,7 +648,16 @@ Object.assign(A, {
       ...rows.map(r => { const ci = hrCert(r); return [fullname(r.u), r.u.email, r.u.department || '', r.c.fullname, r.c.shortname, HR_STATUS[r.status][0], r.progress, r.total == null ? '' : r.total.toFixed(1), d(r.e.assignedAt), r.e.assignedBy ? fullname(h.user(r.e.assignedBy)) : '', d(r.due), d(r.completedAt), ci ? ci.code : '', r.u.hrTemp ? (r.u.suspended ? 'Temporary, access ended' : 'Temporary') : 'Permanent']; })]));
   },
 });
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset?.gkey || !t.files?.[0]) return; e.stopImmediatePropagation();
+  try { const r = await B.req('POST', '/api/hr-sheet/key', {key:await t.files[0].text()}); setState(r.state); render(); toast(`Key added. Share the sheet with ${r.email}`); }
+  catch (er) { toast(er.message, true); t.value = ''; }
+}, true);
 Object.assign(F, {
+  hrSheet: async (d, f) => {
+    const r = await act('hrSheetSettings', {sheet:d.sheet, tab:d.tab, existing:checked(f, 'existing'), on:true}, null, {silent:true, errEl:'hserr'}); if (r === FAIL) return;
+    render(); toast('Saved. The sheet is read every 5 minutes.');
+  },
   hrAssign: async (d, f) => {
     const {people, bad} = hrParse(d.people);
     if (!people.length) { const e = document.getElementById('hrerr'); e.hidden = false; e.textContent = 'Add at least one person: Full name, email.'; return; }

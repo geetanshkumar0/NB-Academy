@@ -274,6 +274,49 @@ const upRead = id => { if (!/^up_[a-f0-9]{24}$/.test(id)) return null; try { ret
 const upWrite = (id, u) => fs.writeFileSync(upMeta(id), JSON.stringify(u));
 const upDrop = id => { fs.rmSync(upPart(id), {force:true}); fs.rmSync(upMeta(id), {force:true}); };
 /* Disk space where NB Academy keeps its data, and unfinished uploads waiting there (Site administration › General) */
+/* ---------- HR courses from a private Google Sheet ----------
+   A Google service account reads the sheet: its JSON key is uploaded by an administrator (kept in data/.google-sa.json, never sent
+   to browsers) or given in NB_GOOGLE_SA_FILE. The sheet is shared with the account's email as Viewer. Read every 5 minutes. */
+const gkeyFile = () => process.env.NB_GOOGLE_SA_FILE || path.join(DATA, '.google-sa.json');
+function googleKey() { try { const k = JSON.parse(fs.readFileSync(gkeyFile(), 'utf8')); return k.client_email && k.private_key ? k : null; } catch (e) { return null; } }
+let gToken = null;
+async function googleToken(k) {
+  if (gToken && gToken.email === k.client_email && gToken.exp > Date.now() + 60e3) return gToken.token;
+  const url = process.env.NB_GOOGLE_TOKEN_URL || k.token_uri || 'https://oauth2.googleapis.com/token', iat = Math.floor(Date.now() / 1000);
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const body = `${b64({alg:'RS256', typ:'JWT'})}.${b64({iss:k.client_email, scope:'https://www.googleapis.com/auth/spreadsheets.readonly', aud:url, iat, exp:iat + 3600})}`;
+  const jwt = `${body}.${crypto.sign('RSA-SHA256', Buffer.from(body), k.private_key).toString('base64url')}`;
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion:jwt}), signal:AbortSignal.timeout(20e3)});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error(`Google did not accept the service account key (${j.error_description || j.error || r.status}). Upload a new key.`);
+  gToken = {email:k.client_email, token:j.access_token, exp:Date.now() + (j.expires_in || 3600) * 1000}; return gToken.token;
+}
+async function readSheet(cfg) {
+  const k = googleKey(); if (!k) throw new Error('No Google service account key yet. An administrator uploads it on this page.');
+  const token = await googleToken(k), range = cfg.tab ? `'${cfg.tab.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
+  const r = await fetch(`${process.env.NB_SHEETS_API || 'https://sheets.googleapis.com'}/v4/spreadsheets/${encodeURIComponent(cfg.sheetId)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
+    {headers:{Authorization:`Bearer ${token}`}, signal:AbortSignal.timeout(30e3)});
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 403 || r.status === 404) throw new Error(`The sheet could not be opened. Share it with ${k.client_email} (Viewer) and check the link${cfg.tab ? ` and the tab name "${cfg.tab}"` : ''}.`);
+  if (r.status === 400 && cfg.tab) throw new Error(`There is no tab called "${cfg.tab}" in the sheet.`);
+  if (!r.ok) throw new Error(`Google Sheets answered ${r.status}${j.error?.message ? `: ${j.error.message}` : ''}.`);
+  return j.values || [];
+}
+let sheetBusy = false;
+async function syncHRSheet({preview = false, manual = false} = {}) {
+  const cfg = S.site.hrSheet; if (!cfg?.sheetId || (!cfg.on && !preview)) { if (manual) throw Object.assign(new Error(cfg?.sheetId ? 'The Google Sheet sync is switched off. Switch it on first.' : 'Set up the Google Sheet first.'), {status:400}); return null; }
+  if (sheetBusy && !preview) return null; if (!preview) sheetBusy = true;
+  try {
+    const values = await readSheet(cfg);
+    if (preview) return Core.hrSheetApply(S, env, values, {preview:true});
+    const r = mutate(() => Core.hrSheetApply(S, env, values));
+    if (S.outbox.some(m => m.status === 'queued')) setImmediate(deliverMail);
+    return r;
+  } catch (e) {
+    if (!preview) try { mutate(() => { if (S.site.hrSheet) S.site.hrSheet.last = {...(S.site.hrSheet.last || {}), time:Date.now(), error:e.message}; }); } catch (er) {}
+    throw Object.assign(e, {status:e.status || 400});
+  } finally { if (!preview) sheetBusy = false; }
+}
 function storageInfo() {
   let free = null, total = null; try { const s = fs.statfsSync(DATA); free = s.bavail * s.bsize; total = s.blocks * s.bsize; } catch (e) {}
   let pending = 0, pendingBytes = 0; try { for (const f of fs.readdirSync(upDir())) if (f.endsWith('.part')) { pending++; pendingBytes += (fs.statSync(path.join(upDir(), f)).blocks || 0) * 512; } } catch (e) {}
@@ -348,7 +391,9 @@ function mediaUser(fileId, k) {
 function viewFor(uid) {
   const V = Core.view(S, uid); if (!V) return V; const keys = {};
   for (const m of Object.values(V.mods || {})) for (const id of [m.type === 'video' && m.fileId, m.type === 'video' && m.captionsId, m.recordingFileId]) if (id && !keys[id]) keys[id] = mediaKey(uid, id);
-  V.mediaKeys = keys; return V;
+  V.mediaKeys = keys;
+  if (V.site.hrSheet || Core.H(S, uid).hrAccess() || Core.H(S, uid).has('site:config')) { const k = googleKey(); V.hrSheetAccount = k ? k.client_email : ''; }
+  return V;
 }
 function currentUser(req) { const t = cookies(req).nb_sid; const uid = store.sessionUser(t, idleMs()); const u = uid && S.users.find(x => x.id === uid); return u && !u.suspended ? {uid, token:t} : null; }
 function checkCsrf(req) { if (req.headers['x-nb-request'] !== '1') throw Object.assign(new Error('Missing request header.'), {status:403}); }
@@ -576,6 +621,23 @@ async function handle(req, res) {
       if (p.endsWith('/clean')) { const old = Date.now() - 15 * 6e4; try { for (const f of fs.readdirSync(upDir())) if (f.endsWith('.json')) { const id = f.slice(0, -5), u = upRead(id); if (!u || u.touched < old) upDrop(id); } } catch (e) {} }
       return send(res, 200, storageInfo());
     }
+    if (p === '/api/hr-sheet/key') {
+      if (!Core.H(S, me.uid).isAdmin() && !Core.H(S, me.uid).has('site:config')) return sendErr(res, 403, 'Only administrators can add the Google service account key.');
+      const b = await readJSON(req);
+      if (b.remove) { try { fs.unlinkSync(gkeyFile()); } catch (e) {} gToken = null; mutate(() => Core._.audit(S, env, me.uid, 'Google service account key removed', '')); return send(res, 200, {state:viewFor(me.uid)}); }
+      let k; try { k = JSON.parse(String(b.key || '')); } catch (e) { return sendErr(res, 400, 'This is not a Google service account key file (JSON).'); }
+      if (k.type !== 'service_account' || !/^[^@\s]+@[^@\s]+$/.test(k.client_email || '') || !/BEGIN PRIVATE KEY/.test(k.private_key || '')) return sendErr(res, 400, 'This is not a Google service account key file. In Google Cloud choose the service account › Keys › Add key › JSON.');
+      try { crypto.createPrivateKey(k.private_key); } catch (e) { return sendErr(res, 400, 'The private key in this file cannot be read.'); }
+      fs.writeFileSync(gkeyFile(), JSON.stringify({type:k.type, client_email:k.client_email, private_key:k.private_key, token_uri:k.token_uri || ''}), {mode:0o600}); gToken = null;
+      mutate(() => Core._.audit(S, env, me.uid, 'Google service account key added', k.client_email));
+      return send(res, 200, {email:k.client_email, state:viewFor(me.uid)});
+    }
+    if (p === '/api/hr-sheet/sync') {
+      { const hm = Core.H(S, me.uid); if (!hm.hrAccess() && !hm.has('site:config')) return sendErr(res, 403, 'Only HRBPs and administrators can read the HR Google Sheet.'); }
+      const b = await readJSON(req);
+      try { const result = await syncHRSheet({preview:!!b.preview, manual:true}); return send(res, 200, {result, state:viewFor(me.uid)}); }
+      catch (e) { return send(res, e.status || 400, {error:e.message, state:viewFor(me.uid)}); }
+    }
     if (p === '/api/live/join') {
       const b = await readJSON(req), mt = meetingConfig();
       if (!mt.server || !mt.secret) return sendErr(res, 503, 'Video meetings are not set up yet. An administrator needs to add the meeting server in Site administration › Email, sign-in and meetings.');
@@ -664,11 +726,11 @@ async function handle(req, res) {
 
 const server = http.createServer(handle);
 let timers = [];
-server.on('listening', () => { runTick(); timers = [setInterval(runTick, 5 * 60e3), setInterval(deliverMail, 30e3), setInterval(() => store.purgeSessions(), 3600e3)]; timers.forEach(t => t.unref()); });
+server.on('listening', () => { runTick(); timers = [setInterval(runTick, 5 * 60e3), setInterval(() => syncHRSheet().catch(() => {}), 5 * 60e3), setInterval(deliverMail, 30e3), setInterval(() => store.purgeSessions(), 3600e3)]; timers.forEach(t => t.unref()); });
 server.on('close', () => timers.forEach(clearInterval));
 if (require.main === module) {
   server.listen(PORT, HOST, () => console.log(`NB Academy running at http://localhost:${PORT}  (data: ${DATA})`));
   const stop = () => { try { store.save(S); } catch (x) {} process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }
-module.exports = {server, getState:() => S, runTick, deliverMail, removeAccounts, unenrolLearner, mergeCoursesAtStart, removeDemoData, _store:() => store};
+module.exports = {server, getState:() => S, runTick, syncHRSheet, deliverMail, removeAccounts, unenrolLearner, mergeCoursesAtStart, removeDemoData, _store:() => store};
