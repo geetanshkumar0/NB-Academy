@@ -665,19 +665,35 @@ Object.assign(A, {
   hraFilter: () => {},
   hraClear: () => { ui.hra = {}; render(); },
   hraCourse: d => { ui.hra = {course:d.id}; go('hranalytics'); },
+  // Download: choose the filters (the page's filters filled in), then the CSV
   exportHR: () => {
-    const f = ui.hra || {}, rows = C.learnerRows(S, h, {hr:true}).filter(r => (!f.course || r.c.id === f.course) && (!f.status || r.status === f.status) && (!f.by || r.e.assignedBy === f.by) && (!f.team || (r.u.department || '') === f.team) && (!f.kind || (f.kind === 'temp' ? !!r.u.hrTemp : !r.u.hrTemp)));
-    const d = t => t ? new Date(t).toISOString().slice(0, 10) : '';
-    download(`hr-courses-${new Date().toISOString().slice(0, 10)}.csv`, csv([['Name', 'Email', 'Team', 'Course', 'Course short name', 'Status', 'Progress %', 'Score %', 'Assigned on', 'Assigned by', 'Due', 'Completed on', 'Certificate code', 'Account'],
-      ...rows.map(r => { const ci = hrCert(r); return [fullname(r.u), r.u.email, r.u.department || '', r.c.fullname, r.c.shortname, HR_STATUS[r.status][0], r.progress, r.total == null ? '' : r.total.toFixed(1), d(r.e.assignedAt), r.e.assignedBy ? fullname(h.user(r.e.assignedBy)) : '', d(r.due), d(r.completedAt), ci ? ci.code : '', r.u.hrTemp ? (r.u.suspended ? 'Temporary, access ended' : 'Temporary') : 'Permanent']; })]));
+    const f = ui.hra || {}, all = C.learnerRows(S, h, {hr:true}), o = hraFilterOptions(all);
+    const sel = (k, label, opts) => `<div class="field"><label for="hx-${k}">${label}</label><select id="hx-${k}" name="${k}"><option value="">All</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${f[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>`;
+    openModal('Download HR report', `<form data-form="hrExport" class="stack"><div class="fgrid">${sel('course', 'Course', o.courses)}${sel('status', 'Status', o.statuses)}
+        <div class="field"><label for="hx-from">Date of joining from</label><input id="hx-from" name="dojFrom" type="date" value="${esc(f.dojFrom || '')}"></div><div class="field"><label for="hx-to">Date of joining to</label><input id="hx-to" name="dojTo" type="date" value="${esc(f.dojTo || '')}"></div>
+        ${sel('by', 'Assigned by', o.bys)}${sel('team', 'Team', o.teams)}${sel('kind', 'Account', [['temp', 'Temporary accounts'], ['perm', 'Permanent accounts']])}</div>
+      <p class="muted small" id="hxcount" style="margin:0">${hxCount(hraRows(all, f).length)}</p>
+      <div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Download CSV</button></div></form>`);
   },
+
 });
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset?.gkey || !t.files?.[0]) return; e.stopImmediatePropagation();
   try { const r = await B.req('POST', '/api/hr-sheet/key', {key:await t.files[0].text()}); setState(r.state); render(); toast(`Key added. Share the sheet with ${r.email}`); }
   catch (er) { toast(er.message, true); t.value = ''; }
 }, true);
+// The row count in the download window follows the filters
+document.addEventListener('change', e => { const fm = e.target.closest?.('form[data-form=hrExport]'); if (!fm) return; const el = document.getElementById('hxcount'); if (el) el.textContent = hxCount(hraRows(C.learnerRows(S, h, {hr:true}), Object.fromEntries(new FormData(fm))).length); });
+const hxCount = n => `${n} row${n === 1 ? '' : 's'} with these filters.`;
 Object.assign(F, {
+  hrExport: d => {
+    const rows = hraRows(C.learnerRows(S, h, {hr:true}), d), day = t => t ? new Date(t).toISOString().slice(0, 10) : '';
+    if (!rows.length) return toast('No rows with these filters.', true);
+    const batch = r => h.groupsOf(r.c.id, r.u.id).filter(g => g.batch || / joiners$/.test(g.name)).map(g => g.name.replace(/ joiners$/, '')).join(' / ');
+    download(`hr-courses-${new Date().toISOString().slice(0, 10)}.csv`, csv([['Emp ID', 'Name', 'Email', 'Team', 'Date of joining', 'Batch', 'Course', 'Course short name', 'Status', 'Progress %', 'Score %', 'Assigned on', 'Assigned by', 'Due', 'Completed on', 'Certificate code', 'Account'],
+      ...rows.map(r => { const ci = hrCert(r); return [r.u.empId || '', fullname(r.u), r.u.email, r.u.department || '', r.u.doj ? (() => { const n = C.sheetDay(r.u.doj); return n ? `${String(n).slice(0, 4)}-${String(n).slice(4, 6)}-${String(n).slice(6)}` : r.u.doj; })() : '', batch(r), r.c.fullname, r.c.shortname, HR_STATUS[r.status][0], r.progress, r.total == null ? '' : r.total.toFixed(1), day(r.e.assignedAt), r.e.assignedBy ? fullname(h.user(r.e.assignedBy)) : '', day(r.due), day(r.completedAt), ci ? ci.code : '', r.u.hrTemp ? (r.u.suspended ? 'Temporary, access ended' : 'Temporary') : 'Permanent']; })]));
+    closeModal(); toast(`${rows.length} rows downloaded`);
+  },
   hrSheet: async (d, f) => {
     const r = await act('hrSheetSettings', {sheet:d.sheet, tab:d.tab, existing:checked(f, 'existing'), on:true}, null, {silent:true, errEl:'hserr'}); if (r === FAIL) return;
     render(); toast('Saved. The sheet is read every 5 minutes.');

@@ -319,26 +319,39 @@ VIEWS.hrcourses = () => {
       || `<tr><td colspan="7" class="empty">${build ? 'No HR courses yet. Create one with <b>+ New HR course</b>, or tick <b>HR course</b> in an existing course\'s settings.' : 'No HR courses yet. Administrators and content moderators create them.'}</td></tr>`}
     </tbody></table></div>`;
 };
+// HR Analytics and its download share these filters: course, status, assigned by, team, account kind, date of joining from/to
+const dojNum = v => v ? Number(String(v).replace(/-/g, '')) || null : null;
+function hraRows(all, f) {
+  const from = dojNum(f.dojFrom), to = dojNum(f.dojTo);
+  return all.filter(r => { const d = C.sheetDay(r.u.doj);
+    return (!f.course || r.c.id === f.course) && (!f.status || r.status === f.status) && (!f.by || r.e.assignedBy === f.by) && (!f.team || (r.u.department || '') === f.team) && (!f.kind || (f.kind === 'temp' ? !!r.u.hrTemp : !r.u.hrTemp))
+      && (!from || (d && d >= from)) && (!to || (d && d <= to)); })
+    .sort((a, b) => (b.e.assignedAt || 0) - (a.e.assignedAt || 0));
+}
+function hraFilterOptions(all) {
+  return {courses:S.courses.filter(c => c.hr).sort((a, b) => a.fullname.localeCompare(b.fullname)).map(c => [c.id, c.fullname]), statuses:Object.entries(HR_STATUS).map(([k, [l]]) => [k, l]),
+    bys:[...new Set(all.map(r => r.e.assignedBy).filter(Boolean))].map(id => h.user(id)).filter(Boolean).map(u => [u.id, fullname(u)]), teams:[...new Set(all.map(r => r.u.department).filter(Boolean))].sort().map(t => [t, t])};
+}
 VIEWS.hranalytics = () => {
   if (!h.hrAccess()) return notFound('HR Analytics are for HRBPs and administrators.');
   const f = ui.hra || (ui.hra = {});
   const all = C.learnerRows(S, h, {hr:true}), hrCourses = S.courses.filter(c => c.hr).sort((a, b) => a.fullname.localeCompare(b.fullname));
   const bys = [...new Set(all.map(r => r.e.assignedBy).filter(Boolean))].map(id => h.user(id)).filter(Boolean);
   const teams = [...new Set(all.map(r => r.u.department).filter(Boolean))].sort();
-  const rows = all.filter(r => (!f.course || r.c.id === f.course) && (!f.status || r.status === f.status) && (!f.by || r.e.assignedBy === f.by) && (!f.team || (r.u.department || '') === f.team) && (!f.kind || (f.kind === 'temp' ? !!r.u.hrTemp : !r.u.hrTemp)))
-    .sort((a, b) => (b.e.assignedAt || 0) - (a.e.assignedAt || 0));
+  const rows = hraRows(all, f);
   const sm = C.summarize(rows), certs = rows.filter(r => hrCert(r)).length;
   const sel = (k, label, opts) => `<select class="sel-sm" data-change="hraFilter" data-k="${k}" aria-label="${label}"><option value="">${label}</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${f[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   return `${phead([['HR Analytics']], 'HR Analytics').replace('</h1>', ` ${BETA}</h1>`)}
     ${hrTabs('analytics', '<button class="btn" data-act="exportHR">Download Excel (CSV)</button>')}
     <div class="row" style="margin-bottom:14px;gap:8px;flex-wrap:wrap">${sel('course', 'All HR courses', hrCourses.map(c => [c.id, c.fullname]))}${sel('status', 'Any status', Object.entries(HR_STATUS).map(([k, [l]]) => [k, l]))}${sel('by', 'Assigned by anyone', bys.map(u => [u.id, fullname(u)]))}${sel('team', 'All teams', teams.map(t => [t, t]))}${sel('kind', 'All accounts', [['temp', 'Temporary accounts'], ['perm', 'Permanent accounts']])}
+      <label class="row small" style="gap:6px">Joined <input type="date" class="sel-sm" data-change="hraFilter" data-k="dojFrom" value="${esc(f.dojFrom || '')}" aria-label="Joined from"> to <input type="date" class="sel-sm" data-change="hraFilter" data-k="dojTo" value="${esc(f.dojTo || '')}" aria-label="Joined to"></label>
       ${Object.values(f).some(Boolean) ? '<button class="btn sm ghost" data-act="hraClear">Clear filters</button>' : ''}</div>
     <div class="stats" style="margin-bottom:16px">${[['Assigned', sm.total], ['Completed', sm.completed], ['Completion rate', fmtPct(sm.completionRate)], ['In progress', sm.inprogress], ['Not started', sm.notstarted], ['Not completed by due date', sm.overdue], ['Certificates issued', certs]].map(([l, v]) => `<div class="stat"><span class="lbl">${l}</span><b class="num">${v}</b></div>`).join('')}</div>
     <div class="card" style="margin-bottom:20px">${distBar(sm).replace('>Overdue <', '>Not completed by due date <')}</div>
     <div class="spread" style="margin-bottom:10px"><h2 style="margin:0">People</h2><input type="search" data-filter="#hralist" placeholder="Search name, email or course" aria-label="Search people" style="max-width:280px"></div>
     <div class="tw"><table><thead><tr><th>Person</th><th>Course</th><th>Status</th><th>Assigned</th><th>Due</th><th>Completed</th><th class="n">Score</th><th>Certificate</th><th>Account</th></tr></thead><tbody id="hralist">
     ${rows.map(r => { const ci = hrCert(r), by = h.user(r.e.assignedBy);
-      return `<tr data-s="${esc((fullname(r.u) + ' ' + r.u.email + ' ' + r.c.fullname + ' ' + r.c.shortname).toLowerCase())}"><td><b>${esc(fullname(r.u))}</b><br><span class="muted small">${esc(r.u.email)}${r.u.department ? ` · ${esc(r.u.department)}` : ''}</span></td>
+      return `<tr data-s="${esc((fullname(r.u) + ' ' + r.u.email + ' ' + r.c.fullname + ' ' + r.c.shortname).toLowerCase())}"><td><b>${esc(fullname(r.u))}</b><br><span class="muted small">${esc(r.u.email)}${r.u.department ? ` · ${esc(r.u.department)}` : ''}${r.u.doj ? `<br>Joined ${esc(r.u.doj)}` : ''}${r.u.empId ? ` · ${esc(r.u.empId)}` : ''}</span></td>
         <td class="small"><b>${esc(r.c.shortname)}</b><br><span class="muted">${esc(r.c.fullname)}</span></td><td style="white-space:nowrap">${hrChip(r.status)}${r.status !== 'completed' ? `<br><span class="muted small">${r.progress}% done</span>` : ''}</td>
         <td class="small" style="white-space:nowrap">${hrD(r.e.assignedAt)}${by ? `<br><span class="muted">by ${esc(fullname(by))}</span>` : ''}</td><td class="small" style="white-space:nowrap">${hrD(r.due)}</td><td class="small" style="white-space:nowrap">${hrD(r.completedAt)}</td>
         <td class="n">${fmtPct(r.total)}</td><td class="small mono">${ci ? esc(ci.code) : '–'}</td>

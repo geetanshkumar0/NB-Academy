@@ -1563,6 +1563,9 @@ test('HR courses: HRBP assigns by name and email, 7 days, reminders, certificate
   // add individually: Emp ID, team and date of joining are kept
   r = await op(hr, 'hrAssign', {cid, people:[{fullname:'Ishaan Solo', email:'ishaan.solo@corp.example', empId:'E777', team:'Legal Sales', doj:'2026-12-01'}]}); assert.equal(r.status, 200, r.text);
   const ish = getState().users.find(u => u.email === 'ishaan.solo@corp.example'); assert.equal(ish.empId, 'E777'); assert.equal(ish.doj, '1 Dec 2026');
+  // Emp ID and date of joining reach HR staff (for HR Analytics and its download), not other people
+  const hv = (await state(hr)).users.find(u => u.id === ish.id); assert.equal(hv.empId, 'E777'); assert.equal(hv.doj, '1 Dec 2026');
+  const rv = (await state(await login('rohan'))).users.find(u => u.email === asha.email); assert.equal(rv?.doj, undefined);
   // Participants: the due date is fixed (7 days), roles do not change, and the HRBP can remind and remove learners
   r = await op(a, 'setDue', {cid, userId:kavya.id, due:Date.now() + 30 * 864e5}); assert.equal(r.status, 400); assert.match(r.text, /always due 7 days/);
   r = await op(a, 'changeRole', {cid, userId:kavya.id, role:'teacher'}); assert.equal(r.status, 400);
