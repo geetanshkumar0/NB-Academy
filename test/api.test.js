@@ -1549,6 +1549,10 @@ test('HR courses: HRBP assigns by name and email, 7 days, reminders, certificate
   r = await op(a, 'enrolUser', {cid, userId:zoya.id, role:'student'}); assert.equal(r.status, 400); assert.match(r.text, /HR Courses tab/);
   // a course with learners cannot switch between HR and regular
   r = await op(a, 'courseSettings', {cid, fullname:c.fullname, shortname:c.shortname, catId:cat, summary:'', visible:true, hr:false}); assert.equal(r.status, 400);
+  // a date of joining puts people in the month and day batches of the course
+  r = await op(hr, 'hrAssign', {cid, people:[{name:'Bina Batch', email:'bina.batch@corp.example', doj:'05/12/2026'}]}); assert.equal(r.status, 200, r.text);
+  const bina = getState().users.find(u => u.email === 'bina.batch@corp.example');
+  assert.deepEqual(getState().groups.filter(g => g.courseId === cid && g.members.includes(bina.id)).map(g => g.name).sort(), ['5 Dec 2026 joiners', 'Dec 2026 joiners']);
   // Participants: the due date is fixed (7 days), roles do not change, and the HRBP can remind and remove learners
   r = await op(a, 'setDue', {cid, userId:kavya.id, due:Date.now() + 30 * 864e5}); assert.equal(r.status, 400); assert.match(r.text, /always due 7 days/);
   r = await op(a, 'changeRole', {cid, userId:kavya.id, role:'teacher'}); assert.equal(r.status, 400);
@@ -1618,8 +1622,26 @@ test('HR courses from a private Google Sheet: service account key, new rows assi
   r = await op(hr, 'hrSheetSettings', {sheet:'9ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ'}); assert.equal(r.status, 200);
   r = await call('POST', '/api/hr-sheet/sync', {}, hr); assert.equal(r.status, 400); assert.match(r.json.error, /Share it with nb-sheets@/);
   assert.match(getState().site.hrSheet.last.error, /Share it with/);
+  // joining batches: the month and the day, in each course
+  const nb = cid => getState().groups.filter(x => x.courseId === cid && x.members.includes(neha.id)).map(x => x.name).sort();
+  const dd = Core.dayText(Core.sheetDay(serial(0))), mm = dd.replace(/^\d+ /, '');
+  assert.deepEqual(nb('c_hr1'), [`${dd} joiners`, `${mm} joiners`].sort()); assert.deepEqual(nb('c_hr2'), [`${dd} joiners`, `${mm} joiners`].sort());
+  assert.equal(neha.doj, dd);
+  assert.ok((await state(hr)).groups.some(g => g.courseId === 'c_hr1' && g.name === `${mm} joiners`), 'HRBPs see the batches of HR courses');
   // dates as people type them
   for (const [v, want] of [['27/11/2026', 20261127], ['2026-11-27', 20261127], ['27-Nov-2026', 20261127], ['27 November 2026', 20261127], ['Nov 27, 2026', 20261127], [46353, 20261127], ['31/02/2026', null], ['tomorrow', null]]) assert.equal(Core.sheetDay(v), want, String(v));
+});
+
+test('Upload users: a doj column puts learners in the joining batches (month and day) of their courses', async () => {
+  const a = await login('admin'), c1 = getState().courses.find(c => c.id === 'c1');
+  const csv = `username,fullname,email,course1,role1,course2,role2,Date of Joining\nbatch.one,Batch One,batch.one@example.com,${c1.shortname},Learner,,,27/11/2026\nbatch.two,Batch Two,batch.two@example.com,${c1.shortname},Learner,,,2026-12-03\nbatch.bad,Batch Bad,batch.bad@example.com,${c1.shortname},Learner,,,someday`;
+  const r = await op(a, 'uploadUsers', {csv, welcome:false}); assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.result.created, 2); assert.match(r.json.result.errors.join(' '), /not a date/);
+  const S = getState(), u1 = S.users.find(u => u.username === 'batch.one'), u2 = S.users.find(u => u.username === 'batch.two');
+  const of = u => S.groups.filter(g => g.courseId === 'c1' && g.members.includes(u.id)).map(g => g.name).sort();
+  assert.deepEqual(of(u1), ['27 Nov 2026 joiners', 'Nov 2026 joiners']); assert.deepEqual(of(u2), ['3 Dec 2026 joiners', 'Dec 2026 joiners']);
+  assert.equal(u1.doj, '27 Nov 2026');
+  assert.equal(S.groups.filter(g => g.courseId === 'c1' && g.name === 'Nov 2026 joiners').length, 1, 'one batch per month');
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

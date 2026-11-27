@@ -215,7 +215,7 @@ op('hrAssign', (S, h, p, env) => {
       audit(S, env, h.meId, 'HR temporary account created', un, `${name} <${email}>`);
     } else if (u.hrTemp && u.suspended) { u.suspended = false; delete u.inactiveSince; delete u.hrExpired; audit(S, env, h.meId, 'HR temporary account reopened', u.username, c.shortname); }
     if (raw.empId && !u.empId) u.empId = String(raw.empId).trim().slice(0, 40);
-    if (raw.doj && !u.doj) u.doj = raw.doj;
+    const doj = sheetDay(raw.doj) || sheetDay(u.doj); if (doj && (raw.doj || !u.doj)) u.doj = dayText(doj);
     let e = h.enrolOf(c.id, u.id);
     if (e && !h.isLearner(c.id, u.id)) { res.skipped.push({who:email, why:'Already in this course in another role'}); continue; }
     if (e && e.completedAt && !p.again) { res.skipped.push({who:email, why:`Already completed on ${fmtD(e.completedAt)}`}); continue; }
@@ -227,6 +227,7 @@ op('hrAssign', (S, h, p, env) => {
       ? `Your NB Academy account: username ${u.username}. Set your password and start here (the link works for 7 days): ${linkTo(S, 'setpassword', makeToken(S, env, u.id, 'setpw', HR_DAYS * D))}`
       : `Start here: ${linkTo(S, 'course', c.id)}`;
     notifyT(S, env, 'hrAssigned', u.id, {course:c.fullname, due:hrDueText(due), sender:h.fullname(h.meId), access, expires:u.hrTemp ? ' Your access to NB Academy ends after the due date.' : '', short:`Due ${hrDueText(due)}`}, 'course', c.id);
+    if (doj) joinBatches(S, env, c.id, u.id, doj);
     log(S, env, u.id, 'HR course assigned', c.id);
   }
   audit(S, env, h.meId, 'HR course assigned', c.shortname, `${res.assigned + res.renewed} people (${res.created} new accounts), due ${hrDueText(due)}${res.skipped.length ? `; ${res.skipped.length} skipped` : ''}`);
@@ -238,21 +239,7 @@ op('hrAssign', (S, h, p, env) => {
    The first read after switching on only records the rows already there, unless "assign those too" was chosen (cfg.started).
    A joining date in the future waits for that day. A row that cannot be assigned is reported and retried only once it changes. */
 const HR_TZ_MIN = 330; // dates in the sheet are Indian dates
-const ymd = (y, m, d) => (y < 100 ? 2000 + y : y) * 1e4 + m * 100 + d;
-const okDay = n => { const y = Math.floor(n / 1e4), m = Math.floor(n / 100) % 100, d = n % 100; if (y < 1990 || y > 2100 || m < 1 || m > 12 || d < 1) return null; const t = new Date(Date.UTC(y, m - 1, d)); return t.getUTCMonth() === m - 1 ? n : null; };
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-function sheetDay(v) {
-  if (v == null || v === '') return null;
-  if (typeof v === 'number' || /^\d{4,6}(\.\d+)?$/.test(String(v).trim())) { const t = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(v)) * D); return okDay(ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate())); }
-  const x = String(v).trim(); let m;
-  if ((m = x.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return okDay(ymd(+m[1], +m[2], +m[3]));
-  if ((m = x.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/))) return okDay(ymd(+m[3], +m[2], +m[1])); // day first
-  const mon = w => MONTHS.indexOf(String(w).slice(0, 3).toLowerCase()) + 1;
-  if ((m = x.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-/]+([A-Za-z]{3,})[\s\-/,]+(\d{2,4})$/)) && mon(m[2])) return okDay(ymd(+m[3], mon(m[2]), +m[1]));
-  if ((m = x.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})$/)) && mon(m[1])) return okDay(ymd(+m[3], mon(m[1]), +m[2]));
-  return null;
-}
-const dayText = n => `${n % 100} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.floor(n / 100) % 100 - 1]} ${Math.floor(n / 1e4)}`;
+const {sheetDay, dayText, joinBatches} = Core, ymd = (y, m, d) => y * 1e4 + m * 100 + d;
 const sheetId = v => { const x = String(v || '').trim(), m = x.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/); return m ? m[1] : /^[A-Za-z0-9_-]{20,}$/.test(x) ? x : ''; };
 function hrSheetApply(S, env, values, o = {}) {
   const cfg = S.site.hrSheet; if (!cfg?.sheetId) throw new OpError('No Google Sheet is set up.', 400);
@@ -281,12 +268,12 @@ function hrSheetApply(S, env, values, o = {}) {
       const lc = cn.toLowerCase(), found = hrCourses.filter(c => c.fullname.trim().toLowerCase() === lc || c.shortname.trim().toLowerCase() === lc);
       if (found.length !== 1) { problem(rowNo, email, found.length ? `"${cn}" matches more than one HR course` : `"${cn}" is not an HR course on ${S.site.name}`); continue; }
       const c = found[0], key = `${email}|${c.id}`;
-      if (done[key]) { res.already++; continue; }
+      if (done[key]) { res.already++; if (doj && !o.preview) { const u0 = S.users.find(x => String(x.email || '').toLowerCase() === email); if (u0 && hb.enrolOf(c.id, u0.id)) joinBatches(S, env, c.id, u0.id, doj); } continue; }
       if (first) { done[key] = now; res.recorded++; continue; }
       if (c.status === 'draft') { problem(rowNo, email, `${c.fullname} is still a draft`); continue; }
       if (doj && doj > today) { res.waiting.push({row:rowNo, who:email, course:c.fullname, on:dayText(doj)}); continue; }
       const u = S.users.find(x => String(x.email || '').toLowerCase() === email);
-      if (u && hb.enrolOf(c.id, u.id)) { done[key] = now; res.already++; continue; }
+      if (u && hb.enrolOf(c.id, u.id)) { if (!o.preview) { done[key] = now; if (doj) joinBatches(S, env, c.id, u.id, doj); } res.already++; continue; }
       const sig = JSON.stringify([email, name, empId, String(dojRaw ?? '')]);
       if (failed[key]?.sig === sig) { problem(rowNo, email, failed[key].why); continue; }
       const one = {row:rowNo, who:email, name, course:c.fullname, key, sig};
@@ -1037,6 +1024,6 @@ SEED_HOOKS.push((S, env) => {
   A('c_hr2', 'u7', -2);
 });
 
-Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner, hrSheetApply, sheetDay, sheetId});
+Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner, hrSheetApply, sheetId});
 return Core;
 });

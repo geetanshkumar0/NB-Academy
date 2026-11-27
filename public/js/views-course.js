@@ -4,16 +4,18 @@
 // HR courses: learners only, one "Assign Course" (7 days, fixed) and a bulk upload; no roles, groups or due-date editing
 function hrParticipants(c) {
   const staff = h.hrAccess(), live = c.status === 'published', remind = staff || h.has('grade:viewall', c.id), remove = staff || h.has('course:enrol', c.id);
-  const rows = h.enrolled(c.id).filter(x => h.isLearner(c.id, x.u.id)).sort((a, b) => a.u.firstname.localeCompare(b.u.firstname));
+  let rows = h.enrolled(c.id).filter(x => h.isLearner(c.id, x.u.id)).sort((a, b) => a.u.firstname.localeCompare(b.u.firstname));
+  const grp = ui.grp && h.groups(c.id).find(g => g.id === ui.grp); if (grp) rows = rows.filter(x => grp.members.includes(x.u.id));
   return courseShell(c, 'participants', `<div class="spread" style="margin-bottom:14px"><p class="muted"><span class="num">${rows.length}</span> learner${rows.length === 1 ? '' : 's'} · due 7 days after they are assigned</p>
-      <div class="row"><input type="search" id="psearch" data-filter="#plist" placeholder="Search learners" aria-label="Search learners" style="max-width:200px">${staff ? (live ? `<button class="btn" data-act="hrAssign" data-id="${c.id}" data-bulk="1">Bulk upload</button><button class="btn primary" data-act="hrAssign" data-id="${c.id}">Assign Course</button>` : '<span class="muted small">Publish the course to assign it.</span>') : ''}</div></div>
-    <div class="tw"><table><thead><tr><th>Name</th><th>Status</th><th>Progress</th><th>Assigned</th><th>Due</th>${remind || remove ? '<th></th>' : ''}</tr></thead><tbody id="plist">
+      <div class="row">${groupFilter(c)}<input type="search" id="psearch" data-filter="#plist" placeholder="Search learners" aria-label="Search learners" style="max-width:200px">${staff ? (live ? `<button class="btn" data-act="hrAssign" data-id="${c.id}" data-bulk="1">Bulk upload</button><button class="btn primary" data-act="hrAssign" data-id="${c.id}">Assign Course</button>` : '<span class="muted small">Publish the course to assign it.</span>') : ''}</div></div>
+    <div class="tw"><table><thead><tr><th>Name</th><th>Batch</th><th>Status</th><th>Progress</th><th>Assigned</th><th>Due</th>${remind || remove ? '<th></th>' : ''}</tr></thead><tbody id="plist">
     ${rows.map(({e, u}) => { const st = h.status(c.id, u.id);
       return `<tr data-s="${esc((fullname(u) + ' ' + u.email).toLowerCase())}"><td><div class="row" style="flex-wrap:nowrap">${avatar(u, 30)}<span><button class="link" data-go="profile" data-id="${u.id}">${esc(fullname(u))}</button>${u.hrTemp ? ' <span class="chip">Temporary</span>' : ''}${u.suspended ? ' <span class="chip bad">Inactive</span>' : ''}<br><span class="muted small">${esc(u.email)}</span></span></div></td>
+      <td class="small">${h.groupsOf(c.id, u.id).map(g => esc(g.name.replace(/ joiners$/, ''))).join('<br>') || '<span class="muted">–</span>'}</td>
       <td>${hrChip(st)}</td><td style="min-width:140px">${progressBar(h.progress(c.id, u.id))}</td>
       <td class="small">${hrD(e.assignedAt)}${e.assignedBy ? `<br><span class="muted">by ${esc(fullname(h.user(e.assignedBy)))}</span>` : ''}</td>
       <td class="small">${hrD(e.due)}</td>
-      ${remind || remove ? `<td><div class="tools">${remind && st !== 'completed' && !u.suspended ? `<button class="btn sm ghost" data-act="nudge" data-u="${u.id}" data-c="${c.id}">Remind</button>` : ''}${remove && u.id !== S.me ? `<button class="btn sm ghost danger" data-act="unenrol" data-cid="${c.id}" data-u="${u.id}">Remove from course</button>` : ''}</div></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="6" class="empty">${h.enrolled(c.id).some(x => h.isLearner(c.id, x.u.id)) ? 'No learners match.' : 'Nobody has been assigned this course yet.'}</td></tr>`}
+      ${remind || remove ? `<td><div class="tools">${remind && st !== 'completed' && !u.suspended ? `<button class="btn sm ghost" data-act="nudge" data-u="${u.id}" data-c="${c.id}">Remind</button>` : ''}${remove && u.id !== S.me ? `<button class="btn sm ghost danger" data-act="unenrol" data-cid="${c.id}" data-u="${u.id}">Remove from course</button>` : ''}</div></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="7" class="empty">${h.enrolled(c.id).some(x => h.isLearner(c.id, x.u.id)) ? 'No learners match.' : 'Nobody has been assigned this course yet.'}</td></tr>`}
     </tbody></table></div>`);
 }
 VIEWS.participants = (p) => {

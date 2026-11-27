@@ -953,9 +953,37 @@ function parseCSV(text) {
   const clean = csvGrid(text).filter(r => r.some(x => x.trim() !== ''));
   if (!clean.length) return {headers:[], rows:[]};
   // Headers are forgiving: "First name", "First Name" and "firstname" all mean firstname
-  const ALIAS = {emailaddress:'email', mail:'email', fullname:'fullname', name:'fullname', employeename:'fullname', firstname:'firstname', givenname:'firstname', lastname:'lastname', surname:'lastname', familyname:'lastname', user:'username', login:'username', loginname:'username', department:'team'};
+  const ALIAS = {emailaddress:'email', mail:'email', fullname:'fullname', name:'fullname', employeename:'fullname', doj:'doj', dateofjoining:'doj', joiningdate:'doj', dateofjoin:'doj', empid:'empid', employeeid:'empid', empcode:'empid', emailid:'email', empemail:'email', firstname:'firstname', givenname:'firstname', lastname:'lastname', surname:'lastname', familyname:'lastname', user:'username', login:'username', loginname:'username', department:'team'};
   const headers = clean[0].map(h => { const k = h.trim().toLowerCase().replace(/[\s_\-]+/g, '').replace(/\(.*\)$/, ''); return ALIAS[k] || k; });
   return {headers, rows:clean.slice(1).map(r => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()])))};
+}
+/* ---------------- Joining dates and batches ----------------
+   A date of joining as people type it (27/11/2026 day first, 2026-11-27, 27-Nov-2026, Nov 27, 2026, or a spreadsheet date number)
+   becomes YYYYMMDD. Each course then gets two levels of batch (course groups): the month ("Nov 2026 joiners") and the day
+   ("27 Nov 2026 joiners"); the person joins both. Used by Upload users, the HR bulk upload and the HR Google Sheet. */
+const ymd = (y, m, d) => (y < 100 ? 2000 + y : y) * 1e4 + m * 100 + d;
+const okDay = n => { const y = Math.floor(n / 1e4), m = Math.floor(n / 100) % 100, d = n % 100; if (y < 1990 || y > 2100 || m < 1 || m > 12 || d < 1) return null; const t = new Date(Date.UTC(y, m - 1, d)); return t.getUTCMonth() === m - 1 ? n : null; };
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function sheetDay(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' || /^\d{4,6}(\.\d+)?$/.test(String(v).trim())) { const t = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(v)) * D); return okDay(ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate())); }
+  const x = String(v).trim(); let m;
+  if ((m = x.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return okDay(ymd(+m[1], +m[2], +m[3]));
+  if ((m = x.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/))) return okDay(ymd(+m[3], +m[2], +m[1])); // day first
+  const mon = w => MONTHS.indexOf(String(w).slice(0, 3).toLowerCase()) + 1;
+  if ((m = x.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-/]+([A-Za-z]{3,})[\s\-/,]+(\d{2,4})$/)) && mon(m[2])) return okDay(ymd(+m[3], mon(m[2]), +m[1]));
+  if ((m = x.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})$/)) && mon(m[1])) return okDay(ymd(+m[3], mon(m[1]), +m[2]));
+  return null;
+}
+const dayText = n => `${n % 100} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.floor(n / 100) % 100 - 1]} ${Math.floor(n / 1e4)}`;
+function joinBatches(S, env, cid, uid, day) {
+  day = typeof day === 'number' ? okDay(day) : sheetDay(day); if (!day) return;
+  const mon = `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.floor(day / 100) % 100 - 1]} ${Math.floor(day / 1e4)}`;
+  for (const name of [`${mon} joiners`, `${dayText(day)} joiners`]) {
+    let g = S.groups.find(x => x.courseId === cid && x.name.toLowerCase() === name.toLowerCase());
+    if (!g) { g = {id:env.uid('g'), courseId:cid, name, members:[], batch:true}; S.groups.push(g); }
+    if (!g.members.includes(uid)) g.members.push(uid);
+  }
 }
 function validateUserRows(S, csvText) {
   const {headers, rows} = parseCSV(csvText);
@@ -982,8 +1010,9 @@ function validateUserRows(S, csvText) {
       enrols.push({courseId:c.id, shortname:c.shortname, role:roleObj.id, group:r['group' + k] || ''});
     }
     if (r.password) { try { checkPassword(S, r.password); } catch (e) { errors.push(e.message.replace(/\.$/, '')); } }
+    const doj = r.doj ? sheetDay(r.doj) : null; if (r.doj && !doj) errors.push(`Date of joining "${r.doj}" is not a date (use e.g. 27/11/2026)`);
     let team = ''; try { team = normTeam(S, r.team ?? r.department); } catch (e) { errors.push(`Team "${r.team ?? r.department}" is not on the team list`); }
-    return {line:i + 2, username:un, fullname:name, firstname:name, lastname:'', email:r.email, department:team, password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
+    return {line:i + 2, username:un, fullname:name, firstname:name, lastname:'', email:r.email, department:team, password:r.password || '', due:r.due1 || r.due || '', doj, empId:r.empid || '', action:existing ? 'update' : 'create', enrols, errors};
   });
   return {headers, rows:out, errors:[]};
 }
@@ -1149,7 +1178,9 @@ op('uploadUsers', (S, h, p, env) => {
     for (const e of r.enrols) {
       if (!S.enrol.some(x => x.courseId === e.courseId && x.userId === u.id)) { const dd = Number(p.dueDays) || 0; S.enrol.push({id:env.uid('e'), courseId:e.courseId, userId:u.id, role:e.role, time:env.now(), ...(dd && e.role === 'student' ? {due:env.now() + dd * D, mandatory:true, assignedBy:h.meId, source:'upload'} : {})}); res.enrolled++; }
       if (e.group) { let g = S.groups.find(x => x.courseId === e.courseId && x.name.toLowerCase() === e.group.toLowerCase()); if (!g) { g = {id:env.uid('g'), courseId:e.courseId, name:e.group, members:[]}; S.groups.push(g); } if (!g.members.includes(u.id)) g.members.push(u.id); }
+      if (r.doj && e.role === 'student') joinBatches(S, env, e.courseId, u.id, r.doj);
     }
+    if (r.doj) u.doj = dayText(r.doj); if (r.empId && !u.empId) u.empId = r.empId.slice(0, 40);
     if (isNew) { if (p.welcome !== false) welcomeUser(S, env, u); applyRules(S, env, u.id); }
   }
   log(S, env, h.meId, `Bulk upload: ${res.created} created, ${res.updated} updated, ${res.enrolled} enrolments`);
@@ -1843,7 +1874,7 @@ function view(S, meId) {
   const oversee = uid => siteAnalytics || team.has(uid) || scope.has(uid);
   const overseeCourses = new Set(S.enrol.filter(e => oversee(e.userId) && hrOk(e.courseId)).map(e => e.courseId));
   V.enrol = S.enrol.filter(e => e.userId === meId || (hrStaff && hrCourse.has(e.courseId)) || (hrOk(e.courseId) && ((viewable.has(e.courseId) && h.has('course:viewparticipants', e.courseId)) || ['editingteacher', 'teacher', 'trainer'].includes(e.role) || oversee(e.userId)))).map(clone);
-  V.groups = clone(S.groups.filter(g => viewable.has(g.courseId) && (h.has('group:manage', g.courseId) || h.has('grade:viewall', g.courseId) || g.members.includes(meId))));
+  V.groups = clone(S.groups.filter(g => viewable.has(g.courseId) && (h.has('group:manage', g.courseId) || h.has('grade:viewall', g.courseId) || (hrStaff && hrCourse.has(g.courseId)) || g.members.includes(meId))));
   V.mods = {};
   const stripAnswers = vm => {
     if (vm.questions && vm.type === 'quiz') vm.questions = vm.questions.map(q => ({id:q.id, type:q.type, text:q.text, mark:q.mark, ...(q.type === 'mc' || q.type === 'mcm' ? {options:q.options.map(o => ({text:o.text}))} : {}), ...(q.type === 'essay' ? {guidance:q.guidance} : {})}));
@@ -1921,6 +1952,6 @@ function canReadFile(S, meId, fileId) {
 }
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile, mayDownloadFile, DOC_SECONDS,
-  gradeQ, correctText, reviewOf, parseCSV, csvGrid, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
+  gradeQ, correctText, reviewOf, parseCSV, csvGrid, sheetDay, dayText, joinBatches, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
   DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, normSiteUrl, personName, fullNameOf, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

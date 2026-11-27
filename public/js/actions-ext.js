@@ -417,14 +417,14 @@ ${validations}</worksheet>`;
     const teams = C.teamsOf(S), courses = S.courses.filter(c => c.status !== 'archived').map(c => c.shortname), roles = ['Learner', 'Trainer', 'Course author', 'Non-editing teacher'];
     const COLS = [['username', 'Login name: letters, numbers, dot, dash, underscore', 22], ['fullname', 'Full name, e.g. Ravi Kumar', 28], ['email', 'Work email address', 30], ['team', 'Pick from the list', 30], ['password', `Optional. Leave empty to use ${C.DEFAULT_PASSWORD}`, 20],
       ['course1', 'Optional. Course short name (pick from the list)', 16], ['role1', 'Optional. Default Learner', 16], ['group1', 'Optional. Group in that course (created if missing)', 18],
-      ['course2', 'Optional', 14], ['role2', 'Optional', 14], ['group2', 'Optional', 14], ['course3', 'Optional', 14], ['role3', 'Optional', 14], ['group3', 'Optional', 14]];
+      ['course2', 'Optional', 14], ['role2', 'Optional', 14], ['group2', 'Optional', 14], ['course3', 'Optional', 14], ['role3', 'Optional', 14], ['group3', 'Optional', 14], ['doj', 'Optional. Date of joining, day first (27/11/2026): learners join the batches of that month and day in their courses', 14]];
     const n = 2000, lastList = l => Math.max(2, l.length + 1);
     const dv = (sq, ref, title, msg) => `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="${x(title)}" error="${x(msg)}" sqref="${sq}"><formula1>${ref}</formula1></dataValidation>`;
     const validations = `<dataValidations count="7">${dv(`D2:D${n}`, `Lists!$A$2:$A$${lastList(teams)}`, 'Team', 'Choose a team from the list.')}${[['E', 'H', 'K'], ['F', 'I', 'L']].map((cs, k) => cs.map(c => k === 0 ? dv(`${c}2:${c}${n}`, `Lists!$B$2:$B$${lastList(courses)}`, 'Course', 'Choose a course short name from the list.') : dv(`${c}2:${c}${n}`, `Lists!$C$2:$C$${lastList(roles)}`, 'Role', 'Choose a role from the list.')).join('')).join('')}</dataValidations>`;
-    const users = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[2]), freeze:true, validations, textCols:[0, 4]});
+    const users = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[2]), freeze:true, validations, textCols:[0, 4, 14]});
     const instr = sheet([[{v:'How to fill in the Users sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
       ...COLS.slice(0, 9).map(([k, d], i) => [k, d + (i < 4 ? ' (required)' : ''), ['asha.verma', 'Asha', 'Verma', 'asha.verma@nobroker.in', teams[0] || '', '', courses[0] || '', 'Learner', 'Batch A'][i]]),
-      ['course2 … group3', 'Up to three courses per person, in the same way', ''], [''],
+      ['course2 … group3', 'Up to three courses per person, in the same way', ''], ['doj', 'Optional. Date of joining, day first. As a learner in each course the person joins two batches: the month (Nov 2026 joiners) and the day (27 Nov 2026 joiners).', '27/11/2026'], [''],
       ['Notes', 'One person per row on the Users sheet. Keep the header row as it is.', ''],
       ['', 'Team, course and role cells have dropdowns. Values not on the list are refused.', ''],
       ['', 'New people must change the starting password at first sign-in.', ''],
@@ -471,9 +471,9 @@ ${validations}</worksheet>`;
   function hrTemplate() {
     const teams = C.teamsOf(S), n = 2000;
     const validations = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Team" error="Choose a team from the list, or leave it empty." sqref="C2:C${n}"><formula1>Lists!$A$2:$A$${Math.max(2, teams.length + 1)}</formula1></dataValidation></dataValidations>`;
-    const people = sheet([[{v:'Full name', s:1}, {v:'Email', s:1}, {v:'Team', s:1}]], {widths:[30, 36, 30], freeze:true, validations});
+    const people = sheet([[{v:'Full name', s:1}, {v:'Email', s:1}, {v:'Team', s:1}, {v:'Date Of Joining', s:1}]], {widths:[30, 36, 30, 18], freeze:true, validations, textCols:[3]});
     const instr = sheet([[{v:'How to fill in the People sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
-      ['Full name', 'The person\'s full name (required for people new to the site).', 'Kavya Nair'], ['Email', 'Work email address (required).', 'kavya.nair@nobroker.in'], ['Team', 'Optional. Pick from the list.', teams[0] || ''], [''],
+      ['Full name', 'The person\'s full name (required for people new to the site).', 'Kavya Nair'], ['Email', 'Work email address (required).', 'kavya.nair@nobroker.in'], ['Team', 'Optional. Pick from the list.', teams[0] || ''], ['Date Of Joining', 'Optional. Day first, e.g. 27/11/2026. Puts the person in the joining batches of the course: the month (Nov 2026 joiners) and the day (27 Nov 2026 joiners).', '27/11/2026'], [''],
       ['Notes', 'One person per row. Keep the header row as it is.', ''], ['', 'People not on the site yet get a temporary account and an email to set their password.', ''],
       ['', 'The course is due 7 days after it is assigned. Temporary accounts are switched off after the due date; their records stay.', ''],
       ['', 'On the course Participants page, choose Bulk upload and pick this file. You see the list before anything is assigned.', '']], {widths:[14, 80, 28]});
@@ -578,7 +578,8 @@ function hrParse(text) {
   lines.forEach((raw, i) => {
     const parts = raw.split(/\t|,|;/).map(x => x.trim()).filter(Boolean), ei = parts.findIndex(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
     if (ei < 0) { if (!(i === 0 && /^(full ?)?name\b.*\be-?mail/i.test(raw))) bad.push(raw); return; } // a first row of column titles is skipped
-    out.push({name:parts.slice(0, ei).join(' ').replace(/\s+/g, ' ').trim(), email:parts[ei].toLowerCase(), team:parts.slice(ei + 1).join(' ').trim()});
+    const rest = parts.slice(ei + 1), di = rest.findIndex(x => C.sheetDay(x)); // a date after the email is the date of joining
+    out.push({name:parts.slice(0, ei).join(' ').replace(/\s+/g, ' ').trim(), email:parts[ei].toLowerCase(), team:rest.filter((_, i) => i !== di).join(' ').trim(), ...(di >= 0 ? {doj:rest[di]} : {})});
   });
   return {people:out, bad};
 }
@@ -595,9 +596,10 @@ function hrRowsToLines(rows) {
   const used = rows.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => r.map(v => String(v ?? '').replace(/[,;\t\r\n]+/g, ' ').trim()));
   if (!used.length) return [];
   const head = used[0].map(v => v.toLowerCase()), at = re => head.findIndex(v => re.test(v));
-  let ni = at(/^(full ?)?name$|^employee name$/), ei = at(/^e-?mail/), ti = at(/^team$|^department$/);
-  const body = ei >= 0 ? used.slice(1) : used; if (ei < 0) { ni = 0; ei = 1; ti = 2; }
-  return body.map(r => [ni >= 0 ? r[ni] : '', r[ei] || '', ti >= 0 ? r[ti] || '' : ''].filter((v, i) => v || i < 2).join(', ')).filter(l => l.replace(/[ ,]/g, ''));
+  let ni = at(/^(full ?)?name$|^employee name$|^emp name$/), ei = at(/e-?mail/), ti = at(/^team$|^department$/), di = at(/joining|^doj$/);
+  const body = ei >= 0 ? used.slice(1) : used; if (ei < 0) { ni = 0; ei = 1; ti = 2; di = 3; }
+  const day = v => { const n = C.sheetDay(v); return n ? C.dayText(n) : v; };
+  return body.map(r => [ni >= 0 ? r[ni] : '', r[ei] || '', ti >= 0 ? r[ti] || '' : '', di >= 0 && r[di] ? day(r[di]) : ''].filter((v, i) => v || i < 2).join(', ')).filter(l => l.replace(/[ ,]/g, ''));
 }
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset?.hrfile || !t.files?.[0]) return; e.stopImmediatePropagation();
@@ -617,10 +619,10 @@ Object.assign(A, {
     const due = new Date(Date.now() + 7 * D);
     openModal('Assign HR course', `<form data-form="hrAssign" class="stack">
       <div class="field"><label for="hrc">HR course</label><select id="hrc" name="cid">${cs.map(c => `<option value="${c.id}" ${c.id === d?.id ? 'selected' : ''}>${esc(c.fullname)}</option>`).join('')}</select></div>
-      <div class="field"><label for="hrfile">${d?.bulk ? 'Excel or CSV file' : 'Bulk upload (optional)'}: columns <b>Full name</b>, <b>Email</b>, <b>Team</b> (optional)</label><input id="hrfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-hrfile="1">
+      <div class="field"><label for="hrfile">${d?.bulk ? 'Excel or CSV file' : 'Bulk upload (optional)'}: columns <b>Full name</b>, <b>Email</b>, <b>Team</b> and <b>Date Of Joining</b> (both optional)</label><input id="hrfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-hrfile="1">
         <span class="hint"><button class="link" type="button" data-act="hrTemplate">Download the template</button>. The people in the file are added to the list below, where you can check them before assigning.</span></div>
-      <div class="field"><label for="hrppl">People: one per line, <b>Full name, email</b> (team optional)</label>
-        <textarea id="hrppl" name="people" rows="8" placeholder="Kavya Nair, kavya.nair@nobroker.in&#10;Rahul Kumar, rahul.kumar@nobroker.in, Legal Sales" required></textarea>
+      <div class="field"><label for="hrppl">People: one per line, <b>Full name, email</b> (team and date of joining optional)</label>
+        <textarea id="hrppl" name="people" rows="8" placeholder="Kavya Nair, kavya.nair@nobroker.in&#10;Rahul Kumar, rahul.kumar@nobroker.in, Legal Sales, 27/11/2026" required></textarea>
         <span class="hint">You can paste from Excel: columns Name, Email (and Team). People who are not on ${esc(S.site.name)} yet get a temporary account and an email to set their password.</span></div>
       <p class="muted small" id="hrpv" role="status">Nobody added yet.</p>
       <label class="check"><input type="checkbox" name="again"> <span>Also assign again to people who already completed this course</span></label>
