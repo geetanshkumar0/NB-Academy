@@ -533,7 +533,16 @@ BODIES.workshop = (m, c) => {
 };
 
 /* Certificate */
+// HR courses: the HR certificate design (C.HR_CERT_ART, the same shapes as the PDF)
+function hrCertificateHTML(c, iss, who) {
+  const A = C.HR_CERT_ART, L = A.logo, r = L.r, url = B.server ? `${location.origin}/cert/${iss.code}` : '';
+  const art = `<svg class="hrc-art" viewBox="0 0 842 595" preserveAspectRatio="none" aria-hidden="true"><rect width="842" height="595" fill="#fff"/>${A.shapes.map(([f, pts]) => `<polygon fill="${f}" points="${pts.map(p => p.join(',')).join(' ')}"/>`).join('')}
+    <circle cx="${L.cx}" cy="${L.cy}" r="${r}" fill="${L.fill}"/><g fill="none" stroke="#fff" stroke-width="${r * 0.1}" stroke-linecap="round"><circle cx="${L.cx + r * 0.3}" cy="${L.cy - r * 0.28}" r="${r * 0.2}"/><circle cx="${L.cx - r * 0.3}" cy="${L.cy + r * 0.28}" r="${r * 0.2}"/><line x1="${L.cx - r * 0.22}" y1="${L.cy - r * 0.55}" x2="${L.cx + r * 0.22}" y2="${L.cy + r * 0.55}"/></g></svg>`;
+  return `<div class="hrcert">${art}<div class="hrc-text"><h2>Certificate of Completion</h2><b class="hrc-big">${esc(fullname(who))}</b><span>has successfully completed</span><b class="hrc-big">${esc(c.fullname)}</b><span>on</span><b class="hrc-big">${esc(C.hrCertDate(iss.time))}</b></div>
+    <span class="hrc-code">Certificate code ${esc(iss.code)}${url ? ` · verify at ${esc(url)}` : ''}</span></div>`;
+}
 function certificateHTML(m, c, iss, who) {
+  if (c.hr) return hrCertificateHTML(c, iss, who);
   const cs = S.site.cert || {}, url = B.server ? `${location.origin}/cert/${iss.code}` : '';
   return `<div class="cert tpl-${esc(cs.template || 'classic')}"><div class="row" style="justify-content:center">${LOGO}<b style="font-family:var(--f-display)">${esc(S.site.name)}</b></div>
     <h2>Certificate of Completion</h2><p class="eyebrow">This certifies that</p><div class="who">${esc(fullname(who))}</div>

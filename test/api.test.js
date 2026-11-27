@@ -1526,6 +1526,12 @@ test('HR courses: HRBP assigns by name and email, 7 days, reminders, certificate
   getState().completion[asha.id + ':' + page] = Date.now(); Core._.checkBadges(getState(), {now:() => Date.now(), uid:p => (p || 'x') + Math.random().toString(36).slice(2)}, asha.id, cid);
   assert.ok(getState().enrol.find(e => e.courseId === cid && e.userId === asha.id).completedAt);
   assert.ok(getState().certIssued.some(x => x.userId === asha.id && x.cmid === cert.id), 'certificate issued on completion');
+  // the HR certificate design: corner shapes and red mark, "12 June, 2026" style date
+  const hcode = getState().certIssued.find(x => x.userId === asha.id && x.cmid === cert.id).code, hpdf = await call('GET', `/cert/${hcode}.pdf`);
+  assert.equal(hpdf.status, 200); const ptxt = hpdf.buf.toString('latin1');
+  assert.match(ptxt, /\(Certificate of Completion\)/); assert.match(ptxt, /\(Asha Verma\)/); assert.match(ptxt, /\(Prevention of Sexual Harassment\)/);
+  assert.ok(ptxt.includes(`(${Core.hrCertDate(Date.now())})`), 'date as "27 November, 2026"'); assert.match(ptxt, /0\.937 0\.251 0\.337 rg/, 'red % mark');
+  assert.equal(Core.hrCertDate(Date.UTC(2026, 5, 11, 20, 0)), '12 June, 2026', 'Indian date: 1:30 am on 12 June IST');
   // due date passes: HRBP told about Kavya (not about Asha), Kavya's temporary access ends; Asha's account stays
   for (const e of getState().enrol.filter(e => e.courseId === cid)) e.due = Date.now() - 1000;
   runTick();

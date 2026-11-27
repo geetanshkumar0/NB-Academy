@@ -440,7 +440,7 @@ function certPage(code) {
 }
 function certPdfFor(code) {
   const r = certLookup(code); if (!r) return null; const b = S.site.branding || {}, cs = S.site.cert || {};
-  return certificatePdf({site:S.site.name, name:r.u ? Core.personName(r.u) : 'Former user', course:r.course?.fullname || '', date:new Date(r.c.time).toDateString(), expires:r.c.expires ? new Date(r.c.expires).toDateString() : '', code:r.c.code, grade:r.c.grade, verifyUrl:`${siteUrl() || ''}/cert/${r.c.code}`.replace(/^\/cert/, '/cert'), primary:b.primary, accent:b.accent, template:cs.template, signatureName:cs.signatureName, signatureTitle:cs.signatureTitle, body:cs.body});
+  return certificatePdf({site:S.site.name, name:r.u ? Core.personName(r.u) : 'Former user', course:r.course?.fullname || '', date:new Date(r.c.time).toDateString(), expires:r.c.expires ? new Date(r.c.expires).toDateString() : '', code:r.c.code, grade:r.c.grade, verifyUrl:`${siteUrl() || ''}/cert/${r.c.code}`.replace(/^\/cert/, '/cert'), primary:b.primary, accent:b.accent, template:r.course?.hr ? 'hr' : cs.template, art:Core.HR_CERT_ART, ...(r.course?.hr ? {date:Core.hrCertDate(r.c.time)} : {}), signatureName:cs.signatureName, signatureTitle:cs.signatureTitle, body:cs.body});
 }
 
 /* ---------- Login helpers ---------- */

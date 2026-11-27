@@ -976,6 +976,28 @@ function sheetDay(v) {
   return null;
 }
 const dayText = n => `${n % 100} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.floor(n / 100) % 100 - 1]} ${Math.floor(n / 1e4)}`;
+/* HR course certificate design (A4 landscape, 842 × 595, origin top left): coloured corner shapes and the red % mark.
+   Drawn as SVG on screen (certificateHTML) and as PDF paths (server/pdf.js), so both look the same. */
+const HR_CERT_ART = {
+  shapes:[
+    ['#e8eff7', [[560, 0], [842, 0], [842, 300]]],
+    ['#b9d8ee', [[640, 0], [745, 0], [842, 235], [842, 330]]],
+    ['#1677c8', [[745, 0], [842, 0], [842, 235]]],
+    ['#f7c3ab', [[768, 300], [842, 238], [842, 362]]],
+    ['#ef5b25', [[806, 300], [842, 262], [842, 398]]],
+    ['#cfe4f4', [[842, 372], [842, 470], [790, 421]]],
+    ['#e8eff7', [[0, 140], [120, 260], [0, 330]]],
+    ['#f7c3ab', [[0, 218], [96, 300], [0, 372]]],
+    ['#ef5b25', [[0, 200], [56, 266], [0, 342]]],
+    ['#c4dcef', [[0, 330], [232, 562], [232, 595], [0, 595]]],
+    ['#1677c8', [[0, 352], [46, 398], [46, 522], [0, 562]]],
+    ['#ef5b25', [[0, 535], [112, 595], [0, 595]]],
+    ['#f2d2c6', [[132, 595], [172, 556], [214, 595]]],
+    ['#c4dcef', [[200, 595], [250, 505], [300, 595]]],
+    ['#e8eff7', [[300, 595], [340, 520], [380, 595]]],
+    ['#1677c8', [[255, 595], [290, 562], [380, 562], [410, 595]]]],
+  logo:{cx:712, cy:470, r:50, fill:'#ef4056'}};
+const hrCertDate = t => { const d = new Date(t + 330 * 6e4); return `${d.getUTCDate()} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.getUTCMonth()]}, ${d.getUTCFullYear()}`; }; // Indian date, whatever the server's time zone
 function joinBatches(S, env, cid, uid, day) {
   day = typeof day === 'number' ? okDay(day) : sheetDay(day); if (!day) return;
   const mon = `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.floor(day / 100) % 100 - 1]} ${Math.floor(day / 1e4)}`;
@@ -1953,6 +1975,6 @@ function canReadFile(S, meId, fileId) {
 }
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile, mayDownloadFile, DOC_SECONDS,
-  gradeQ, correctText, reviewOf, parseCSV, csvGrid, sheetDay, dayText, joinBatches, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
+  gradeQ, correctText, reviewOf, parseCSV, csvGrid, sheetDay, dayText, joinBatches, HR_CERT_ART, hrCertDate, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
   DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, normSiteUrl, personName, fullNameOf, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });
