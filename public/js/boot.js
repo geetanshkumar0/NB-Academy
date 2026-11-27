@@ -6,6 +6,15 @@ async function refresh() {
   const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
   try { const st = await B.init(); if (!st) { setState(null); ui.loginErr = 'You were signed out after a period of inactivity.'; render(); return; } const y = window.scrollY; setState(st); render(); window.scrollTo(0, y); } catch (e) {}
 }
+/* After an update on the server, open tabs still run the old code: offer a reload (never forced, so a video or quiz is not cut off) */
+async function checkVersion() {
+  if (!window.__build || document.getElementById('updbar')) return;
+  try { const r = await fetch('/api/version', {cache:'no-store'}); const d = await r.json(); if (!d.build || d.build === window.__build) return; } catch (e) { return; }
+  const bar = document.createElement('div'); bar.id = 'updbar'; bar.setAttribute('role', 'status');
+  bar.innerHTML = `<span>A new version of ${esc(S?.site?.name || 'NB Academy')} is available.</span><button class="btn sm primary" data-act="reloadApp">Reload</button><button class="xbtn" data-act="hideUpdate" aria-label="Later">×</button>`;
+  document.body.appendChild(bar);
+}
+Object.assign(A, {reloadApp: () => location.reload(), hideUpdate: () => { const b = document.getElementById('updbar'); if (b) b.hidden = true; }});
 window.addEventListener('beforeunload', e => { if (ui.uploading) { e.preventDefault(); e.returnValue = ''; } });
 /* Time spent learning: counted while the learner is active in a course page */
 ['mousemove', 'keydown', 'scroll', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ui.lastActive = Date.now(); }, {passive:true}));
@@ -22,7 +31,7 @@ function heartbeat() {
   if (q.get('go') === 'setpassword' && q.get('id')) { try { ui.token = await B.tokenInfo(q.get('id')); ui.token.raw = q.get('id'); } catch (e) { ui.token = {valid:false}; } ui.loginView = 'token'; }
   else if (q.get('go')) ui.deepLink = {go:q.get('go'), id:q.get('id')};
   if (q.toString()) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
-  if (B.server) { try { const d = await (await fetch('/api/site')).json(); window.__site = d.site; window.__demo = d.demo; window.__demoUsers = d.demoUsers; window.__sso = d.sso; applyBranding(); } catch (e) {} }
+  if (B.server) { try { const d = await (await fetch('/api/site')).json(); window.__site = d.site; window.__build = d.build; window.__demo = d.demo; window.__demoUsers = d.demoUsers; window.__sso = d.sso; applyBranding(); } catch (e) {} }
   try { setState(await B.init()); }
   catch (e) { app.innerHTML = `<div class="page"><div class="card stack" style="max-width:560px;margin:40px auto"><h2>NB Academy could not start</h2><p class="muted">${esc(e.message)}</p><div><button class="btn" data-act="reload">Try again</button></div></div></div>`; return; }
   if (S && ui.loginView === 'token') { await B.logout().catch(() => {}); setState(null); }
@@ -34,6 +43,6 @@ function heartbeat() {
   }
   render(); replaceNav();
   setInterval(heartbeat, 60e3);
-  if (B.server) setInterval(refresh, 45e3);
+  if (B.server) { setInterval(refresh, 45e3); setInterval(checkVersion, 120e3); document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); }); }
   else setInterval(async () => { if (!S) return; const st = await B.init(); if (st && JSON.stringify(st.notifications.length) !== JSON.stringify(S.notifications.length)) { setState(st); if (!document.activeElement || !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) render(); } }, 60e3);
 })();

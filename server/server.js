@@ -416,6 +416,12 @@ function shell() {
 const BRAND_ASSETS = require('../public/js/brand-assets.js');
 const FAVICON_PNG = Buffer.from(BRAND_ASSETS.icon.src.split(',')[1], 'base64'); // the red NoBroker mark
 let SHELL = shell();
+/* Which version of the app this server runs: a fingerprint of the files the browser loads. Open tabs compare it with the
+   one they started with (GET /api/version) and offer a reload after an update. */
+const BUILD = (() => { const hsh = crypto.createHash('sha256'); const add = f => { try { hsh.update(f); hsh.update(fs.readFileSync(path.join(PUBLIC, f))); } catch (e) {} };
+  for (const f of fs.readdirSync(PUBLIC).filter(f => /\.(js|html)$/.test(f)).sort()) add(f);
+  try { for (const f of fs.readdirSync(path.join(PUBLIC, 'js')).filter(f => f.endsWith('.js')).sort()) add('js/' + f); } catch (e) {}
+  return hsh.digest('hex').slice(0, 12); })();
 const MIME = {'.js':'text/javascript; charset=utf-8'};
 const INLINE_TYPES = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|text\/plain|text\/vtt|video\/(mp4|webm)|audio\/(mpeg|wav|ogg))$/;
 const e = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
@@ -487,7 +493,8 @@ async function handle(req, res) {
       return send(res, 200, FAVICON_PNG, {'Content-Type':'image/png', 'Cache-Control':'public, max-age=86400'});
     }
     if (req.method === 'GET' && p === '/api/logo') { const id = S.site.branding?.logo, f = id && S.files.find(x => x.id === id); if (!f || !fs.existsSync(store.filePath(id))) return sendErr(res, 404, 'No logo.'); return send(res, 200, fs.readFileSync(store.filePath(id)), {'Content-Type':f.type, 'Cache-Control':'public, max-age=300', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"}); }
-    if (req.method === 'GET' && p === '/api/site') return send(res, 200, {site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana', 'hema'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [],
+    if (req.method === 'GET' && p === '/api/version') return send(res, 200, {build:BUILD}, {'Cache-Control':'no-store'});
+    if (req.method === 'GET' && p === '/api/site') return send(res, 200, {build:BUILD, site:{name:S.site.name, tagline:S.site.tagline, branding:S.site.branding, terms:S.site.terms?.version}, demo:!!S.site.demo, demoUsers:S.site.demo ? ['admin', 'rohan', 'priya', 'vikram', 'asha', 'kabir', 'nisha', 'sana', 'hema'].filter(un => S.users.some(u => u.username === un && !u.suspended)) : [],
       sso:S.site.sso?.enabled ? {label:S.site.sso.label} : null, forgot:true});
 
     if ((req.method === 'GET' || req.method === 'HEAD') && p.startsWith('/files/')) {

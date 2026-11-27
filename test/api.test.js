@@ -1654,6 +1654,12 @@ test('Upload users: a doj column puts learners in the joining batches (month and
   assert.equal(S.groups.filter(g => g.courseId === 'c1' && g.name === 'Nov 2026 joiners').length, 1, 'one batch per month');
 });
 
+test('the server tells open tabs which version it runs, so they can offer a reload after an update', async () => {
+  const v = await call('GET', '/api/version'); assert.equal(v.status, 200); assert.match(v.json.build, /^[0-9a-f]{12}$/);
+  assert.equal(v.headers.get('cache-control'), 'no-store');
+  assert.equal((await call('GET', '/api/site')).json.build, v.json.build);
+});
+
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {
   const a = await login('admin'), piece = 256 * 1024;
   const data = Buffer.alloc(piece * 2 + 1234); for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) & 255;

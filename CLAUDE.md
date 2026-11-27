@@ -42,6 +42,7 @@ npm run build:preview         # dist/preview.html: browser-only edition, data in
   - sessions, CSRF header `X-NB-Request: 1`, uploads, SCORM, certificates and SSO;
   - built-in admins (`ensureSiteAdmins`);
   - the scheduler (every 5 minutes) and email delivery (every 30 seconds).
+- **Update bar:** `BUILD` in server.js is a fingerprint of the files in `public/` (and `public/js/`), sent by `/api/site` and `GET /api/version`. `checkVersion()` (boot.js) compares it every 2 minutes and when the tab comes back into view; on a difference it shows `#updbar` ("A new version … is available", Reload / ×). It never reloads by itself.
 - `server/store.js` handles SQLite persistence. Each record is a JSON row, and audit rows are append-only (enforced by database triggers).
 - `server/mailer.js`, `ldap.js`, `oidc.js`, `unzip.js` and `pdf.js` are hand-written protocol and format code.
 - **Emails:** `renderEmail(S, key, vars)` in core.js returns subject, plain text and HTML. A template's `html` (the welcome design in `WELCOME_HTML`, or an admin's own) is used if present; otherwise `emailLayout` wraps the text in the shared design. The colour is `S.site.emailTheme.color` (`emailPalette`). `server/mailer.js` sends multipart/alternative. Icons (`EI` in core.js) are rasterised to PNG without dependencies and served at `/email-assets/<name>-<RRGGBB>.png`; the browser-only preview inlines them (`setEmailIconUrl`).
