@@ -1549,6 +1549,13 @@ test('HR courses: HRBP assigns by name and email, 7 days, reminders, certificate
   r = await op(a, 'enrolUser', {cid, userId:zoya.id, role:'student'}); assert.equal(r.status, 400); assert.match(r.text, /HR Courses tab/);
   // a course with learners cannot switch between HR and regular
   r = await op(a, 'courseSettings', {cid, fullname:c.fullname, shortname:c.shortname, catId:cat, summary:'', visible:true, hr:false}); assert.equal(r.status, 400);
+  // Participants: the due date is fixed (7 days), roles do not change, and the HRBP can remind and remove learners
+  r = await op(a, 'setDue', {cid, userId:kavya.id, due:Date.now() + 30 * 864e5}); assert.equal(r.status, 400); assert.match(r.text, /always due 7 days/);
+  r = await op(a, 'changeRole', {cid, userId:kavya.id, role:'teacher'}); assert.equal(r.status, 400);
+  r = await op(hr, 'nudge', {cid, users:[kavya.id]}); assert.equal(r.status, 200, r.text);
+  r = await op(hr, 'unenrol', {cid, userId:kavya.id}); assert.equal(r.status, 200, r.text);
+  assert.ok(!getState().enrol.some(e => e.courseId === cid && e.userId === kavya.id), 'removed by the HRBP');
+  assert.equal((await op(hr, 'unenrol', {cid:'c1', userId:asha.id})).status, 403, 'but not from regular courses');
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

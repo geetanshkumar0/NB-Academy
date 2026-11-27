@@ -1331,14 +1331,14 @@ op('enrolUser', (S, h, p, env) => {
   audit(S, env, h.meId, 'User enrolled', c.shortname, `${h.fullname(p.userId)} as ${h.role(p.role).name}`);
   log(S, env, h.meId, `Enrolled ${h.fullname(p.userId)} as ${h.role(p.role).name}`, c.id);
 });
-op('changeRole', (S, h, p, env) => { const c = courseOf(S, p.cid); need(h.has('course:enrol', c.id), 'You cannot change roles in this course.'); const e = h.enrolOf(c.id, p.userId); need(e && h.role(p.role), 'Enrolment or role not found.', 404); e.role = p.role; log(S, env, h.meId, `Role changed for ${h.fullname(p.userId)}: ${h.role(p.role).name}`, c.id); });
+op('changeRole', (S, h, p, env) => { const c = courseOf(S, p.cid); need(h.has('course:enrol', c.id), 'You cannot change roles in this course.'); const e = h.enrolOf(c.id, p.userId); need(e && h.role(p.role), 'Enrolment or role not found.', 404); need(!c.hr || (!e.hr && !h.role(p.role)?.caps?.['mod:submit']), 'HR course participants are learners assigned from HR Courses; their role cannot be changed here.', 400); e.role = p.role; log(S, env, h.meId, `Role changed for ${h.fullname(p.userId)}: ${h.role(p.role).name}`, c.id); });
 /* Remove someone from a course (unenrol / take back an assignment). People who manage enrolment can remove anyone;
    people who assign the course (trainers) can remove learners. Progress, attempts and grades stay stored and come back
    if the person is enrolled again. */
 op('unenrol', (S, h, p, env) => {
   const c = courseOf(S, p.cid), e = h.enrolOf(c.id, p.userId); need(e, 'This person is not in the course.', 404);
   const learner = !!h.role(e.role)?.caps?.['mod:submit'];
-  need(h.has('course:enrol', c.id) || (learner && h.has('course:assign', c.id)), learner ? 'You cannot remove people from this course.' : 'Only people who manage enrolment can remove a trainer from a course.');
+  need(h.has('course:enrol', c.id) || (learner && (h.has('course:assign', c.id) || (c.hr && h.hrAccess()))), learner ? 'You cannot remove people from this course.' : 'Only people who manage enrolment can remove a trainer from a course.');
   need(p.userId !== h.meId || h.has('course:enrol', c.id), 'You cannot remove yourself from this course.', 400);
   S.enrol = S.enrol.filter(x => x !== e); S.groups.filter(g => g.courseId === c.id).forEach(g => g.members = g.members.filter(m => m !== p.userId));
   if (learner && p.userId !== h.meId) notify(S, env, p.userId, `Removed from ${c.fullname}`, `By ${h.fullname(h.meId)}. Your progress is kept if you are assigned again.`, 'dashboard');

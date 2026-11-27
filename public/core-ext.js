@@ -383,13 +383,14 @@ op('assign', (S, h, p, env) => {
 });
 op('setDue', (S, h, p, env) => {
   need(h.has('course:assign', p.cid), 'You cannot change due dates in this course.'); const e = h.enrolOf(p.cid, p.userId); need(e, 'Enrolment not found.', 404);
+  need(!e.hr && !h.course(p.cid)?.hr, `HR courses are always due ${HR_DAYS} days after they are assigned.`, 400);
   const old = e.due; e.due = p.due ? Number(p.due) : null; e.remindersSent = []; e.lockNotified = false;
   audit(S, env, h.meId, 'Due date changed', `${h.course(p.cid).shortname} › ${h.fullname(p.userId)}`, `${fmtD(old)} → ${fmtD(e.due)}`);
 });
 op('nudge', (S, h, p, env) => {
   const c = courseOf(S, p.cid); const team = new Set(h.teamMembers()), scope = h.trainerScope();
   const list = uids(S, p.users); need(list.length, 'Choose who to remind.', 400);
-  for (const uid of list) need(h.isAdmin() || team.has(uid) || (scope.has(uid) && h.has('grade:viewall', c.id)), 'You can only remind people in your team or your courses.');
+  for (const uid of list) need(h.isAdmin() || (c.hr && h.hrAccess() && h.enrolOf(c.id, uid)?.hr) || team.has(uid) || (scope.has(uid) && h.has('grade:viewall', c.id)), 'You can only remind people in your team or your courses.');
   for (const uid of list) { const e = h.enrolOf(c.id, uid); notifyT(S, env, 'nudge', uid, {course:c.fullname, sender:h.fullname(h.me()), duepart:e?.due ? ` It is due on ${fmtD(e.due)}.` : '', short:`From ${h.fullname(h.me())}${e?.due ? ` · due ${fmtD(e.due)}` : ''}`}, 'course', c.id); }
   log(S, env, h.meId, `Reminder sent to ${list.length} learner${list.length > 1 ? 's' : ''}`, c.id);
   return {sent:list.length};

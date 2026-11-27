@@ -3,7 +3,7 @@
 
 function courseTabs(c) {
   const t = [['course', 'Course']];
-  if (h.has('course:viewparticipants', c.id)) t.push(['participants', 'Participants']);
+  if (h.has('course:viewparticipants', c.id) || (c.hr && h.hrAccess())) t.push(['participants', 'Participants']);
   if (h.has('group:manage', c.id)) t.push(['groups', 'Groups']);
   t.push(['grades', 'Grades']);
   if (S.badges.some(b => b.courseId === c.id) || h.has('badges:manage', c.id)) t.push(['badges', 'Badges']);

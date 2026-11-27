@@ -467,7 +467,20 @@ ${validations}</worksheet>`;
     }
     return Array.from(grid, r => Array.from({length:(r || []).length}, (_, i) => (r || [])[i] ?? ''));
   }
-  return {userTemplate, quizTemplate, readXlsx, readXlsxGrid};
+  // HR course assignment: People sheet (Full name | Email | Team, team from a dropdown) and Instructions
+  function hrTemplate() {
+    const teams = C.teamsOf(S), n = 2000;
+    const validations = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Team" error="Choose a team from the list, or leave it empty." sqref="C2:C${n}"><formula1>Lists!$A$2:$A$${Math.max(2, teams.length + 1)}</formula1></dataValidation></dataValidations>`;
+    const people = sheet([[{v:'Full name', s:1}, {v:'Email', s:1}, {v:'Team', s:1}]], {widths:[30, 36, 30], freeze:true, validations});
+    const instr = sheet([[{v:'How to fill in the People sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
+      ['Full name', 'The person\'s full name (required for people new to the site).', 'Kavya Nair'], ['Email', 'Work email address (required).', 'kavya.nair@nobroker.in'], ['Team', 'Optional. Pick from the list.', teams[0] || ''], [''],
+      ['Notes', 'One person per row. Keep the header row as it is.', ''], ['', 'People not on the site yet get a temporary account and an email to set their password.', ''],
+      ['', 'The course is due 7 days after it is assigned. Temporary accounts are switched off after the due date; their records stay.', ''],
+      ['', 'On the course Participants page, choose Bulk upload and pick this file. You see the list before anything is assigned.', '']], {widths:[14, 80, 28]});
+    const lists = sheet([[{v:'Teams', s:1}], ...teams.map(t => [t])], {widths:[34]});
+    return book([['People', people], ['Instructions', instr], ['Lists', lists, true]]);
+  }
+  return {userTemplate, quizTemplate, hrTemplate, readXlsx, readXlsxGrid};
 })();
 Object.assign(A, {
   xlsxTemplate: () => download('nb-academy-users-template.xlsx', XL.userTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
@@ -577,6 +590,26 @@ function hrPreview() {
     ${noName.length ? `<div class="err" style="display:block">Add a name for: ${noName.map(p => esc(p.email)).join(', ')}</div>` : ''}${bad.length ? `<div class="err" style="display:block">No email address found on: ${bad.slice(0, 5).map(esc).join(' | ')}${bad.length > 5 ? ` and ${bad.length - 5} more` : ''}</div>` : ''}` : 'Nobody added yet.';
 }
 document.addEventListener('input', e => { if (e.target.id === 'hrppl') hrPreview(); });
+// Bulk upload: the rows of an Excel or CSV file go into the list (one "name, email, team" line each), then the usual preview
+function hrRowsToLines(rows) {
+  const used = rows.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => r.map(v => String(v ?? '').replace(/[,;\t\r\n]+/g, ' ').trim()));
+  if (!used.length) return [];
+  const head = used[0].map(v => v.toLowerCase()), at = re => head.findIndex(v => re.test(v));
+  let ni = at(/^(full ?)?name$|^employee name$/), ei = at(/^e-?mail/), ti = at(/^team$|^department$/);
+  const body = ei >= 0 ? used.slice(1) : used; if (ei < 0) { ni = 0; ei = 1; ti = 2; }
+  return body.map(r => [ni >= 0 ? r[ni] : '', r[ei] || '', ti >= 0 ? r[ti] || '' : ''].filter((v, i) => v || i < 2).join(', ')).filter(l => l.replace(/[ ,]/g, ''));
+}
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset?.hrfile || !t.files?.[0]) return; e.stopImmediatePropagation();
+  const f = t.files[0], ta = document.getElementById('hrppl'), pv = document.getElementById('hrpv');
+  try {
+    const rows = /\.csv$/i.test(f.name) || f.type === 'text/csv' ? C.csvGrid(await f.text()) : await XL.readXlsxGrid(await f.arrayBuffer(), /people|assign/i);
+    const lines = hrRowsToLines(rows); if (!lines.length) throw new Error('it has no rows');
+    if (ta) { ta.value = [ta.value.trim(), ...lines].filter(Boolean).join('\n'); hrPreview(); }
+    toast(`${lines.length} row${lines.length === 1 ? '' : 's'} read from ${f.name}`);
+  } catch (er) { if (pv) pv.innerHTML = `<span class="err" style="display:block">This file could not be read: ${esc(er.message)}. Save it as Excel (.xlsx) or CSV with the columns Full name, Email, Team.</span>`; }
+  t.value = '';
+}, true);
 Object.assign(A, {
   hrAssign: d => {
     const cs = S.courses.filter(c => c.hr && c.status === 'published').sort((a, b) => a.fullname.localeCompare(b.fullname));
@@ -584,6 +617,8 @@ Object.assign(A, {
     const due = new Date(Date.now() + 7 * D);
     openModal('Assign HR course', `<form data-form="hrAssign" class="stack">
       <div class="field"><label for="hrc">HR course</label><select id="hrc" name="cid">${cs.map(c => `<option value="${c.id}" ${c.id === d?.id ? 'selected' : ''}>${esc(c.fullname)}</option>`).join('')}</select></div>
+      <div class="field"><label for="hrfile">${d?.bulk ? 'Excel or CSV file' : 'Bulk upload (optional)'}: columns <b>Full name</b>, <b>Email</b>, <b>Team</b> (optional)</label><input id="hrfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-hrfile="1">
+        <span class="hint"><button class="link" type="button" data-act="hrTemplate">Download the template</button>. The people in the file are added to the list below, where you can check them before assigning.</span></div>
       <div class="field"><label for="hrppl">People: one per line, <b>Full name, email</b> (team optional)</label>
         <textarea id="hrppl" name="people" rows="8" placeholder="Kavya Nair, kavya.nair@nobroker.in&#10;Rahul Kumar, rahul.kumar@nobroker.in, Legal Sales" required></textarea>
         <span class="hint">You can paste from Excel: columns Name, Email (and Team). People who are not on ${esc(S.site.name)} yet get a temporary account and an email to set their password.</span></div>
@@ -592,6 +627,7 @@ Object.assign(A, {
       <div class="card" style="padding:10px 14px"><b>Due ${fmtDateOnly(due)}</b> <span class="muted small">(7 days from now, fixed). Reminders go out 2 days and 1 day before. Temporary accounts are switched off after the due date.</span></div>
       <p class="err" id="hrerr" role="alert" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Assign and send emails</button></div></form>`);
   },
+  hrTemplate: () => download('hr-course-assign-template.xlsx', XL.hrTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
   hraFilter: () => {},
   hraClear: () => { ui.hra = {}; render(); },
   hraCourse: d => { ui.hra = {course:d.id}; go('hranalytics'); },
