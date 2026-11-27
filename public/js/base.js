@@ -193,7 +193,7 @@ const LocalBackend = (() => {
   function fresh() {
     const s = C.seed(env); DB = s.state; FILES = {};
     for (const [fid, x] of Object.entries(s.files)) { const f = DB.files.find(y => y.id === fid); FILES[fid] = typeof x === 'string' ? `data:${f?.type || 'text/plain'};charset=utf-8,` + encodeURIComponent(x) : `data:${x.type};base64,${x.base64}`; }
-    C.tick(DB, env); persist();
+    C.tidyData(DB); C.tick(DB, env); persist();
   }
   function persist() { set(KEY, JSON.stringify(DB)); set(FKEY, JSON.stringify(FILES)); if (SID) set(SKEY, SID); else del(SKEY); }
   const view = () => SID ? C.view(DB, SID) : null;
@@ -319,7 +319,7 @@ function applyPrefs() {
 /* ---------- Helper shortcuts ---------- */
 const me = () => h.me();
 const fullname = u => h.fullname(u);
-const initials = u => u ? ((u.firstname || '?')[0] + ((u.lastname || '')[0] || '')).toUpperCase() : '?';
+const initials = u => { if (!u) return '?'; const w = C.personName(u).split(' ').filter(Boolean); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); };
 const avatar = (u, size = 34) => `<span class="avatar" style="width:${size}px;height:${size}px;background:hsl(${hash(u?.id) % 360} 45% 38%)">${esc(initials(u))}</span>`;
 const fileOf = id => S.files.find(f => f.id === id);
 const roleName = id => h.role(id)?.name || id;

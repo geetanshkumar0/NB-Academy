@@ -110,7 +110,7 @@ function H(S, meId) {
   h.S = S; h.meId = meId;
   h.user = id => S.users.find(u => u.id === id);
   h.me = () => h.user(meId);
-  h.fullname = u => (u = typeof u === 'string' ? h.user(u) : u) ? `${u.firstname} ${u.lastname}` : 'Former user';
+  h.fullname = u => (u = typeof u === 'string' ? h.user(u) : u) ? personName(u) : 'Former user';
   h.course = id => S.courses.find(c => c.id === id);
   h.cat = id => S.categories.find(k => k.id === id);
   h.mod = id => S.mods[id];
@@ -540,7 +540,7 @@ const DEFAULT_TEMPLATES = {
   liveCancelled:{label:'Live session cancelled', subject:'Cancelled: {item}', body:'Hi {firstname},\n\n{item} ({course}) on {when} has been cancelled. {reason}\n\n{link}', email:true, inapp:true},
   passwordReset:{label:'Password reset', subject:'Reset your {site} password', body:'Hi {firstname},\n\nUse this link to choose a new password. It is valid for 2 hours.\n\n{link}\n\nIf you did not ask for this, ignore this email.', email:true, inapp:false}
 };
-const TEMPLATE_VARS = '{firstname} {lastname} {username} {site} {course} {item} {due} {days} {progress} {link} {sender} {learner} {reason} {remarks} {grade} {code} {expires} {when} {where}';
+const TEMPLATE_VARS = '{name} {firstname} {username} {site} {course} {item} {due} {days} {progress} {link} {sender} {learner} {reason} {remarks} {grade} {code} {expires} {when} {where}';
 /* Teams people belong to (stored on the user as "department"; shown as "Team"). Administrators can edit the list. */
 const TEAMS = ['Legal Servicing', 'Legal Sales', 'Seller Prepaid Legal', 'Seller Servicing', 'Owner Servicing', 'Buyer Acquisition and Property Sales', 'PnM Sales', 'PnM Servicing', 'Investment Advisory', 'Loan Sales', 'Loan Servicing', 'CPMS Tenant Search', 'CPMS Servicing', 'PMS Servicing', 'PMS Sales', 'Owner/Seller Sales', 'Tenant/Buyer Sales', 'CPMS Sales', 'NRI Sales', 'Commercial Sales', 'Outbound', 'Hood', 'Training Team', 'Human Resources'];
 const teamsOf = S => Array.isArray(S.site.teams) && S.site.teams.length ? S.site.teams : TEAMS;
@@ -559,6 +559,10 @@ function normSiteUrl(v) {
   try { const u = new URL((http ? 'http://' : 'https://') + s); if (!/^[a-z0-9.-]+$/i.test(u.hostname) || !(u.hostname.includes('.') || u.hostname === 'localhost')) return null; return u.origin; }
   catch (e) { return null; }
 }
+/* People have one name field: the full name, kept in user.firstname (user.lastname stays '' for older code and data).
+   fullNameOf accepts {fullname} or the older {firstname, lastname} pair (forms, spreadsheets, LDAP/SSO) and joins them. */
+const personName = u => `${u?.firstname || ''} ${u?.lastname || ''}`.replace(/\s+/g, ' ').trim();
+function fullNameOf(p) { return String(p?.fullname ?? p?.name ?? '').trim() ? String(p.fullname ?? p.name).replace(/\s+/g, ' ').trim() : personName(p); }
 function tidyData(S) {
   const out = [], ren = v => { const k = String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' '); return RENAMED_TEAMS[k] || null; };
   let comp = 0, moved = 0;
@@ -576,6 +580,9 @@ function tidyData(S) {
   const br = S.site?.branding; if (br && S.site.brandColours !== 2) { S.site.brandColours = 2; if (br.primary !== '#FB3753' || br.accent !== '#000000') { br.primary = '#FB3753'; br.accent = '#000000'; out.push('Brand colours set: primary #FB3753, accent black'); } }
   // The NoBroker Academy logo (brand-assets.js) replaces a logo uploaded before, once; a logo uploaded later in Branding is kept
   if (br && (S.site.brandLogo || 0) < 3) { S.site.brandLogo = 3; if (br.logo) { br.logo = null; out.push('Site logo: replaced by the built-in NoBroker Academy logo'); } } // 3: November 2026 logo
+  // One name field: join first and last names that are still stored separately ("Asha" + "Verma" → "Asha Verma")
+  let joined = 0; for (const u of S.users || []) if (u.lastname && String(u.lastname).trim()) { u.firstname = personName(u); u.lastname = ''; joined++; } else if (u.lastname !== '') u.lastname = '';
+  if (joined) out.push(`Names joined into one full name for ${joined} user${joined === 1 ? '' : 's'}`);
   // Site address: repair one saved with a slip (it is the start of every link in emails, e.g. password set-up links)
   if (S.site?.url) { const fixed = normSiteUrl(S.site.url); if (fixed && fixed !== S.site.url) { out.push(`Site address corrected: "${S.site.url}" → "${fixed}"`); S.site.url = fixed; } }
   if (Array.isArray(S.site?.teams)) {
@@ -659,7 +666,7 @@ function linkTo(S, go, id) { return `${normSiteUrl(S.site.url) || ''}/?go=${enco
 function fmtD(t) { return t ? new Date(t).toLocaleString('en-IN', {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—'; }
 function queueEmail(S, env, u, subject, body, key, html) {
   if (!u?.email) return;
-  S.outbox.push({id:env.uid('em'), userId:u.id, to:u.email, toName:`${u.firstname} ${u.lastname}`, subject, body, html:html || '', key, time:env.now(), status:S.site.email?.enabled ? 'queued' : 'not sent', tries:0});
+  S.outbox.push({id:env.uid('em'), userId:u.id, to:u.email, toName:personName(u), subject, body, html:html || '', key, time:env.now(), status:S.site.email?.enabled ? 'queued' : 'not sent', tries:0});
   if (S.outbox.length > 3000) S.outbox.splice(0, S.outbox.length - 3000);
 }
 /* ---------- Email icons: drawn here as PNG (email apps do not show SVG), in the site's email colour ---------- */
@@ -786,7 +793,7 @@ function renderEmail(S, key, vars) {
 function notifyT(S, env, key, userId, vars, go, gid) {
   const u = S.users.find(x => x.id === userId); if (!u || u.suspended) return;
   const t = S.site.templates?.[key] || DEFAULT_TEMPLATES[key]; if (!t) return;
-  const v = {firstname:u.firstname, lastname:u.lastname, username:u.username, site:S.site.name, link:linkTo(S, go, gid), ...vars};
+  const v = {name:personName(u), fullname:personName(u), firstname:personName(u).split(' ')[0], lastname:'', username:u.username, site:S.site.name, link:linkTo(S, go, gid), ...vars};
   const subject = fill(t.subject, v);
   if (t.inapp) notify(S, env, userId, subject, vars.short || '', go, gid);
   if (t.email) { const r = renderEmail(S, key, v); queueEmail(S, env, u, subject, r.text, key, r.html); }
@@ -926,21 +933,22 @@ function parseCSV(text) {
   const clean = csvGrid(text).filter(r => r.some(x => x.trim() !== ''));
   if (!clean.length) return {headers:[], rows:[]};
   // Headers are forgiving: "First name", "First Name" and "firstname" all mean firstname
-  const ALIAS = {emailaddress:'email', mail:'email', firstname:'firstname', givenname:'firstname', lastname:'lastname', surname:'lastname', familyname:'lastname', user:'username', login:'username', loginname:'username', department:'team'};
+  const ALIAS = {emailaddress:'email', mail:'email', fullname:'fullname', name:'fullname', employeename:'fullname', firstname:'firstname', givenname:'firstname', lastname:'lastname', surname:'lastname', familyname:'lastname', user:'username', login:'username', loginname:'username', department:'team'};
   const headers = clean[0].map(h => { const k = h.trim().toLowerCase().replace(/[\s_\-]+/g, '').replace(/\(.*\)$/, ''); return ALIAS[k] || k; });
   return {headers, rows:clean.slice(1).map(r => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()])))};
 }
 function validateUserRows(S, csvText) {
   const {headers, rows} = parseCSV(csvText);
   const errorsGlobal = [];
-  for (const h of ['username', 'firstname', 'lastname', 'email']) if (!headers.includes(h)) errorsGlobal.push(`Missing required column "${h}".`);
+  for (const h of ['username', 'email']) if (!headers.includes(h)) errorsGlobal.push(`Missing required column "${h}".`);
+  if (!headers.includes('fullname') && !headers.includes('firstname')) errorsGlobal.push('Missing required column "fullname".');
   if (errorsGlobal.length) return {headers, rows:[], errors:errorsGlobal};
   const seen = new Set();
   const out = rows.map((r, i) => {
     const errors = [], un = String(r.username || '').trim();
     if (!USERNAME_RE.test(un)) errors.push(USERNAME_RULE);
     if (seen.has(un.toLowerCase())) errors.push('Duplicate username in this file'); seen.add(un.toLowerCase());
-    if (!r.firstname) errors.push('First name is empty'); if (!r.lastname) errors.push('Last name is empty');
+    const name = fullNameOf(r); if (!name) errors.push('Full name is empty');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email || '')) errors.push('Email address is not valid');
     const existing = findUser(S, un);
     const enrols = [];
@@ -955,7 +963,7 @@ function validateUserRows(S, csvText) {
     }
     if (r.password) { try { checkPassword(S, r.password); } catch (e) { errors.push(e.message.replace(/\.$/, '')); } }
     let team = ''; try { team = normTeam(S, r.team ?? r.department); } catch (e) { errors.push(`Team "${r.team ?? r.department}" is not on the team list`); }
-    return {line:i + 2, username:un, firstname:r.firstname, lastname:r.lastname, email:r.email, department:team, password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
+    return {line:i + 2, username:un, fullname:name, firstname:name, lastname:'', email:r.email, department:team, password:r.password || '', due:r.due1 || r.due || '', action:existing ? 'update' : 'create', enrols, errors};
   });
   return {headers, rows:out, errors:[]};
 }
@@ -1006,7 +1014,7 @@ op('heartbeat', (S, h, p) => { const e = h.enrolOf(p.cid); if (e && h.isLearner(
 op('updateProfile', (S, h, p, env) => {
   const u = h.user(p.id); need(u, 'User not found.', 404); const manage = h.has('user:manage');
   need(u.id === h.meId || manage, 'You cannot edit this profile.'); need(h.mayManage(u.id), 'Only administrators can change an administrator or content moderator account.');
-  if (manage) { u.firstname = req(p.firstname, 'First name', 100); u.lastname = req(p.lastname, 'Last name', 100); const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; u.department = normTeam(S, p.team ?? p.department); }
+  if (manage) { u.firstname = req(fullNameOf(p), 'Full name', 200); u.lastname = ''; const em = req(p.email, 'Email', 200); need(!u.builtinAdmin || em.toLowerCase() === String(u.email).toLowerCase(), 'The email of a built-in site administrator is set in the server configuration and cannot be changed here.', 400); u.email = em; u.department = normTeam(S, p.team ?? p.department); }
   if (p.password) {
     if (u.id === h.meId && !h.isAdmin()) need(env.verify(u, String(p.current || '')), 'Your current password is not correct.', 400);
     checkPassword(S, p.password); Object.assign(u, env.hash(String(p.password))); u.pwChanged = env.now(); u.mustChangePassword = u.id !== h.meId;
@@ -1055,8 +1063,8 @@ op('newUser', (S, h, p, env) => {
   need(!p.admin || h.isAdmin(), 'Only site administrators can create administrators.');
   const pw = p.password ? String(p.password) : (env.defaultPassword || DEFAULT_PASSWORD);
   if (p.password) checkPassword(S, pw);
-  const u = {id:env.uid('u'), firstname:req(p.firstname, 'First name', 100), lastname:req(p.lastname, 'Last name', 100), username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, department:normTeam(S, p.team ?? p.department), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
-  S.users.push(u); log(S, env, h.meId, `User created: ${un}`); audit(S, env, h.meId, 'User created', un, `${u.firstname} ${u.lastname} <${u.email}>`);
+  const u = {id:env.uid('u'), firstname:req(fullNameOf(p), 'Full name', 200), lastname:'', username:un, email:req(p.email, 'Email', 200), admin:!!p.admin, department:normTeam(S, p.team ?? p.department), created:env.now(), mustChangePassword:p.forceChange !== false, ...env.hash(pw)};
+  S.users.push(u); log(S, env, h.meId, `User created: ${un}`); audit(S, env, h.meId, 'User created', un, `${personName(u)} <${u.email}>`);
   if (p.welcome !== false) welcomeUser(S, env, u);
   applyRules(S, env, u.id);
   return {id:u.id};
@@ -1110,8 +1118,8 @@ op('uploadUsers', (S, h, p, env) => {
     let u = findUser(S, r.username);
     let isNew = false;
     if (u && !h.mayManage(u.id)) { res.skipped++; continue; } // administrators' and moderators' accounts are changed by administrators only
-    if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:r.firstname, lastname:r.lastname, email:u.builtinAdmin ? u.email : r.email, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
-    else { u = {id:env.uid('u'), firstname:r.firstname, lastname:r.lastname, username:r.username, email:r.email, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
+    if (u) { if (!p.updateExisting) { res.skipped++; continue; } Object.assign(u, {firstname:fullNameOf(r), lastname:'', email:u.builtinAdmin ? u.email : r.email, department:r.department || u.department}); if (r.password) Object.assign(u, env.hash(r.password)); res.updated++; }
+    else { u = {id:env.uid('u'), firstname:fullNameOf(r), lastname:'', username:r.username, email:r.email, department:r.department, admin:false, created:env.now(), mustChangePassword:true, ...env.hash(r.password || p.defaultPassword || env.defaultPassword || DEFAULT_PASSWORD || (env.uid('') + 'Aa1!'))}; S.users.push(u); res.created++; isNew = true; }
     for (const e of r.enrols) {
       if (!S.enrol.some(x => x.courseId === e.courseId && x.userId === u.id)) { const dd = Number(p.dueDays) || 0; S.enrol.push({id:env.uid('e'), courseId:e.courseId, userId:u.id, role:e.role, time:env.now(), ...(dd && e.role === 'student' ? {due:env.now() + dd * D, mandatory:true, assignedBy:h.meId, source:'upload'} : {})}); res.enrolled++; }
       if (e.group) { let g = S.groups.find(x => x.courseId === e.courseId && x.name.toLowerCase() === e.group.toLowerCase()); if (!g) { g = {id:env.uid('g'), courseId:e.courseId, name:e.group, members:[]}; S.groups.push(g); } if (!g.members.includes(u.id)) g.members.push(u.id); }
@@ -1260,7 +1268,7 @@ op('restoreCourse', (S, h, p, env) => {
     const umap = new Map();
     for (const u of b.users || []) {
       let ex = findUser(S, u.username);
-      if (!ex) { ex = {id:env.uid('u'), username:u.username, firstname:u.firstname, lastname:u.lastname, email:u.email, admin:false, created:env.now(), ...env.hash('changeme')}; S.users.push(ex); res.users++; }
+      if (!ex) { ex = {id:env.uid('u'), username:u.username, firstname:fullNameOf(u), lastname:'', email:u.email, admin:false, created:env.now(), ...env.hash('changeme')}; S.users.push(ex); res.users++; }
       umap.set(u.id, ex.id);
     }
     for (const e of b.enrol || []) { const uid = umap.get(e.userId); if (uid && h.role(e.role)) { S.enrol.push({id:env.uid('e'), courseId:cid, userId:uid, role:e.role, time:env.now()}); res.enrolments++; } }
@@ -1878,5 +1886,5 @@ function canReadFile(S, meId, fileId) {
 
 return {VERSION, TYPES, MANUAL, QTYPES, WS_PHASES, CAPS, BUILTIN_ROLES, ARRAYS, MAPS, H, seed, emptyState, defaultSite, OPS, run, login, authenticate, mfaRequired, view, canReadFile, mayDownloadFile, DOC_SECONDS,
   gradeQ, correctText, reviewOf, parseCSV, csvGrid, validateUserRows, backupCourse, OpError, clone, sha256, verifyAudit, DEFAULT_TEMPLATES, TEMPLATE_VARS, fill, linkTo, fmtD, renderEmail, emailPalette,
-  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, normSiteUrl, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
+  DEFAULT_PASSWORD, USERNAME_RE, sameName, findUser, TEAMS, teamsOf, normTeam, tidyData, normSiteUrl, personName, fullNameOf, parseQuestionRows, liveWhere, liveEnd, emailIcon:EI.iconPng, EMAIL_ICONS:EI.NAMES, setEmailIconUrl:fn => { emailIconUrl = fn; }, _:{emailLayoutFor:(S, subject, text) => emailLayout(S, '', subject, text, {}), OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, issueCert, checkPassword, modOf, courseOf, mustView, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, welcomeUser, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS}};
 });

@@ -696,7 +696,7 @@ test('user uploads accept friendly headers (as typed in Excel) and role names', 
   const Core = require('../public/core.js'), S = getState();
   const v = Core.validateUserRows(S, 'Username,First Name,Last Name,Email Address,Team,Course 1,Role 1\nfriendly.one,Friendly,One,friendly.one@example.com,Legal Sales,DA101,Trainer');
   assert.deepEqual(v.errors, []); assert.equal(v.rows.length, 1); assert.deepEqual(v.rows[0].errors, []);
-  assert.equal(v.rows[0].firstname, 'Friendly'); assert.equal(v.rows[0].department, 'Legal Sales'); assert.equal(v.rows[0].enrols[0].role, 'trainer');
+  assert.equal(v.rows[0].fullname, 'Friendly One', 'older files with first and last name columns are joined'); assert.equal(v.rows[0].department, 'Legal Sales'); assert.equal(v.rows[0].enrols[0].role, 'trainer');
   const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'actions-ext.js'), 'utf8');
   assert.match(src, /xlsxTemplate:/); assert.match(src, /async function readXlsx/);
 });
@@ -1426,6 +1426,40 @@ test('only the latest attempt needs grading: grading it clears "Essay to grade" 
   assert.equal((await op(tr, 'gradeEssay', {aid:first, qid:q1, mark:5})).status, 200, 'older attempts can still be marked');
   const ui = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'views-activities.js'), 'utf8');
   assert.match(ui, /const last = h\.latestAttempt\(m\.id, s\.id\), pend = h\.toGrade\(last\);/); assert.match(ui, /still to grade in this attempt/);
+});
+
+test('one full name per person: forms and uploads take a full name, and stored first and last names are joined once', async () => {
+  const a = await login('admin');
+  // new user with a single full name
+  let r = await op(a, 'newUser', {fullname:'  Ravi   Kumar Sharma ', username:'ravi.ks', email:'ravi.ks@example.com', welcome:false, personas:['learner']}); assert.equal(r.status, 200, r.text);
+  let u = getState().users.find(x => x.id === r.json.result.id); assert.equal(u.firstname, 'Ravi Kumar Sharma'); assert.equal(u.lastname, '');
+  assert.equal(Core.H(getState(), u.id).fullname(u), 'Ravi Kumar Sharma');
+  assert.equal((await op(a, 'newUser', {fullname:'  ', username:'no.name', email:'no.name@example.com', welcome:false})).status, 400, 'a name is required');
+  // older callers sending first and last name still work, and are joined
+  r = await op(a, 'newUser', {firstname:'Old', lastname:'Style', username:'old.style', email:'old.style@example.com', welcome:false}); assert.equal(r.status, 200, r.text);
+  u = getState().users.find(x => x.id === r.json.result.id); assert.equal(u.firstname, 'Old Style'); assert.equal(u.lastname, '');
+  // editing a profile
+  assert.equal((await op(a, 'updateProfile', {id:u.id, fullname:'Old Style Renamed', email:u.email})).status, 200);
+  assert.equal(getState().users.find(x => x.id === u.id).firstname, 'Old Style Renamed');
+  // uploads: the fullname column
+  const v = Core.validateUserRows(getState(), 'username,Full Name,email\nfull.col,Meena Iyer,full.col@example.com\nempty.col,,empty.col@example.com');
+  assert.deepEqual(v.errors, []); assert.equal(v.rows[0].fullname, 'Meena Iyer'); assert.deepEqual(v.rows[0].errors, []); assert.ok(v.rows[1].errors.includes('Full name is empty'));
+  assert.ok(Core.validateUserRows(getState(), 'username,email\nx,x@example.com').errors.some(e => /fullname/.test(e)), 'a name column is required');
+  // stored separately (people created before this change): joined once at start-up, logged
+  const S = {site:{}, users:[{id:'x1', firstname:'Asha', lastname:'Verma'}, {id:'x2', firstname:'Solo', lastname:''}, {id:'x3', firstname:'No', lastname:'  '}], cohorts:[], rules:[]};
+  const out = Core.tidyData(S);
+  assert.deepEqual(S.users.map(x => [x.firstname, x.lastname]), [['Asha Verma', ''], ['Solo', ''], ['No', '']]);
+  assert.ok(out.some(x => /Names joined into one full name for 1 user/.test(x)));
+  assert.equal(Core.tidyData(S).some(x => /Names joined/.test(x)), false, 'nothing to do the second time');
+  // emails: {firstname} still greets with the first word, {name} is the full name
+  r = await op(a, 'newUser', {fullname:'Greeting Check Person', username:'greet.chk', email:'greet.chk@example.com', welcome:true, personas:['learner']}); assert.equal(r.status, 200, r.text);
+  const mail = getState().outbox.filter(m => m.to === 'greet.chk@example.com' && m.key === 'welcome').pop(); assert.ok(mail);
+  assert.match(mail.body, /^Hi Greeting,/, 'emails still greet by first name'); assert.equal(mail.toName, 'Greeting Check Person');
+  const ui = f => fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f), 'utf8');
+  assert.doesNotMatch(ui('actions.js') + ui('actions-ext.js') + ui('views-main.js'), /name="lastname"/, 'no Last name fields left');
+  assert.match(ui('actions.js'), /<label for="nu1">Full name<\/label>/);
+  assert.match(ui('actions-ext.js'), /\['fullname', 'Full name, e\.g\. Ravi Kumar', 28\], \['email'/);
+  assert.match(ui('actions-ext.js'), /dv\(`D2:D\$\{n\}`[^\n]*\[\['E', 'H', 'K'\], \['F', 'I', 'L'\]\]/, 'Excel template dropdowns follow the columns (team D, courses E/H/K, roles F/I/L)');
 });
 
 test('large files upload in pieces, in parallel and in any order, and are joined on the server', async () => {

@@ -736,7 +736,7 @@ function mountPlayers() {
     const countOf = (k, prefix) => { const n = new Set(Object.keys(extra).filter(x => x.startsWith(prefix)).map(x => x.slice(prefix.length).split('.')[0])); return String(n.size); };
     // SCORM 1.2
     let err12 = '0';
-    const v12 = {'cmi.core.student_id':u.username || u.id, 'cmi.core.student_name':`${u.lastname}, ${u.firstname}`, 'cmi.core.credit':learner ? 'credit' : 'no-credit', 'cmi.core.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.core.lesson_mode':learner ? 'normal' : 'browse', 'cmi.core.total_time':'0000:00:00', 'cmi.launch_data':'', 'cmi.student_data.mastery_score':'', 'cmi.core.score.min':'0', 'cmi.core.score.max':'100'};
+    const v12 = {'cmi.core.student_id':u.username || u.id, 'cmi.core.student_name':fullname(u), 'cmi.core.credit':learner ? 'credit' : 'no-credit', 'cmi.core.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.core.lesson_mode':learner ? 'normal' : 'browse', 'cmi.core.total_time':'0000:00:00', 'cmi.launch_data':'', 'cmi.student_data.mastery_score':'', 'cmi.core.score.min':'0', 'cmi.core.score.max':'100'};
     const RO12 = new Set(Object.keys(v12).filter(k => !/score\.(min|max)/.test(k)));
     window.API = {
       LMSInitialize:() => { err12 = '0'; return 'true'; }, LMSFinish:() => { commit(true); return 'true'; },
@@ -759,7 +759,7 @@ function mountPlayers() {
     // SCORM 2004 (2nd, 3rd and 4th editions)
     let state04 = 'new', err04 = 0;
     const ok = (v = 'true') => { err04 = 0; return v; }, bad = (code, v = 'false') => { err04 = code; return v; };
-    const v04 = {'cmi._version':'1.0', 'cmi.learner_id':u.username || u.id, 'cmi.learner_name':`${u.lastname}, ${u.firstname}`, 'cmi.credit':learner ? 'credit' : 'no-credit', 'cmi.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.mode':learner ? 'normal' : 'browse', 'cmi.launch_data':'', 'cmi.total_time':'PT0H0M0S', 'cmi.completion_threshold':'', 'cmi.scaled_passing_score':'', 'cmi.max_time_allowed':'', 'cmi.time_limit_action':'continue,no message', 'cmi.learner_preference.audio_level':'1', 'cmi.learner_preference.language':'', 'cmi.learner_preference.delivery_speed':'1', 'cmi.learner_preference.audio_captioning':'0'};
+    const v04 = {'cmi._version':'1.0', 'cmi.learner_id':u.username || u.id, 'cmi.learner_name':fullname(u), 'cmi.credit':learner ? 'credit' : 'no-credit', 'cmi.entry':r.updated ? 'resume' : 'ab-initio', 'cmi.mode':learner ? 'normal' : 'browse', 'cmi.launch_data':'', 'cmi.total_time':'PT0H0M0S', 'cmi.completion_threshold':'', 'cmi.scaled_passing_score':'', 'cmi.max_time_allowed':'', 'cmi.time_limit_action':'continue,no message', 'cmi.learner_preference.audio_level':'1', 'cmi.learner_preference.language':'', 'cmi.learner_preference.delivery_speed':'1', 'cmi.learner_preference.audio_captioning':'0'};
     const RO04 = new Set(['cmi._version', 'cmi.learner_id', 'cmi.learner_name', 'cmi.credit', 'cmi.entry', 'cmi.mode', 'cmi.launch_data', 'cmi.total_time', 'cmi.completion_threshold', 'cmi.scaled_passing_score', 'cmi.max_time_allowed', 'cmi.time_limit_action']);
     const WO04 = new Set(['cmi.exit', 'cmi.session_time']);
     const completion04 = () => ['completed', 'passed', 'failed'].includes(st.status) ? (st.status === 'completed' || st.status === 'passed' ? 'completed' : 'incomplete') : st.status === 'not attempted' ? 'not attempted' : st.status === 'incomplete' ? 'incomplete' : 'unknown';

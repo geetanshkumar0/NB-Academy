@@ -132,7 +132,7 @@ Object.assign(A, {
   clearLogo: () => act('saveBranding', {logo:null}, 'Built-in NoBroker Academy logo restored'),
   openToken: async d => { await A.logout(); ui.token = await B.tokenInfo(d.t); ui.token.raw = d.t; ui.loginView = 'token'; render(); },
   newUser: () => openModal('Add a new user', `<form data-form="newUser" class="stack"><div class="fgrid">
-      <div class="field"><label for="nu1">First name</label><input id="nu1" name="firstname" type="text" required></div><div class="field"><label for="nu2">Last name</label><input id="nu2" name="lastname" type="text" required></div>
+      <div class="field full"><label for="nu1">Full name</label><input id="nu1" name="fullname" type="text" maxlength="200" required></div>
       <div class="field"><label for="nu3">Username</label><input id="nu3" name="username" type="text" required pattern="[A-Za-z0-9._\\-]+" title="Letters, numbers, dot, dash or underscore" autocapitalize="none"></div><div class="field"><label for="nu4">Email address</label><input id="nu4" name="email" type="email" required></div>
       <div class="field"><label for="nu8">Team</label>${teamSelect('nu8', '')}</div>
       <div class="field"><label for="nu5">Starting password (optional)</label><input id="nu5" name="password" type="text" placeholder="Leave blank to use ${esc(C.DEFAULT_PASSWORD)}"><span class="hint">${esc(pwRuleText())}</span></div>
@@ -153,7 +153,7 @@ Object.assign(F, {
   savePrefs: async (d, f) => { const prefs = {contrast:checked(f, 'contrast'), text:d.text, captions:checked(f, 'captions'), motion:checked(f, 'motion')}; if (await act('savePrefs', {prefs}, 'Preferences saved', {silent:true}) !== FAIL) { if (ui.view.name === 'prefs') go(homeFor(currentMode())); else render(); } },
   mfaEnable: async d => { if (await act('mfaEnable', {code:d.code}, 'Two-step sign-in is on', {silent:true, errEl:'mfaerr'}) !== FAIL) { ui.mfaSetup = null; render(); } },
   mfaDisable: d => act('mfaDisable', {code:d.code}, 'Two-step sign-in turned off'),
-  changePassword: async (d, f) => { if (!pwPair(d, 'cperr')) return; if (await act('updateProfile', {id:S.me, firstname:me().firstname, lastname:me().lastname, email:me().email, current:d.current, password:d.password}, 'Password changed', {silent:true, errEl:'cperr'}) !== FAIL) { f.reset(); render(); } },
+  changePassword: async (d, f) => { if (!pwPair(d, 'cperr')) return; if (await act('updateProfile', {id:S.me, fullname:fullname(me()), email:me().email, current:d.current, password:d.password}, 'Password changed', {silent:true, errEl:'cperr'}) !== FAIL) { f.reset(); render(); } },
   requestAccess: async d => { if (await act('requestAccess', d, 'Request sent. You will be notified of the decision.', {silent:true, errEl:'arerr'}) !== FAIL) render(); },
   decideAccess: async d => { const approve = d.decision !== 'reject'; await act('decideAccess', {id:d.id, approve, due:dateEnd(d.due), remarks:d.remarks}, approve ? 'Approved. The course is unlocked.' : 'Request rejected'); },
   assign: async (d, f) => { const r = await act('assign', {kind:d.kind, id:d.id, users:picked(f, 'users'), cohorts:picked(f, 'cohorts'), due:dateEnd(d.due), mandatory:checked(f, 'mandatory')}, null, {silent:true, errEl:'asserr'}); if (r === FAIL) return; closeModal(); render(); toast(`${r.assigned} assignment${r.assigned === 1 ? '' : 's'} made for ${r.learners} learner${r.learners === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} already completed or not eligible)` : ''}`); },
@@ -211,7 +211,7 @@ Object.assign(A, { editTeams: () => openModal('Team list', `<form data-form="tea
 Object.assign(F, { teams: async d => { if (await act('saveTeams', {teams:d.teams}, 'Team list saved', {silent:true, errEl:'tmerr'}) !== FAIL) { closeModal(); render(); } } });
 
 /* ---------- Email design: colour and previews ---------- */
-const SAMPLE_VARS = {firstname:'Asha', lastname:'Verma', username:'asha.verma', course:'Workplace Safety Essentials', item:'Final assessment', due:'Fri, 6 Nov 2026', days:'3 days', progress:'40', sender:'Rohan Mehta', learner:'Asha Verma', reason:'I was on leave', remarks:'Please complete it this week', grade:'8 / 10', code:'SAFE4K8P2X', expires:'31 Dec 2027', when:'Thu, 29 Oct 2026, 4:00 pm', where:'Online', duepart:' It is due on Fri, 6 Nov 2026.'};
+const SAMPLE_VARS = {name:'Asha Verma', fullname:'Asha Verma', firstname:'Asha', lastname:'', username:'asha.verma', course:'Workplace Safety Essentials', item:'Final assessment', due:'Fri, 6 Nov 2026', days:'3 days', progress:'40', sender:'Rohan Mehta', learner:'Asha Verma', reason:'I was on leave', remarks:'Please complete it this week', grade:'8 / 10', code:'SAFE4K8P2X', expires:'31 Dec 2027', when:'Thu, 29 Oct 2026, 4:00 pm', where:'Online', duepart:' It is due on Fri, 6 Nov 2026.'};
 function showEmail(title, html) {
   openModal(title, `<iframe class="emailprev" sandbox="" title="${esc(title)}" style="width:100%;height:min(72vh,760px);border:1px solid var(--line);border-radius:8px;background:#f5f5f7"></iframe>`, true);
   const f = document.querySelector('#modal iframe.emailprev'); if (f) f.srcdoc = html;
@@ -415,13 +415,13 @@ ${validations}</worksheet>`;
   // The template: a Users sheet to fill in, Instructions, and a hidden Lists sheet behind the dropdowns
   function userTemplate() {
     const teams = C.teamsOf(S), courses = S.courses.filter(c => c.status !== 'archived').map(c => c.shortname), roles = ['Learner', 'Trainer', 'Course author', 'Non-editing teacher'];
-    const COLS = [['username', 'Login name: letters, numbers, dot, dash, underscore', 22], ['firstname', 'First name', 16], ['lastname', 'Last name', 16], ['email', 'Work email address', 30], ['team', 'Pick from the list', 30], ['password', `Optional. Leave empty to use ${C.DEFAULT_PASSWORD}`, 20],
+    const COLS = [['username', 'Login name: letters, numbers, dot, dash, underscore', 22], ['fullname', 'Full name, e.g. Ravi Kumar', 28], ['email', 'Work email address', 30], ['team', 'Pick from the list', 30], ['password', `Optional. Leave empty to use ${C.DEFAULT_PASSWORD}`, 20],
       ['course1', 'Optional. Course short name (pick from the list)', 16], ['role1', 'Optional. Default Learner', 16], ['group1', 'Optional. Group in that course (created if missing)', 18],
       ['course2', 'Optional', 14], ['role2', 'Optional', 14], ['group2', 'Optional', 14], ['course3', 'Optional', 14], ['role3', 'Optional', 14], ['group3', 'Optional', 14]];
     const n = 2000, lastList = l => Math.max(2, l.length + 1);
     const dv = (sq, ref, title, msg) => `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="${x(title)}" error="${x(msg)}" sqref="${sq}"><formula1>${ref}</formula1></dataValidation>`;
-    const validations = `<dataValidations count="7">${dv(`E2:E${n}`, `Lists!$A$2:$A$${lastList(teams)}`, 'Team', 'Choose a team from the list.')}${[['G', 'J', 'M'], ['H', 'K', 'N']].map((cs, k) => cs.map(c => k === 0 ? dv(`${c}2:${c}${n}`, `Lists!$B$2:$B$${lastList(courses)}`, 'Course', 'Choose a course short name from the list.') : dv(`${c}2:${c}${n}`, `Lists!$C$2:$C$${lastList(roles)}`, 'Role', 'Choose a role from the list.')).join('')).join('')}</dataValidations>`;
-    const users = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[2]), freeze:true, validations, textCols:[0, 5]});
+    const validations = `<dataValidations count="7">${dv(`D2:D${n}`, `Lists!$A$2:$A$${lastList(teams)}`, 'Team', 'Choose a team from the list.')}${[['E', 'H', 'K'], ['F', 'I', 'L']].map((cs, k) => cs.map(c => k === 0 ? dv(`${c}2:${c}${n}`, `Lists!$B$2:$B$${lastList(courses)}`, 'Course', 'Choose a course short name from the list.') : dv(`${c}2:${c}${n}`, `Lists!$C$2:$C$${lastList(roles)}`, 'Role', 'Choose a role from the list.')).join('')).join('')}</dataValidations>`;
+    const users = sheet([COLS.map(c => ({v:c[0], s:1}))], {widths:COLS.map(c => c[2]), freeze:true, validations, textCols:[0, 4]});
     const instr = sheet([[{v:'How to fill in the Users sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
       ...COLS.slice(0, 9).map(([k, d], i) => [k, d + (i < 4 ? ' (required)' : ''), ['asha.verma', 'Asha', 'Verma', 'asha.verma@nobroker.in', teams[0] || '', '', courses[0] || '', 'Learner', 'Batch A'][i]]),
       ['course2 … group3', 'Up to three courses per person, in the same way', ''], [''],
@@ -471,7 +471,7 @@ ${validations}</worksheet>`;
 })();
 Object.assign(A, {
   xlsxTemplate: () => download('nb-academy-users-template.xlsx', XL.userTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
-  csvTemplate: () => download('nb-academy-users-template.csv', 'username,firstname,lastname,email,team,password,course1,role1,group1\n'),
+  csvTemplate: () => download('nb-academy-users-template.csv', 'username,fullname,email,team,password,course1,role1,group1\n'),
 });
 /* ---------- Bulk upload of quiz questions: choose a file, check the preview, then add or replace ---------- */
 function qImportPreview() {

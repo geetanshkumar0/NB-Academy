@@ -8,7 +8,7 @@
 })(typeof self !== 'undefined' ? self : this, function (Core) {
 'use strict';
 const {OPS, op, need, req, str, D, notify, notifyT, queueEmail, log, audit, checkBadges, checkPassword, modOf, courseOf, mustSeeMod, mustLearn, cleanFiles, makeToken, useToken, assignCourse, applyRules, VIEW_HOOKS, SEED_HOOKS} = Core._;
-const {H, clone, OpError, fmtD, linkTo, TYPES, CAPS} = Core;
+const {H, clone, OpError, fmtD, linkTo, TYPES, CAPS, personName} = Core;
 
 /* ---------------- SHA-1, HMAC and TOTP (RFC 6238) for multi-factor sign-in ---------------- */
 function sha1Bytes(bytes) {
@@ -185,7 +185,7 @@ op('removeAdmin', (S, h, p, env) => {
   u.admin = false; S.sysroles = S.sysroles.filter(r => !(r.userId === u.id && r.roleId === 'manager'));
   if (!(u.personas || []).length && !S.sysroles.some(r => r.userId === u.id && r.roleId === 'teamlead')) u.personas = ['learner'];
   notify(S, env, u.id, 'Your administrator access was removed', `By ${h.fullname(h.meId)}`, 'dashboard');
-  audit(S, env, h.meId, 'Administrator access removed', u.username, `${u.firstname} ${u.lastname}`);
+  audit(S, env, h.meId, 'Administrator access removed', u.username, personName(u));
 });
 
 /* ---------------- Course group chats ---------------- */
@@ -405,7 +405,7 @@ op('sessionJoin', (S, h, p, env) => {
   need(t <= sessEnd(s) + (admin ? 120 : 30) * 6e4, 'This session has ended.', 400);
   if (invited) { s.attendance ||= {}; const a = s.attendance[h.meId] ||= {}; if (!a.status || a.status === 'absent' && !a.by) a.status = t > s.start + 10 * 6e4 ? 'late' : 'present'; a.joinedAt ||= t; a.lastJoin = t; }
   if (!s.room) s.room = newRoom(env);
-  const u = h.me(); return {room:s.room, name:`${u.firstname} ${u.lastname}`.trim(), email:u.email || '', id:u.id, moderator:admin, until:sessEnd(s) + 3 * 3600e3};
+  const u = h.me(); return {room:s.room, name:personName(u), email:u.email || '', id:u.id, moderator:admin, until:sessEnd(s) + 3 * 3600e3};
 });
 // Reminders the day before, and what each person may see
 function sessionTick(S, env) { let n = 0; const now = env.now();
@@ -431,7 +431,7 @@ op('liveJoin', (S, h, p, env) => {
     x.joinedAt ||= t; x.lastJoin = t;
   }
   if (!m.room) m.room = ('nbacademy-' + env.uid('').replace(/[^a-z0-9]/gi, '') + Math.random().toString(36).slice(2, 10)).toLowerCase();
-  const u = h.me(); return {room:m.room, name:`${u.firstname} ${u.lastname}`.trim(), email:u.email || '', id:u.id, moderator:manage, until:end + 3 * 3600e3};
+  const u = h.me(); return {room:m.room, name:personName(u), email:u.email || '', id:u.id, moderator:manage, until:end + 3 * 3600e3};
 });
 op('liveCancel', (S, h, p) => { const m = modOf(S, p.mid); mustLearn(h, m); S.liveSignups = S.liveSignups.filter(x => !(x.cmid === m.id && x.userId === h.meId && x.status === 'registered' && !x.archived)); });
 op('liveAttendance', (S, h, p, env) => {

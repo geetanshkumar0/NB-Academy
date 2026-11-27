@@ -179,7 +179,7 @@ ADMIN.roles = (p) => {
       <button class="btn primary" type="submit">Assign role</button></div></form></div>`;
 };
 
-const SAMPLE_CSV = 'username,firstname,lastname,email,team,password,course1,role1,group1\nravi.k,Ravi,Kumar,ravi.kumar@example.com,Legal Sales,,DA101,student,\nanita.s,Anita,Shah,anita.shah@example.com,Owner Servicing,,BS201,student,\nfarah.a,Farah,Ali,farah.ali@example.com,NRI Sales,,TE110,trainer,';
+const SAMPLE_CSV = 'username,fullname,email,team,password,course1,role1,group1\nravi.k,Ravi Kumar,ravi.kumar@example.com,Legal Sales,,DA101,student,\nanita.s,Anita Shah,anita.shah@example.com,Owner Servicing,,BS201,student,\nfarah.a,Farah Ali,farah.ali@example.com,NRI Sales,,TE110,trainer,';
 ADMIN.upload = () => {
   const v = ui.csv;
   let preview = '';
@@ -188,7 +188,7 @@ ADMIN.upload = () => {
     else { const ok = v.rows.filter(r => !r.errors.length).length;
       preview = `<h2 style="margin:8px 0 10px">Preview</h2><p class="muted small" style="margin-bottom:10px">${v.rows.length} rows · ${ok} ready · ${v.rows.length - ok} with problems (rows with problems are skipped)</p>
       <div class="tw" style="margin-bottom:14px"><table><thead><tr><th>Line</th><th>Username</th><th>Name</th><th>Email</th><th>Action</th><th>Enrolments</th><th>Status</th></tr></thead><tbody>
-      ${v.rows.map(r => `<tr><td class="num">${r.line}</td><td class="mono">${esc(r.username)}</td><td>${esc(r.firstname)} ${esc(r.lastname)}</td><td class="small">${esc(r.email)}</td><td><span class="chip ${r.action === 'create' ? 'brand' : ''}">${r.action === 'create' ? 'Create' : 'Update'}</span></td><td class="small">${r.enrols.map(e => `${esc(e.shortname)} (${esc(roleName(e.role))}${e.group ? ', ' + esc(e.group) : ''})`).join('<br>') || '–'}</td><td class="small">${r.errors.length ? `<span style="color:var(--bad)">${r.errors.map(esc).join('; ')}</span>` : '<span class="okc">OK</span>'}</td></tr>`).join('')}
+      ${v.rows.map(r => `<tr><td class="num">${r.line}</td><td class="mono">${esc(r.username)}</td><td>${esc(r.fullname)}</td><td class="small">${esc(r.email)}</td><td><span class="chip ${r.action === 'create' ? 'brand' : ''}">${r.action === 'create' ? 'Create' : 'Update'}</span></td><td class="small">${r.enrols.map(e => `${esc(e.shortname)} (${esc(roleName(e.role))}${e.group ? ', ' + esc(e.group) : ''})`).join('<br>') || '–'}</td><td class="small">${r.errors.length ? `<span style="color:var(--bad)">${r.errors.map(esc).join('; ')}</span>` : '<span class="okc">OK</span>'}</td></tr>`).join('')}
       </tbody></table></div>
       <form data-form="uploadUsers" class="card stack" style="max-width:640px"><div class="field"><label for="updef">Temporary password for new users with an empty password</label><input id="updef" name="defaultPassword" type="text" value="${esc(C.DEFAULT_PASSWORD)}" required><span class="hint">New users must change it at first sign-in. They also get a welcome email with a link to set their own.</span></div>
         <div class="field"><label for="updd">Due date for learner enrolments (days from today, 0 = none)</label><input id="updd" name="dueDays" type="number" min="0" value="0"></div>
@@ -201,7 +201,7 @@ ADMIN.upload = () => {
       <div class="field"><label for="csvfile">Excel (.xlsx) or CSV file</label><input id="csvfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-csv="1"></div>
       <div class="field"><label for="csvtext">Or paste from a spreadsheet (CSV)</label><textarea id="csvtext" name="csv" rows="8" class="mono" style="font-size:.84rem">${esc(v?.text || '')}</textarea></div>
       <div class="row"><button class="btn primary" type="submit">Preview</button><button class="btn" type="button" data-act="csvSample">Use sample data</button></div></form>
-    <aside class="block"><header><h3>File format</h3></header><div class="bb stack small" style="gap:8px"><p>The easiest way is the Excel template above. First row is the header (capitals and spaces don't matter). Required: <code>username</code>, <code>firstname</code>, <code>lastname</code>, <code>email</code>.</p>
+    <aside class="block"><header><h3>File format</h3></header><div class="bb stack small" style="gap:8px"><p>The easiest way is the Excel template above. First row is the header (capitals and spaces don't matter). Required: <code>username</code>, <code>fullname</code>, <code>email</code>. Older files with separate <code>firstname</code> and <code>lastname</code> columns still work: the two are joined.</p>
       <p>Optional: <code>team</code> (one of the teams in Site administration › Users › Team list), <code>password</code>, and up to five enrolments as <code>course1</code> (short name), <code>role1</code> (Learner, Trainer, Course author or Non-editing teacher; default Learner) and <code>group1</code> (created if missing).</p>
       <pre class="code">${esc(SAMPLE_CSV.split('\n').slice(0, 2).join('\n'))}</pre></div></aside></div>${preview}`;
 };

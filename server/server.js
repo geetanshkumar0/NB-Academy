@@ -93,7 +93,7 @@ function ensureSiteAdmins() {
     const local = email.split('@')[0], base = local.toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'admin';
     let un = base, i = 2; while (Core.findUser(S, un)) un = base + i++;
     const parts = local.split(/[._-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1));
-    u = {id:env.uid('u'), username:un, email, firstname:parts[0] || un, lastname:parts.slice(1).join(' '), admin:true, builtinAdmin:true, created:Date.now(), mustChangePassword:true,
+    u = {id:env.uid('u'), username:un, email, firstname:parts.join(' ') || un, lastname:'', admin:true, builtinAdmin:true, created:Date.now(), mustChangePassword:true,
       department:'', defaultPwSet:true, ...hashPassword(env.defaultPassword)};
     S.users.push(u);
     const tok = Core._.makeToken(S, env, u.id, 'setpw', 7 * 24 * 3600e3);
@@ -382,14 +382,14 @@ function certLookup(code) {
 }
 function certPage(code) {
   const r = certLookup(code);
-  const body = r ? `<h1>Certificate verified</h1><p><b>${e(r.u ? `${r.u.firstname} ${r.u.lastname}` : 'Former user')}</b> was awarded <b>${e(r.m?.name || 'a certificate')}</b> for <b>${e(r.course?.fullname || 'a course')}</b> on ${new Date(r.c.time).toDateString()}.</p>
+  const body = r ? `<h1>Certificate verified</h1><p><b>${e(r.u ? Core.personName(r.u) : 'Former user')}</b> was awarded <b>${e(r.m?.name || 'a certificate')}</b> for <b>${e(r.course?.fullname || 'a course')}</b> on ${new Date(r.c.time).toDateString()}.</p>
       ${r.c.expires ? `<p>${r.c.expires < Date.now() ? `<b style="color:#b0342b">Expired</b> on ${new Date(r.c.expires).toDateString()}.` : `Valid until ${new Date(r.c.expires).toDateString()}.`}</p>` : ''}<p>Code: <code>${e(r.c.code)}</code> · <a href="/cert/${e(r.c.code)}.pdf">Download PDF</a></p>`
     : `<h1>No certificate found</h1><p>The code <code>${e(code)}</code> does not match any certificate issued by ${e(S.site.name)}.</p>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Certificate check · ${e(S.site.name)}</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:640px;margin:60px auto;padding:0 16px;color:#15212b}h1{font-size:1.6rem}code{background:#eef2f5;padding:2px 6px;border-radius:4px}</style></head><body>${body}<p><a href="/">${e(S.site.name)}</a></p></body></html>`;
 }
 function certPdfFor(code) {
   const r = certLookup(code); if (!r) return null; const b = S.site.branding || {}, cs = S.site.cert || {};
-  return certificatePdf({site:S.site.name, name:r.u ? `${r.u.firstname} ${r.u.lastname}` : 'Former user', course:r.course?.fullname || '', date:new Date(r.c.time).toDateString(), expires:r.c.expires ? new Date(r.c.expires).toDateString() : '', code:r.c.code, grade:r.c.grade, verifyUrl:`${siteUrl() || ''}/cert/${r.c.code}`.replace(/^\/cert/, '/cert'), primary:b.primary, accent:b.accent, template:cs.template, signatureName:cs.signatureName, signatureTitle:cs.signatureTitle, body:cs.body});
+  return certificatePdf({site:S.site.name, name:r.u ? Core.personName(r.u) : 'Former user', course:r.course?.fullname || '', date:new Date(r.c.time).toDateString(), expires:r.c.expires ? new Date(r.c.expires).toDateString() : '', code:r.c.code, grade:r.c.grade, verifyUrl:`${siteUrl() || ''}/cert/${r.c.code}`.replace(/^\/cert/, '/cert'), primary:b.primary, accent:b.accent, template:cs.template, signatureName:cs.signatureName, signatureTitle:cs.signatureTitle, body:cs.body});
 }
 
 /* ---------- Login helpers ---------- */
@@ -410,7 +410,7 @@ async function passwordLogin(username, password) {
 function createExternalUser(x) {
   let un = String(x.username || x.email.split('@')[0]).toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'user'; const base = un; let i = 1;
   while (Core.findUser(S, un)) un = `${base}${++i}`;
-  const u = {id:env.uid('u'), username:un, email:x.email, firstname:x.firstname || un, lastname:x.lastname || '', admin:false, created:Date.now(), auth:x.auth, ...hashPassword(crypto.randomBytes(24).toString('hex'))};
+  const u = {id:env.uid('u'), username:un, email:x.email, firstname:Core.fullNameOf(x) || un, lastname:'', admin:false, created:Date.now(), auth:x.auth, ...hashPassword(crypto.randomBytes(24).toString('hex'))};
   S.users.push(u); Core._.audit(S, env, null, 'User created automatically', un, `First sign-in via ${x.auth.toUpperCase()}`); Core._.applyRules(S, env, u.id);
   return u;
 }
@@ -516,7 +516,7 @@ async function handle(req, res) {
         const claims = await oidc.finish(sso, `${origin(req)}/auth/sso/callback`, url.searchParams.get('code'), url.searchParams.get('state'));
         let u = S.users.find(x => x.email.toLowerCase() === String(claims.email).toLowerCase());
         if (!u && !sso.autoCreate) throw new Error(`No ${S.site.name} account uses ${claims.email}. Ask an administrator to create one.`);
-        const r = mutate(() => { if (!u) u = createExternalUser({email:claims.email, username:claims.preferred_username || claims.email.split('@')[0], firstname:claims.given_name || claims.name || '', lastname:claims.family_name || '', auth:'sso'}); return Core.login(S, u.username, null, env, {trusted:true, via:'SSO'}); });
+        const r = mutate(() => { if (!u) u = createExternalUser({email:claims.email, username:claims.preferred_username || claims.email.split('@')[0], fullname:claims.name || [claims.given_name, claims.family_name].filter(Boolean).join(' '), auth:'sso'}); return Core.login(S, u.username, null, env, {trusted:true, via:'SSO'}); });
         if (!r.user) throw new Error(r.error);
         const token = crypto.randomBytes(32).toString('hex'); store.createSession(token, r.user.id, SESSION_TTL);
         return redirect(res, '/', {'Set-Cookie':sessionCookie(req, token, SESSION_TTL)});
