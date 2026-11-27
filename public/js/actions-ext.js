@@ -469,15 +469,17 @@ ${validations}</worksheet>`;
   }
   // HR course assignment: People sheet (Full name | Email | Team, team from a dropdown) and Instructions
   function hrTemplate() {
-    const teams = C.teamsOf(S), n = 2000;
-    const validations = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Team" error="Choose a team from the list, or leave it empty." sqref="C2:C${n}"><formula1>Lists!$A$2:$A$${Math.max(2, teams.length + 1)}</formula1></dataValidation></dataValidations>`;
-    const people = sheet([[{v:'Full name', s:1}, {v:'Email', s:1}, {v:'Team', s:1}, {v:'Date Of Joining', s:1}]], {widths:[30, 36, 30, 18], freeze:true, validations, textCols:[3]});
+    const courses = S.courses.filter(c => c.hr && c.status === 'published').map(c => c.fullname), n = 2000;
+    const validations = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Course Name" error="Choose an HR course from the list." sqref="E2:E${n}"><formula1>Lists!$A$2:$A$${Math.max(2, courses.length + 1)}</formula1></dataValidation></dataValidations>`;
+    const people = sheet([[{v:'Emp ID', s:1}, {v:'Emp Email', s:1}, {v:'Full Name', s:1}, {v:'Date Of Joining', s:1}, {v:'Course Name', s:1}]], {widths:[14, 36, 30, 18, 36], freeze:true, validations, textCols:[0, 3]});
     const instr = sheet([[{v:'How to fill in the People sheet', s:2}], [''], [{v:'Column', s:1}, {v:'What to enter', s:1}, {v:'Example', s:1}],
-      ['Full name', 'The person\'s full name (required for people new to the site).', 'Kavya Nair'], ['Email', 'Work email address (required).', 'kavya.nair@nobroker.in'], ['Team', 'Optional. Pick from the list.', teams[0] || ''], ['Date Of Joining', 'Optional. Day first, e.g. 27/11/2026. Puts the person in the joining batches of the course: the month (Nov 2026 joiners) and the day (27 Nov 2026 joiners).', '27/11/2026'], [''],
-      ['Notes', 'One person per row. Keep the header row as it is.', ''], ['', 'People not on the site yet get a temporary account and an email to set their password.', ''],
-      ['', 'The course is due 7 days after it is assigned. Temporary accounts are switched off after the due date; their records stay.', ''],
-      ['', 'On the course Participants page, choose Bulk upload and pick this file. You see the list before anything is assigned.', '']], {widths:[14, 80, 28]});
-    const lists = sheet([[{v:'Teams', s:1}], ...teams.map(t => [t])], {widths:[34]});
+      ['Emp ID', 'Optional. Kept on the account.', 'E1024'], ['Emp Email', 'Work email address (required).', 'kavya.nair@nobroker.in'], ['Full Name', 'Required for people new to the site.', 'Kavya Nair'],
+      ['Date Of Joining', 'Optional. Day first, e.g. 27/11/2026. Puts the person in the joining batches (Nov 2026 joiners, 27 Nov 2026 joiners).', '27/11/2026'],
+      ['Course Name', 'The HR course (pick from the list). Empty: the course chosen on the upload screen.', courses[0] || ''], [''],
+      ['Notes', 'One person and course per row. Keep the header row as it is. The same columns as the HR Google Sheet.', ''],
+      ['', 'People not on the site yet get a temporary account and an email to set their password; it is switched off after the due date.', ''],
+      ['', 'Every course is due 7 days after it is assigned. You see every row before anything is assigned.', '']], {widths:[16, 80, 28]});
+    const lists = sheet([[{v:'HR courses', s:1}], ...courses.map(c => [c])], {widths:[40]});
     return book([['People', people], ['Instructions', instr], ['Lists', lists, true]]);
   }
   return {userTemplate, quizTemplate, hrTemplate, readXlsx, readXlsxGrid};
@@ -570,65 +572,85 @@ F.editAccess = async (d, f) => {
   });
 }
 
-/* ---------- HR Courses: assign by name and email, analytics filters and export ---------- */
-// One person per line: "Full name, email" (comma or tab, so an Excel copy works), an optional team after the email; a header row is skipped
-function hrParse(text) {
-  const out = [], bad = [];
-  const lines = String(text || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-  lines.forEach((raw, i) => {
-    const parts = raw.split(/\t|,|;/).map(x => x.trim()).filter(Boolean), ei = parts.findIndex(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
-    if (ei < 0) { if (!(i === 0 && /^(full ?)?name\b.*\be-?mail/i.test(raw))) bad.push(raw); return; } // a first row of column titles is skipped
-    const rest = parts.slice(ei + 1), di = rest.findIndex(x => C.sheetDay(x)); // a date after the email is the date of joining
-    out.push({name:parts.slice(0, ei).join(' ').replace(/\s+/g, ' ').trim(), email:parts[ei].toLowerCase(), team:rest.filter((_, i) => i !== di).join(' ').trim(), ...(di >= 0 ? {doj:rest[di]} : {})});
-  });
-  return {people:out, bad};
+/* ---------- HR Courses: Assign (Google Sheet, one person, bulk upload), analytics filters and export ---------- */
+const hrPublished = () => S.courses.filter(c => c.hr && c.status === 'published').sort((a, b) => a.fullname.localeCompare(b.fullname));
+const hrCourseSelect = (id, cid, label = 'HR course') => `<div class="field"><label for="${id}">${label}</label><select id="${id}" name="cid">${hrPublished().map(c => `<option value="${c.id}" ${c.id === cid ? 'selected' : ''}>${esc(c.fullname)}</option>`).join('')}</select></div>`;
+const hrDueNote = () => `<div class="card" style="padding:10px 14px"><b>Due ${fmtDateOnly(new Date(Date.now() + 7 * D))}</b> <span class="muted small">(7 days from now, fixed). Reminders go out 2 days and 1 day before. People new to ${esc(S.site.name)} get a temporary account, switched off after the due date.</span></div>`;
+// After assigning: one summary for one or more courses
+function hrDoneModal(results, extra = []) {
+  const n = results.reduce((t, x) => t + x.r.assigned + x.r.renewed, 0), created = results.reduce((t, x) => t + x.r.created, 0), skipped = [...results.flatMap(x => x.r.skipped.map(s => ({...s, course:x.c.fullname}))), ...extra];
+  openModal('HR course assigned', `<div class="stack"><p><b>${n}</b> assignment${n === 1 ? '' : 's'}: ${results.filter(x => x.r.assigned + x.r.renewed).map(x => `<b>${esc(x.c.fullname)}</b> (${x.r.assigned + x.r.renewed})`).join(', ') || 'none'}, due <b>${fmtDateOnly(results[0]?.r.due || Date.now() + 7 * D)}</b>.${created ? ` ${created} temporary account${created === 1 ? ' was' : 's were'} created.` : ''} ${S.site.emailOn ? 'Emails are on their way.' : '<span class="err" style="display:inline">Email is not set up, so nobody was emailed.</span>'}</p>
+    ${skipped.length ? `<div><b>Not assigned (${skipped.length})</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${skipped.map(s => `<li>${esc(s.who)}${s.course ? ` · ${esc(s.course)}` : ''}: ${esc(s.why)}</li>`).join('')}</ul></div>` : ''}
+    <div class="mfoot">${results.length === 1 ? `<button class="btn" data-go="participants" data-id="${results[0].c.id}">See learners</button>` : '<button class="btn" data-go="hranalytics">See HR Analytics</button>'}<button class="btn primary" data-act="closeModal">Done</button></div></div>`);
 }
-function hrPreview() {
-  const el = document.getElementById('hrpv'), ta = document.getElementById('hrppl'); if (!el || !ta) return;
-  const {people, bad} = hrParse(ta.value), known = people.filter(p => S.users.some(u => (u.email || '').toLowerCase() === p.email));
-  const noName = people.filter(p => !p.name && !known.includes(p));
-  el.innerHTML = people.length || bad.length ? `<b>${people.length}</b> ${people.length === 1 ? 'person' : 'people'}${people.length ? `: ${people.length - known.length} new (temporary accounts), ${known.length} already on ${esc(S.site.name)}` : ''}.
-    ${noName.length ? `<div class="err" style="display:block">Add a name for: ${noName.map(p => esc(p.email)).join(', ')}</div>` : ''}${bad.length ? `<div class="err" style="display:block">No email address found on: ${bad.slice(0, 5).map(esc).join(' | ')}${bad.length > 5 ? ` and ${bad.length - 5} more` : ''}</div>` : ''}` : 'Nobody added yet.';
+// Bulk upload: the rows of the file, checked, then assigned course by course
+function hrBulkPreview() {
+  const st = ui.hrBulk, box = document.getElementById('hrbprev'); if (!box || !st) return;
+  const back = document.getElementById('hrbback'); if (back) back.style.display = st.grid ? 'none' : '';
+  if (!st.grid) { box.innerHTML = ''; return; }
+  const v = st.res = C.hrUploadRows(S, st.grid, {cid:document.getElementById('hrbc')?.value || st.cid});
+  if (v.errors.length) { box.innerHTML = `<p class="err" style="display:block">${v.errors.map(esc).join('<br>')}</p>`; return; }
+  const ok = v.rows.filter(r => !r.errors.length).length;
+  box.innerHTML = `<h3 style="margin:6px 0 4px">Preview${st.name ? ` of ${esc(st.name)}` : ''}</h3><p class="muted small" style="margin:0 0 8px">${v.rows.length} rows · ${ok} ready · ${v.rows.length - ok} with problems (rows with problems are skipped)</p>
+    <div class="tw" style="max-height:320px;overflow:auto"><table><thead><tr><th>Line</th><th>Person</th><th>Course</th><th>Joining</th><th style="min-width:170px">Status</th></tr></thead><tbody>
+    ${v.rows.map(r => `<tr><td class="num">${r.line}</td><td>${esc(r.name || '–')}${r.empId ? ` <span class="muted small">· ${esc(r.empId)}</span>` : ''}<br><span class="muted small">${esc(r.email)}</span> <span class="chip ${r.existing ? '' : 'brand'}">${r.existing ? 'On the site' : 'New, temporary'}</span></td><td class="small">${esc(r.course || '–')}</td><td class="small">${esc(r.doj || '–')}</td><td class="small">${r.errors.length ? `<span style="color:var(--bad)">${r.errors.map(esc).join('; ')}</span>` : '<span class="chip ok">Ready</span>'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="hrbagain"> <span>Also assign again to people who already completed the course</span></label>
+    <div class="mfoot"><button class="btn" type="button" data-act="hrAssign" data-id="${esc(st.cid || '')}">Back</button><button class="btn" type="button" data-act="hrBulkClear">Start again</button><button class="btn primary" data-act="hrBulkGo" ${ok ? '' : 'disabled'}>Assign ${ok} row${ok === 1 ? '' : 's'} and send emails</button></div>`;
 }
-document.addEventListener('input', e => { if (e.target.id === 'hrppl') hrPreview(); });
-// Bulk upload: the rows of an Excel or CSV file go into the list (one "name, email, team" line each), then the usual preview
-function hrRowsToLines(rows) {
-  const used = rows.filter(r => r && r.some(v => String(v ?? '').trim() !== '')).map(r => r.map(v => String(v ?? '').replace(/[,;\t\r\n]+/g, ' ').trim()));
-  if (!used.length) return [];
-  const head = used[0].map(v => v.toLowerCase()), at = re => head.findIndex(v => re.test(v));
-  let ni = at(/^(full ?)?name$|^employee name$|^emp name$/), ei = at(/e-?mail/), ti = at(/^team$|^department$/), di = at(/joining|^doj$/);
-  const body = ei >= 0 ? used.slice(1) : used; if (ei < 0) { ni = 0; ei = 1; ti = 2; di = 3; }
-  const day = v => { const n = C.sheetDay(v); return n ? C.dayText(n) : v; };
-  return body.map(r => [ni >= 0 ? r[ni] : '', r[ei] || '', ti >= 0 ? r[ti] || '' : '', di >= 0 && r[di] ? day(r[di]) : ''].filter((v, i) => v || i < 2).join(', ')).filter(l => l.replace(/[ ,]/g, ''));
-}
+const hrGrid = text => /\t/.test(text) ? String(text).split(/\r?\n/).map(l => l.split('\t')) : C.csvGrid(text);
 document.addEventListener('change', async e => {
-  const t = e.target; if (!t.dataset?.hrfile || !t.files?.[0]) return; e.stopImmediatePropagation();
-  const f = t.files[0], ta = document.getElementById('hrppl'), pv = document.getElementById('hrpv');
-  try {
-    const rows = /\.csv$/i.test(f.name) || f.type === 'text/csv' ? C.csvGrid(await f.text()) : await XL.readXlsxGrid(await f.arrayBuffer(), /people|assign/i);
-    const lines = hrRowsToLines(rows); if (!lines.length) throw new Error('it has no rows');
-    if (ta) { ta.value = [ta.value.trim(), ...lines].filter(Boolean).join('\n'); hrPreview(); }
-    toast(`${lines.length} row${lines.length === 1 ? '' : 's'} read from ${f.name}`);
-  } catch (er) { if (pv) pv.innerHTML = `<span class="err" style="display:block">This file could not be read: ${esc(er.message)}. Save it as Excel (.xlsx) or CSV with the columns Full name, Email, Team.</span>`; }
+  const t = e.target;
+  if (t.id === 'hrbc') return hrBulkPreview();
+  if (!t.dataset?.hrbulk || !t.files?.[0]) return; e.stopImmediatePropagation();
+  const f = t.files[0];
+  try { ui.hrBulk = {...ui.hrBulk, name:f.name, grid:/\.csv$/i.test(f.name) || f.type === 'text/csv' ? C.csvGrid(await f.text()) : await XL.readXlsxGrid(await f.arrayBuffer(), /people|assign|sheet1/i)}; hrBulkPreview(); }
+  catch (er) { const box = document.getElementById('hrbprev'); if (box) box.innerHTML = `<p class="err" style="display:block">This file could not be read: ${esc(er.message)}. Save it as Excel (.xlsx) or CSV.</p>`; }
   t.value = '';
 }, true);
 Object.assign(A, {
+  // Assign: three ways
   hrAssign: d => {
-    const cs = S.courses.filter(c => c.hr && c.status === 'published').sort((a, b) => a.fullname.localeCompare(b.fullname));
-    if (!cs.length) return toast('Publish an HR course first.');
-    const due = new Date(Date.now() + 7 * D);
-    openModal('Assign HR course', `<form data-form="hrAssign" class="stack">
-      <div class="field"><label for="hrc">HR course</label><select id="hrc" name="cid">${cs.map(c => `<option value="${c.id}" ${c.id === d?.id ? 'selected' : ''}>${esc(c.fullname)}</option>`).join('')}</select></div>
-      <div class="field"><label for="hrfile">${d?.bulk ? 'Excel or CSV file' : 'Bulk upload (optional)'}: columns <b>Full name</b>, <b>Email</b>, <b>Team</b> and <b>Date Of Joining</b> (both optional)</label><input id="hrfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-hrfile="1">
-        <span class="hint"><button class="link" type="button" data-act="hrTemplate">Download the template</button>. The people in the file are added to the list below, where you can check them before assigning.</span></div>
-      <div class="field"><label for="hrppl">People: one per line, <b>Full name, email</b> (team and date of joining optional)</label>
-        <textarea id="hrppl" name="people" rows="8" placeholder="Kavya Nair, kavya.nair@nobroker.in&#10;Rahul Kumar, rahul.kumar@nobroker.in, Legal Sales, 27/11/2026" required></textarea>
-        <span class="hint">You can paste from Excel: columns Name, Email (and Team). People who are not on ${esc(S.site.name)} yet get a temporary account and an email to set their password.</span></div>
-      <p class="muted small" id="hrpv" role="status">Nobody added yet.</p>
-      <label class="check"><input type="checkbox" name="again"> <span>Also assign again to people who already completed this course</span></label>
-      <div class="card" style="padding:10px 14px"><b>Due ${fmtDateOnly(due)}</b> <span class="muted small">(7 days from now, fixed). Reminders go out 2 days and 1 day before. Temporary accounts are switched off after the due date.</span></div>
-      <p class="err" id="hrerr" role="alert" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Assign and send emails</button></div></form>`);
+    if (!hrPublished().length) return toast('Publish an HR course first.');
+    const cfg = S.site.hrSheet || {}, L = cfg.last, cid = d?.id || '';
+    const sheetState = !cfg.sheetId ? 'Not set up yet.' : !cfg.on ? 'Switched off.' : L?.error ? `<span class="err" style="display:inline">Last read failed: ${esc(L.error)}</span>` : L ? `Read every 5 minutes; last read ${hrWhen(L.time)}.` : 'Read every 5 minutes.';
+    openModal('Assign HR course', `<div class="stack"><p class="muted small" style="margin:0">Everyone gets an email and <b>7 days</b> to complete the course (fixed), reminders 2 days and 1 day before, and a certificate when they finish.</p>
+      <div class="choices">
+        <button class="choice" data-act="hrFetch"><b>Fetch from Google Sheet</b><span>Reads the HR sheet now and assigns each new row's course (every course in the sheet, not only this one). ${sheetState}</span></button>
+        <button class="choice" data-act="hrOne" data-id="${cid}"><b>Add individually</b><span>One person: full name, email, Emp ID, team and date of joining.</span></button>
+        <button class="choice" data-act="hrBulk" data-id="${cid}"><b>Bulk upload</b><span>An Excel or CSV file in the same columns as the sheet. You see every row before anything is assigned.</span></button>
+      </div></div>`);
   },
+  hrFetch: () => {
+    const cfg = S.site.hrSheet || {};
+    if (!cfg.sheetId || !cfg.on) { closeModal(); toast(cfg.sheetId ? 'The Google Sheet sync is switched off. Switch it on here.' : 'Set up the Google Sheet first.'); return go('hrsheet'); }
+    if (!B.server) return toast('The Google Sheet is read by the server; the preview cannot read it.', true);
+    closeModal(); A.hrSheetRun();
+  },
+  hrOne: d => openModal('Add individually', `<form data-form="hrOne" class="stack">${hrCourseSelect('ho1', d?.id)}<div class="fgrid">
+      <div class="field full"><label for="ho2">Full name</label><input id="ho2" name="fullname" type="text" maxlength="200" placeholder="Not needed if the person already has an account"></div>
+      <div class="field"><label for="ho3">Email address</label><input id="ho3" name="email" type="email" required autocapitalize="none"></div>
+      <div class="field"><label for="ho4">Emp ID (optional)</label><input id="ho4" name="empId" type="text" maxlength="40"></div>
+      <div class="field"><label for="ho5">Team (optional)</label>${teamSelect('ho5', '')}</div>
+      <div class="field"><label for="ho6">Date of joining (optional)</label><input id="ho6" name="doj" type="date"><span class="hint">Puts the person in the joining batches.</span></div></div>
+      <label class="check"><input type="checkbox" name="again"> <span>Assign again if they already completed it</span></label>
+      ${hrDueNote()}<p class="err" id="hoerr" role="alert" hidden></p><div class="mfoot"><button class="btn" type="button" data-act="hrAssign" data-id="${d?.id || ''}">Back</button><button class="btn primary" type="submit">Assign and send email</button></div></form>`),
+  hrBulk: d => { ui.hrBulk = {cid:d?.id || ''};
+    openModal('Bulk upload', `<div class="stack"><div class="card spread" style="gap:12px;flex-wrap:wrap;padding:12px 14px"><div><b>Start from the template</b><p class="muted small" style="margin:2px 0 0">Columns <b>Emp ID</b>, <b>Emp Email</b>, <b>Full Name</b>, <b>Date Of Joining</b>, <b>Course Name</b>, the same as the HR Google Sheet.</p></div><div class="row"><button class="btn sm primary" data-act="hrTemplate">Excel template</button><button class="btn sm" data-act="hrCsvTemplate">CSV template</button></div></div>
+      ${hrCourseSelect('hrbc', d?.id, 'Course for rows with an empty Course Name')}
+      <div class="field"><label for="hrbfile">Excel (.xlsx) or CSV file</label><input id="hrbfile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-hrbulk="1"></div>
+      <details><summary class="small">Or paste from a spreadsheet</summary><textarea id="hrbtext" rows="5" class="mono" style="font-size:.84rem;margin-top:6px" placeholder="Emp ID&#9;Emp Email&#9;Full Name&#9;Date Of Joining&#9;Course Name"></textarea><button class="btn sm" style="margin-top:6px" data-act="hrBulkPaste">Preview</button></details>
+      <div id="hrbprev"></div><div class="mfoot" id="hrbback"><button class="btn" type="button" data-act="hrAssign" data-id="${d?.id || ''}">Back</button></div></div>`, true); },
+  hrBulkPaste: () => { const t = document.getElementById('hrbtext')?.value || ''; if (!t.trim()) return toast('Paste the rows first, with the header row.', true); ui.hrBulk = {...ui.hrBulk, name:'', grid:hrGrid(t)}; hrBulkPreview(); },
+  hrBulkClear: () => { ui.hrBulk = {cid:ui.hrBulk?.cid}; hrBulkPreview(); },
+  hrBulkGo: async () => {
+    const v = ui.hrBulk?.res; if (!v) return; const ready = v.rows.filter(r => !r.errors.length), again = !!document.getElementById('hrbagain')?.checked, by = new Map();
+    for (const r of ready) { if (!by.has(r.cid)) by.set(r.cid, []); by.get(r.cid).push({fullname:r.name, email:r.email, empId:r.empId, team:r.team, doj:r.doj}); }
+    const results = [];
+    for (const [cid, people] of by) { const r = await act('hrAssign', {cid, people, again}, null, {silent:true}); if (r === FAIL) return; results.push({c:h.course(cid), r}); }
+    ui.hrBulk = null; render(); hrDoneModal(results, v.rows.filter(r => r.errors.length).map(r => ({who:`Line ${r.line}${r.email ? ` (${r.email})` : ''}`, why:r.errors.join('; ')})));
+  },
+  hrCsvTemplate: () => download('hr-course-assign-template.csv', 'Emp ID,Emp Email,Full Name,Date Of Joining,Course Name\n'),
   hrTemplate: () => download('hr-course-assign-template.xlsx', XL.hrTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
   hrSheetCheck: async () => {
     try { const r = await B.req('POST', '/api/hr-sheet/sync', {preview:true}); openModal('Check of the Google Sheet', `${hrSheetResult(r.result)}<p class="muted small">Nothing was changed. ${S.site.hrSheet?.on ? 'The next read (within 5 minutes, or Read now) does this.' : 'Switch the sync on to do this.'}</p><div class="mfoot"><button class="btn primary" data-act="closeModal">Close</button></div>`); }
@@ -660,13 +682,10 @@ Object.assign(F, {
     const r = await act('hrSheetSettings', {sheet:d.sheet, tab:d.tab, existing:checked(f, 'existing'), on:true}, null, {silent:true, errEl:'hserr'}); if (r === FAIL) return;
     render(); toast('Saved. The sheet is read every 5 minutes.');
   },
-  hrAssign: async (d, f) => {
-    const {people, bad} = hrParse(d.people);
-    if (!people.length) { const e = document.getElementById('hrerr'); e.hidden = false; e.textContent = 'Add at least one person: Full name, email.'; return; }
-    const r = await act('hrAssign', {cid:d.cid, people, again:checked(f, 'again')}, null, {silent:true, errEl:'hrerr'}); if (r === FAIL) return;
-    const c = h.course(d.cid), n = r.assigned + r.renewed;
-    openModal('HR course assigned', `<div class="stack"><p><b>${n}</b> ${n === 1 ? 'person' : 'people'} assigned <b>${esc(c.fullname)}</b>, due <b>${fmtDateOnly(r.due)}</b>.${r.created ? ` ${r.created} temporary account${r.created === 1 ? ' was' : 's were'} created.` : ''} ${S.site.emailOn ? 'Emails are on their way.' : '<span class="err" style="display:inline">Email is not set up, so nobody was emailed.</span>'}</p>
-      ${r.skipped.length || bad.length ? `<div><b>Not assigned (${r.skipped.length + bad.length})</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${r.skipped.map(s => `<li>${esc(s.who)}: ${esc(s.why)}</li>`).join('')}${bad.map(b => `<li>${esc(b)}: no email address</li>`).join('')}</ul></div>` : ''}
-      <div class="mfoot"><button class="btn" data-act="hraCourse" data-id="${c.id}">See people</button><button class="btn primary" data-act="closeModal">Done</button></div></div>`);
+  hrOne: async (d, f) => {
+    const r = await act('hrAssign', {cid:d.cid, people:[{fullname:d.fullname, email:d.email, empId:d.empId, team:d.team, doj:d.doj}], again:checked(f, 'again')}, null, {silent:true, errEl:'hoerr'}); if (r === FAIL) return;
+    if (!r.assigned && !r.renewed && r.skipped.length) { const e = document.getElementById('hoerr'); e.hidden = false; e.textContent = r.skipped.map(s => s.why).join('; '); return; }
+    render(); hrDoneModal([{c:h.course(d.cid), r}]);
   },
+
 });

@@ -297,6 +297,30 @@ function hrSheetApply(S, env, values, o = {}) {
   res.assign = res.assign.map(({key, sig, ...x}) => x);
   return res;
 }
+// Bulk upload of an HR course (Excel/CSV, same columns as the Google Sheet): check each row before anything is assigned
+function hrUploadRows(S, grid, o = {}) {
+  const rows = (grid || []).map(r => (r || []).map(v => String(v ?? '').trim()));
+  const hi = rows.slice(0, 10).findIndex(r => r.some(v => /e-?mail/i.test(v)));
+  if (hi < 0) return {rows:[], errors:['The file needs a header row: Emp ID, Emp Email, Full Name, Date Of Joining, Course Name.']};
+  const head = rows[hi].map(v => v.toLowerCase()), col = re => head.findIndex(v => re.test(v));
+  const C = {email:col(/e-?mail/), name:col(/^(full ?name|name|employee name|emp name)$/), id:col(/^(emp(loyee)? ?(id|code|no\.?|number))$/), doj:col(/joining|^doj$/), course:col(/course/), team:col(/^team$|^department$/)};
+  const hrCourses = S.courses.filter(c => c.hr && c.status !== 'archived'), dflt = o.cid && hrCourses.find(c => c.id === o.cid), seen = new Set(), out = [];
+  rows.slice(hi + 1).forEach((r, k) => {
+    if (!r.some(v => v !== '')) return;
+    const cell = i => i < 0 ? '' : r[i] || '', email = cell(C.email).toLowerCase(), errors = [];
+    const u = S.users.find(x => String(x.email || '').toLowerCase() === email);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('No valid email address');
+    const cn = cell(C.course), found = cn ? hrCourses.filter(c => [c.fullname, c.shortname].some(x => x.trim().toLowerCase() === cn.toLowerCase())) : dflt ? [dflt] : [];
+    if (!cn && !dflt) errors.push('Course Name is empty');
+    else if (found.length !== 1) errors.push(found.length ? `"${cn}" matches more than one HR course` : `"${cn}" is not an HR course`);
+    else if (found[0].status !== 'published') errors.push(`${found[0].fullname} is not published`);
+    const dojRaw = cell(C.doj), doj = dojRaw ? sheetDay(dojRaw) : null; if (dojRaw && !doj) errors.push(`Date of joining "${dojRaw}" is not a date (use e.g. 27/11/2026)`);
+    const name = cell(C.name); if (!u && !name && email) errors.push('Full Name is needed for someone new');
+    const key = `${email}|${found[0]?.id}`; if (email && seen.has(key)) errors.push('Same person and course earlier in the file'); seen.add(key);
+    out.push({line:hi + k + 2, email, name:name || (u ? personName(u) : ''), empId:cell(C.id), team:cell(C.team), doj:doj ? dayText(doj) : '', cid:found.length === 1 ? found[0].id : '', course:found.length === 1 ? found[0].fullname : cn, existing:!!u, errors});
+  });
+  return {rows:out, errors:out.length ? [] : ['There are no rows under the header.']};
+}
 op('hrSheetSettings', (S, h, p, env) => {
   need(h.hrAccess() || h.has('site:config'), 'Only HRBPs and administrators can set up the HR Google Sheet.');
   const old = S.site.hrSheet || {};
@@ -1024,6 +1048,6 @@ SEED_HOOKS.push((S, env) => {
   A('c_hr2', 'u7', -2);
 });
 
-Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner, hrSheetApply, sheetId});
+Object.assign(Core, {tick, totp, verifyTotp, itemAnalysis, learnerRows, summarize, dropOff, restartLearner, hrSheetApply, sheetId, hrUploadRows});
 return Core;
 });
