@@ -465,7 +465,7 @@ function navbar() {
   const on = k => (k === v || (k === 'hrcourses' && (v === 'hranalytics' && mode !== 'hrbp' || hrCtx && mode !== 'learner')) || (k === 'sessions' && (['session', 'sessionEdit'].includes(v) || (v === 'liveroom' && ui.view.p?.sid))) || (k === 'mycourses' && courseCtx && !['admin', 'moderator'].includes(mode)) || (k === 'home' && courseCtx && !hrCtx && ['admin', 'moderator'].includes(mode))) ? 'on' : '';
   const um = h.unreadMessages(), un = h.unreadNotifications(), gq = h.gradingQueue().length;
   // The first four pages sit in the bar; any others (e.g. Site administration) are in the small ▾ menu after them
-  const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;
+  const tab = ([k, l]) => `<button class="${on(k)}" data-go="${k}">${l}${HR_BETA.includes(k) ? ' ' + BETA : ''}${k === 'approvals' && pending ? ` <span class="count" style="position:static;display:inline-grid">${pending}</span>` : ''}</button>`;
   const notes = S.notifications.slice().sort((a, b) => b.time - a.time).slice(0, 8);
   return `<header class="nav"><div class="nav-in">
     <button class="brand" data-go="${homeFor(mode)}" aria-label="${esc(S.site.name)} home">${hasUploadedLogo() ? `${LOGO.replace('class="logo"', 'class="logo logo-up"')}<b class="brand-name" hidden>${esc(S.site.name)}</b>` : WORDMARK()}</button>
@@ -496,6 +496,8 @@ function navbar() {
     </div></div></header>`;
 }
 function noteItem(n) { return `<button class="nitem ${n.read ? '' : 'unread'}" data-act="openNote" data-id="${n.id}"><span class="ud ${n.read ? 'r' : ''}"></span><span style="min-width:0"><b class="small" style="display:block">${esc(n.subject)}</b><span class="muted small">${esc(n.body)}${n.body ? ' · ' : ''}${ago(n.time)}</span></span></button>`; }
+// HR Courses is in beta: a small "Beta" label on its tabs and page titles
+const HR_BETA = ['hrcourses', 'hranalytics'], BETA = '<span class="beta" title="New feature, still being tried out">Beta</span>';
 function phead(crumbs, title, extra = '') {
   const cr = crumbs.filter(c => c[0]).map(([l, g, id]) => g ? `<button data-go="${g}" ${id ? `data-id="${id}"` : ''}>${esc(l)}</button>` : `<span>${esc(l)}</span>`).join('<span class="sep">/</span>');
   return `<div class="phead"><nav class="crumbs" aria-label="Breadcrumb">${cr}</nav><div class="ptitle">${extra}<h1>${esc(title)}</h1></div></div>`;

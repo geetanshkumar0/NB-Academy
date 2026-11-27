@@ -349,7 +349,7 @@ A new site has no `admin` account; the accounts in `admins` are its administrato
 
 Administrators (and only they) can **Mark as inactive** on Site administration › Users, and **Mark as active** again; the list can be filtered to Active or Inactive. An inactive person cannot sign in (an open session ends), gets no emails or reminders, and cannot be enrolled in or assigned new training. Their enrolments, progress, grades, certificates and place in reports all stay, and they show with an **Inactive** label. Stored as `user.suspended` (op `suspendUser`).
 
-## HR courses
+## HR courses (beta)
 
 Mandatory HR courses (POSH, Code of Conduct and the like), kept apart from everything else.
 

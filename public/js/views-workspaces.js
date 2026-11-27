@@ -256,7 +256,7 @@ VIEWS.hrcourses = () => {
   const build = h.isAdmin() || h.isModerator(), assign = h.hrAccess();
   const cs = S.courses.filter(c => c.hr && c.status !== 'archived' && (build || c.status !== 'draft')).sort((a, b) => a.fullname.localeCompare(b.fullname));
   const rows = C.learnerRows(S, h, {hr:true});
-  return `${phead([['HR Courses']], 'HR Courses')}
+  return `${phead([['HR Courses']], 'HR Courses').replace('</h1>', ` ${BETA}</h1>`)}
     ${hrTabs('courses', `${build ? '<button class="btn" data-act="newCourse" data-hr="1">+ New HR course</button>' : ''}${assign && cs.some(c => c.status === 'published') ? '<button class="btn primary" data-act="hrAssign">Assign HR course</button>' : ''}`)}
     <p class="muted" style="margin-top:0;max-width:75ch">Mandatory courses for every employee, kept apart from the other courses and reports. HRBPs assign them by name and email: people new to ${esc(S.site.name)} get a temporary account, everyone gets <b>7 days</b>, reminders 2 days and 1 day before, and a certificate when they finish. Temporary accounts are switched off after the due date; their records stay.</p>
     <div class="tw"><table><thead><tr><th>Course</th><th class="n">Assigned</th><th class="n">Completed</th><th class="n">In progress</th><th class="n">Not started</th><th class="n">Not completed by due date</th><th></th></tr></thead><tbody>
@@ -277,7 +277,7 @@ VIEWS.hranalytics = () => {
     .sort((a, b) => (b.e.assignedAt || 0) - (a.e.assignedAt || 0));
   const sm = C.summarize(rows), certs = rows.filter(r => hrCert(r)).length;
   const sel = (k, label, opts) => `<select class="sel-sm" data-change="hraFilter" data-k="${k}" aria-label="${label}"><option value="">${label}</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${f[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-  return `${phead([['HR Analytics']], 'HR Analytics')}
+  return `${phead([['HR Analytics']], 'HR Analytics').replace('</h1>', ` ${BETA}</h1>`)}
     ${hrTabs('analytics', '<button class="btn" data-act="exportHR">Download Excel (CSV)</button>')}
     <div class="row" style="margin-bottom:14px;gap:8px;flex-wrap:wrap">${sel('course', 'All HR courses', hrCourses.map(c => [c.id, c.fullname]))}${sel('status', 'Any status', Object.entries(HR_STATUS).map(([k, [l]]) => [k, l]))}${sel('by', 'Assigned by anyone', bys.map(u => [u.id, fullname(u)]))}${sel('team', 'All teams', teams.map(t => [t, t]))}${sel('kind', 'All accounts', [['temp', 'Temporary accounts'], ['perm', 'Permanent accounts']])}
       ${Object.values(f).some(Boolean) ? '<button class="btn sm ghost" data-act="hraClear">Clear filters</button>' : ''}</div>
