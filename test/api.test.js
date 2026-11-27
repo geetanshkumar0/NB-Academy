@@ -1696,12 +1696,19 @@ test('accounts listed for removal are deleted at start-up, but never a built-in 
   const S0 = getState(); const admin = S0.users.find(u => u.username === 'admin'), dev = S0.users.find(u => u.username === 'dev');
   const devEnrolments = S0.enrol.filter(e => e.userId === dev.id).length; assert.ok(devEnrolments > 0);
   const c = await login('admin');
+  // a site with no record yet only records the list (those accounts went at earlier starts): nobody is removed
+  delete getState().site.accountsRemoved; removeAccounts(['dev@nbacademy.example']);
+  assert.ok(getState().users.some(u => u.id === dev.id), 'first run only records'); assert.ok(getState().site.accountsRemoved['dev@nbacademy.example']);
+  getState().site.accountsRemoved = {};
   removeAccounts(['admin', 'dev@nbacademy.example', 'geetansh.kumar', 'geetansh.kumar@nobroker.in', 'nobody']);
   const S1 = getState();
   assert.ok(!S1.users.some(u => u.id === admin.id || u.id === dev.id), 'admin and dev removed');
   assert.equal(S1.enrol.filter(e => e.userId === dev.id).length, 0);
   assert.ok(S1.users.some(u => u.username === 'geetansh.kumar' && u.admin), 'built-in admin kept');
   assert.ok(S1.audit.some(a => a.action === 'User removed by server configuration' && a.target === 'admin'));
+  // once only: someone with that address added again later (e.g. assigned an HR course) stays at the next start
+  getState().users.push({...dev, id:'u_dev_again', created:Date.now()}); removeAccounts(['admin', 'dev@nbacademy.example']);
+  assert.ok(getState().users.some(u => u.id === 'u_dev_again'), 'added again: kept');
   assert.equal((await call('GET', '/api/state', null, c)).json.state, null, 'the removed admin is signed out');
   const site = (await call('GET', '/api/site')).json; assert.ok(!site.demoUsers.includes('admin')); assert.equal(site.codes, undefined, 'course names are not sent before sign-in');
 });

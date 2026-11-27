@@ -152,10 +152,16 @@ function unenrolLearner(list) {
   if (changed) store.save(S);
 }
 /* Delete the accounts listed under "remove" in server/site-admins.js (or NB_REMOVE_ACCOUNTS) */
+// Each listed account is removed ONCE (S.site.accountsRemoved), so someone added again later, for example assigned an HR course,
+// is kept. A site that has no record yet (before this rule) records its list as done: those accounts were removed at earlier starts.
 function removeAccounts(list) {
   const keep = new Set(siteConfig.admins.map(x => String(x).toLowerCase()));
-  let changed = false;
+  const first = !S.site.accountsRemoved, done = S.site.accountsRemoved || (S.site.accountsRemoved = {});
+  let changed = first;
   for (const entry of list.map(x => String(x).trim().toLowerCase()).filter(Boolean)) {
+    if (done[entry]) continue;
+    done[entry] = Date.now(); changed = true;
+    if (first) continue;
     const u = S.users.find(x => Core.sameName(x.username, entry) || Core.sameName(x.email, entry));
     if (!u || u.builtinAdmin || keep.has(String(u.email).toLowerCase())) continue;
     if (u.admin && !S.users.some(x => x.admin && x.id !== u.id && !x.suspended)) { console.log(`Not removing ${u.username}: it is the only administrator.`); continue; }

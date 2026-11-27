@@ -10,7 +10,8 @@
  *  These accounts cannot be deleted, suspended or have administrator access removed in the app.
  *  More addresses can be added without editing this file: NB_SITE_ADMINS="a@company.com,b@company.com"
  *
- * REMOVE: accounts (by username or email) that are deleted when the server starts, if they exist.
+ * REMOVE: accounts (by username or email) that are deleted ONCE, at the next start after they are added here, if they exist
+ *  (recorded in S.site.accountsRemoved). An account created again later (for example assigned an HR course) is kept.
  *  Their enrolments, roles and cohort mappings go too; their past posts and grades show as
  *  "Former user", and the deletion is recorded in the audit log. Accounts listed in ADMINS are
  *  never removed. Not applied when the server runs with --demo. Override with NB_REMOVE_ACCOUNTS="user1,user2@company.com" (empty = remove none).
